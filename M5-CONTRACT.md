@@ -7,7 +7,7 @@
 
 ## 共享 API(签名即合同)
 
-### CurtainService — 提供:Agent-Curtain(`Services/CurtainService.cs`)
+### CurtainService — 提供:Agent-Curtain(`Services/CurtainService.cs`)(已于后续移除)
 ```csharp
 public static class CurtainService
 {

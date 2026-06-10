@@ -80,20 +80,18 @@ public partial class App : Application
 
         _window.Activate();
 
-        // 全局热键统管(自带消息窗口线程):去框/还原、专注模式、送窗口入分区。配置变化自动重注册。
+        // 全局热键统管(自带消息窗口线程):去框/还原、送窗口入分区。配置变化自动重注册。
         _hotkeys = new HotkeyService();
         Hotkeys = _hotkeys;
         _hotkeys.Start(_ui!, () => ConfigService.Instance.Config);
 
-        // 托盘常驻。回调都切回 UI 线程执行。专注模式勾选态跟 CurtainService.IsOn。
+        // 托盘常驻。回调都切回 UI 线程执行。
         _tray = new TrayIcon
         {
             OnOpen = () => _ui!.TryEnqueue(ShowMainWindow),
             OnToggleEngine = on => _ui!.TryEnqueue(() => SetEngineEnabled(on)),
-            OnToggleCurtain = () => _ui!.TryEnqueue(CurtainService.Toggle),
             OnExit = () => _ui!.TryEnqueue(ExitApp),
             EngineEnabledProvider = () => ConfigService.Instance.Config.EngineEnabled,
-            CurtainOnProvider = () => CurtainService.IsOn,
         };
         _tray.Start(tooltip: "Reframe");
     }
@@ -132,7 +130,6 @@ public partial class App : Application
 
         try { DragSnapService.Stop(); } catch { /* 先停吸附钩子,再拆引擎 */ }
         try { _hotkeys?.Stop(); } catch { /* 注销全部热键 */ }
-        try { CurtainService.Off(); } catch { /* 幕布幂等关闭 */ }
         try { Engine?.Stop(restoreWindows: true); } catch { /* 尽力还原 */ }
         try { _tray?.Dispose(); } catch { /* ignore */ }   // 在 UI 线程 Dispose,不会自 join 托盘线程
 

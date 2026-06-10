@@ -168,12 +168,9 @@ public sealed class AppConfig
     /// </summary>
     public string? SteamGridDbApiKey { get; set; }
 
-    /// <summary>专注模式幕布不透明度(0~1,遮暗游戏区以外区域)。</summary>
-    public double CurtainOpacity { get; set; } = 0.7;
-
     /// <summary>
-    /// 热键绑定:动作 Id → 手势字符串(如 "Ctrl+Alt+F")。缺省项由 HotkeyService 用默认值补。
-    /// 动作 Id:ToggleBorderless / ToggleCurtain / SendToZone1 / SendToZone2 / SendToZone3
+    /// 热键绑定:动作 Id → 手势字符串(如 "Ctrl+Alt+B")。缺省项由 HotkeyService 用默认值补。
+    /// 动作 Id:ToggleBorderless / SendToZone1 / SendToZone2 / SendToZone3
     /// </summary>
     public Dictionary<string, string> Hotkeys { get; set; } = new();
 

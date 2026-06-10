@@ -7,7 +7,7 @@ namespace Reframe.Services;
 ///
 /// 设计:独占一个后台线程,建 message-only 窗口 + 注册窗口类 + GetMessage 消息泵。
 /// 托盘交互(左键/右键菜单)由该窗口的 WndProc 在本线程收到 WM_USER 回调;
-/// 真正要动 UI/引擎的动作(打开窗口、开关引擎、专注模式、退出)通过委托回调出去,
+/// 真正要动 UI/引擎的动作(打开窗口、开关引擎、退出)通过委托回调出去,
 /// 由宿主(App)切回 UI 线程执行。Dispose 时 PostMessage(WM_CLOSE) 让线程收尾。
 ///
 /// 全局热键不再由本类承载(已迁至 <see cref="HotkeyService"/> 自己的消息窗口)。
@@ -19,14 +19,10 @@ public sealed class TrayIcon : IDisposable
     public Action? OnOpen;
     /// <summary>菜单"引擎开关"被点:参数为期望的新状态(取反当前勾选)。</summary>
     public Action<bool>? OnToggleEngine;
-    /// <summary>菜单"专注模式"被点:宿主切回 UI 线程后 Toggle 幕布。</summary>
-    public Action? OnToggleCurtain;
     /// <summary>菜单"退出":还原窗口 + 真正退出。</summary>
     public Action? OnExit;
     /// <summary>引擎当前是否启用,菜单据此显示勾选态(宿主提供取值器)。</summary>
     public Func<bool>? EngineEnabledProvider;
-    /// <summary>专注模式当前是否开启,菜单据此显示勾选态(宿主提供取值器)。</summary>
-    public Func<bool>? CurtainOnProvider;
 
     private Thread? _thread;
     private IntPtr _hwnd;
@@ -45,8 +41,7 @@ public sealed class TrayIcon : IDisposable
     // 菜单项命令 id
     private const uint CmdOpen = 1;
     private const uint CmdToggle = 2;
-    private const uint CmdCurtain = 3;
-    private const uint CmdExit = 4;
+    private const uint CmdExit = 3;
 
     public TrayIcon() => _wndProc = WndProcImpl;
 
@@ -203,9 +198,6 @@ public sealed class TrayIcon : IDisposable
                         bool cur = EngineEnabledProvider?.Invoke() ?? true;
                         OnToggleEngine?.Invoke(!cur);
                         break;
-                    case CmdCurtain:
-                        OnToggleCurtain?.Invoke();
-                        break;
                     case CmdExit:
                         OnExit?.Invoke();
                         break;
@@ -253,10 +245,6 @@ public sealed class TrayIcon : IDisposable
             bool engineOn = EngineEnabledProvider?.Invoke() ?? true;
             uint toggleFlags = MF_STRING | (engineOn ? MF_CHECKED : MF_UNCHECKED);
             AppendMenu(menu, toggleFlags, CmdToggle, "引擎");
-
-            bool curtainOn = CurtainOnProvider?.Invoke() ?? false;
-            uint curtainFlags = MF_STRING | (curtainOn ? MF_CHECKED : MF_UNCHECKED);
-            AppendMenu(menu, curtainFlags, CmdCurtain, "专注模式");
 
             AppendMenu(menu, MF_SEPARATOR, 0, null);
             AppendMenu(menu, MF_STRING, CmdExit, "退出");

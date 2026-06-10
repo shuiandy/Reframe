@@ -14,7 +14,6 @@ namespace Reframe.Services;
 /// <para>动作表(Id → 默认手势 → 执行体):</para>
 /// <list type="bullet">
 /// <item><b>ToggleBorderless</b> = Ctrl+Alt+B:前台窗口 IsTracked ? Restore : Apply 去边框(从 TrayIcon 迁来)。</item>
-/// <item><b>ToggleCurtain</b> = Ctrl+Alt+D:经 UI 线程调 CurtainService.Toggle()。</item>
 /// <item><b>SendToZone1/2/3</b> = Ctrl+Alt+1/2/3:前台窗口 → Layouts[0] 第 N 个 zone 在"窗口当前所在屏"
 ///       工作区的矩形(zone 比例 × rcWork,同 DragSnap/PlacementResolver 数学)→ SetWindowPos 普通移动。</item>
 /// </list>
@@ -22,14 +21,12 @@ namespace Reframe.Services;
 /// <para>绑定来源 <see cref="AppConfig.Hotkeys"/>(缺项补默认);<see cref="ConfigService.Changed"/> 时防抖重注册;
 /// 注册失败(手势无效或被占用)记入 <see cref="GetStatuses"/> 可查的状态表。</para>
 ///
-/// <para>动作的执行体跑在热键线程(WM_HOTKEY 回调),只做线程无关的 Win32(取前台窗口、SetWindowPos);
-/// 需要碰 UI / 引擎托管状态的(开关幕布)经 <see cref="_ui"/> 切回 UI 线程。</para>
+/// <para>动作的执行体跑在热键线程(WM_HOTKEY 回调),只做线程无关的 Win32(取前台窗口、SetWindowPos)。</para>
 /// </summary>
 public sealed class HotkeyService : IDisposable
 {
     // ---- 动作 Id(与 Config.Hotkeys 字典键、SettingsPage 一致) ----
     public const string ActToggleBorderless = "ToggleBorderless";
-    public const string ActToggleCurtain = "ToggleCurtain";
     public const string ActSendToZone1 = "SendToZone1";
     public const string ActSendToZone2 = "SendToZone2";
     public const string ActSendToZone3 = "SendToZone3";
@@ -38,13 +35,11 @@ public sealed class HotkeyService : IDisposable
     public sealed record ActionInfo(string Id, string DisplayName, string DefaultGesture);
 
     // 默认手势经本机实测 RegisterHotKey 验证可注册(2026-06,见 hotkey.log/诊断):
-    //   旧 Ctrl+Alt+F 被系统/IME 占用(err 1409,会穿透到"在目录中查找"AD 对话框);
     //   旧 Win+Alt+1/2/3 被 Windows 任务栏跳转列表保留(恒 1409,且 Win+Ctrl/Shift+数字 同样被占)。
-    // 改为同一 Ctrl+Alt 家族(与可用的 Ctrl+Alt+B 同族):B / D / 1 / 2 / 3,全部实测注册成功。
+    // 改为同一 Ctrl+Alt 家族(与可用的 Ctrl+Alt+B 同族):B / 1 / 2 / 3,全部实测注册成功。
     private static readonly ActionInfo[] _actions =
     {
         new(ActToggleBorderless, "无边框开关(前台窗口)", "Ctrl+Alt+B"),
-        new(ActToggleCurtain,    "专注模式开关",          "Ctrl+Alt+D"),
         new(ActSendToZone1,      "送入分区 1",            "Ctrl+Alt+1"),
         new(ActSendToZone2,      "送入分区 2",            "Ctrl+Alt+2"),
         new(ActSendToZone3,      "送入分区 3",            "Ctrl+Alt+3"),
@@ -61,7 +56,6 @@ public sealed class HotkeyService : IDisposable
     public sealed record HotkeyStatus(string ActionId, string Gesture, bool Registered, string? Error);
 
     private Func<AppConfig>? _getConfig;
-    private DispatcherQueue? _ui;
 
     private Thread? _thread;
     private IntPtr _hwnd;
@@ -89,11 +83,11 @@ public sealed class HotkeyService : IDisposable
 
     public HotkeyService() => _wndProc = WndProcImpl;
 
-    /// <summary>启动:在 UI 线程调用(传入 UI DispatcherQueue 供切线程)。幂等。</summary>
+    /// <summary>启动:在 UI 线程调用。幂等。所有动作执行体均为线程无关的 Win32,无需切回 UI 线程。</summary>
     public void Start(DispatcherQueue ui, Func<AppConfig> getConfig)
     {
         if (_thread != null) return;
-        _ui = ui;
+        _ = ui; // 当前所有动作都在热键线程直接执行;保留参数以兼容调用方契约
         _getConfig = getConfig;
 
         _thread = new Thread(ThreadProc) { IsBackground = true, Name = "Reframe.Hotkey" };
@@ -309,7 +303,6 @@ public sealed class HotkeyService : IDisposable
     private Action BuildExecutor(string actionId) => actionId switch
     {
         ActToggleBorderless => ToggleForegroundBorderless,
-        ActToggleCurtain => () => _ui?.TryEnqueue(CurtainService.Toggle),
         ActSendToZone1 => () => SendForegroundToZone(0),
         ActSendToZone2 => () => SendForegroundToZone(1),
         ActSendToZone3 => () => SendForegroundToZone(2),

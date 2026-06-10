@@ -320,30 +320,6 @@ public class ConfigRoundTripTests
         Assert.Equal(@"D:\Games\Zenless Zone Zero\launcher.exe", back.Profiles[1].LaunchCommand);
     }
 
-    // ---- CurtainOpacity(M5:专注模式幕布) ----
-
-    [Fact(DisplayName = "AppConfig.CurtainOpacity 默认 0.7,以数值存盘并往返保真")]
-    public void CurtainOpacity_Default_RoundTrip()
-    {
-        var cfg = AppConfig.CreateDefault();
-        Assert.Equal(0.7, cfg.CurtainOpacity, 12);
-        var back = Deserialize(Serialize(cfg));
-        Assert.Equal(0.7, back.CurtainOpacity, 12);
-    }
-
-    [Theory(DisplayName = "AppConfig.CurtainOpacity 各取值往返保真(含端值 0 / 1)")]
-    [InlineData(0.0)]
-    [InlineData(0.35)]
-    [InlineData(0.85)]
-    [InlineData(1.0)]
-    public void CurtainOpacity_Values_RoundTrip(double opacity)
-    {
-        var cfg = AppConfig.CreateDefault();
-        cfg.CurtainOpacity = opacity;
-        var back = Deserialize(Serialize(cfg));
-        Assert.Equal(opacity, back.CurtainOpacity, 12);
-    }
-
     // ---- Hotkeys(M5:热键绑定字典) ----
 
     [Fact(DisplayName = "AppConfig.Hotkeys 默认空字典,往返仍为空且非 null")]
@@ -362,16 +338,14 @@ public class ConfigRoundTripTests
     {
         var cfg = AppConfig.CreateDefault();
         cfg.Hotkeys["ToggleBorderless"] = "Ctrl+Alt+B";
-        cfg.Hotkeys["ToggleCurtain"] = "Ctrl+Alt+F";
         cfg.Hotkeys["SendToZone1"] = "Win+Alt+1";
         cfg.Hotkeys["SendToZone2"] = "Win+Alt+2";
         cfg.Hotkeys["SendToZone3"] = "Win+Alt+3";
 
         var back = Deserialize(Serialize(cfg));
 
-        Assert.Equal(5, back.Hotkeys.Count);
+        Assert.Equal(4, back.Hotkeys.Count);
         Assert.Equal("Ctrl+Alt+B", back.Hotkeys["ToggleBorderless"]);
-        Assert.Equal("Ctrl+Alt+F", back.Hotkeys["ToggleCurtain"]);
         Assert.Equal("Win+Alt+1", back.Hotkeys["SendToZone1"]);
         Assert.Equal("Win+Alt+2", back.Hotkeys["SendToZone2"]);
         Assert.Equal("Win+Alt+3", back.Hotkeys["SendToZone3"]);
@@ -381,9 +355,9 @@ public class ConfigRoundTripTests
     public void Hotkeys_Rebind_RoundTrip()
     {
         var cfg = AppConfig.CreateDefault();
-        cfg.Hotkeys["ToggleCurtain"] = "Ctrl+Shift+D";
+        cfg.Hotkeys["ToggleBorderless"] = "Ctrl+Shift+B";
         var back = Deserialize(Serialize(cfg));
         Assert.Single(back.Hotkeys);
-        Assert.Equal("Ctrl+Shift+D", back.Hotkeys["ToggleCurtain"]);
+        Assert.Equal("Ctrl+Shift+B", back.Hotkeys["ToggleBorderless"]);
     }
 }

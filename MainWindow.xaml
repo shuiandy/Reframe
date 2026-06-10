@@ -6,40 +6,65 @@
     xmlns:muxc="using:Microsoft.UI.Xaml.Controls"
     Title="Reframe">
 
-    <muxc:NavigationView
-        x:Name="Nav"
-        IsBackButtonVisible="Collapsed"
-        IsSettingsVisible="False"
-        PaneDisplayMode="Left"
-        IsPaneToggleButtonVisible="True"
-        SelectionChanged="Nav_SelectionChanged">
+    <!-- 根 Grid:NavigationView 铺满整窗(汉堡按钮自然落在窗口最左上角),
+         自定义标题栏作为一条 48 高的覆盖条浮在顶部,左移让开汉堡按钮宽度。
+         ExtendsContentIntoTitleBar=true + SetTitleBar(AppTitleBar) 在代码后置里设。 -->
+    <Grid>
+        <muxc:NavigationView
+            x:Name="Nav"
+            IsBackButtonVisible="Collapsed"
+            IsSettingsVisible="False"
+            PaneDisplayMode="Left"
+            IsPaneToggleButtonVisible="True"
+            IsTitleBarAutoPaddingEnabled="False"
+            SelectionChanged="Nav_SelectionChanged">
 
-        <muxc:NavigationView.MenuItems>
-            <muxc:NavigationViewItem Content="仪表盘" Tag="dashboard">
-                <muxc:NavigationViewItem.Icon>
-                    <FontIcon Glyph="&#xE7F4;"/>
-                </muxc:NavigationViewItem.Icon>
-            </muxc:NavigationViewItem>
-            <muxc:NavigationViewItem Content="配置文件" Tag="profiles">
-                <muxc:NavigationViewItem.Icon>
-                    <FontIcon Glyph="&#xE7C1;"/>
-                </muxc:NavigationViewItem.Icon>
-            </muxc:NavigationViewItem>
-            <muxc:NavigationViewItem Content="布局" Tag="layouts">
-                <muxc:NavigationViewItem.Icon>
-                    <FontIcon Glyph="&#xE80A;"/>
-                </muxc:NavigationViewItem.Icon>
-            </muxc:NavigationViewItem>
-        </muxc:NavigationView.MenuItems>
+            <muxc:NavigationView.MenuItems>
+                <muxc:NavigationViewItem Content="仪表盘" Tag="dashboard">
+                    <muxc:NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE7F4;"/>
+                    </muxc:NavigationViewItem.Icon>
+                </muxc:NavigationViewItem>
+                <muxc:NavigationViewItem Content="配置文件" Tag="profiles">
+                    <muxc:NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE7C1;"/>
+                    </muxc:NavigationViewItem.Icon>
+                </muxc:NavigationViewItem>
+                <muxc:NavigationViewItem Content="布局" Tag="layouts">
+                    <muxc:NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE80A;"/>
+                    </muxc:NavigationViewItem.Icon>
+                </muxc:NavigationViewItem>
+            </muxc:NavigationView.MenuItems>
 
-        <muxc:NavigationView.FooterMenuItems>
-            <muxc:NavigationViewItem Content="设置" Tag="settings">
-                <muxc:NavigationViewItem.Icon>
-                    <FontIcon Glyph="&#xE713;"/>
-                </muxc:NavigationViewItem.Icon>
-            </muxc:NavigationViewItem>
-        </muxc:NavigationView.FooterMenuItems>
+            <muxc:NavigationView.FooterMenuItems>
+                <muxc:NavigationViewItem Content="设置" Tag="settings">
+                    <muxc:NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE713;"/>
+                    </muxc:NavigationViewItem.Icon>
+                </muxc:NavigationViewItem>
+            </muxc:NavigationView.FooterMenuItems>
 
-        <Frame x:Name="ContentFrame"/>
-    </muxc:NavigationView>
+            <Frame x:Name="ContentFrame"/>
+        </muxc:NavigationView>
+
+        <!-- 自定义标题栏:浮在最顶,左 48px 让开汉堡按钮。Background 透明 → 透出云母。
+             右侧系统按钮区(最小化/最大化/关闭)由系统自动保留,这条不延伸到那。
+             SetTitleBar 给这个 Grid:拖动 / 双击最大化由系统接管;图标与文本是非交互元素,不挡拖拽。 -->
+        <Grid x:Name="AppTitleBar"
+              Height="48"
+              VerticalAlignment="Top"
+              Margin="48,0,0,0"
+              Background="Transparent">
+            <StackPanel Orientation="Horizontal" Spacing="12"
+                        VerticalAlignment="Center"
+                        Margin="4,0,0,0">
+                <Image x:Name="TitleBarIcon" Width="16" Height="16"
+                       VerticalAlignment="Center"/>
+                <TextBlock x:Name="AppTitleText" Text="Reframe"
+                           Style="{ThemeResource CaptionTextBlockStyle}"
+                           VerticalAlignment="Center"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
 </Window>
