@@ -25,6 +25,7 @@
   <!-- 链接主工程纯逻辑源文件(非 ProjectReference)。LinkBase 让它们在 IDE 里归类清楚。 -->
   <ItemGroup>
     <Compile Include="..\Core\Models.cs" LinkBase="Linked" />
+    <Compile Include="..\Core\HotkeyGesture.cs" LinkBase="Linked" />
     <Compile Include="..\Core\PlacementResolver.cs" LinkBase="Linked" />
     <Compile Include="..\Core\UnityPreset.cs" LinkBase="Linked" />
     <Compile Include="..\Core\WindowScanner.cs" LinkBase="Linked" />

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
 using Reframe.Core;
 using Reframe.Interop;
@@ -97,6 +98,11 @@ public sealed partial class DashboardPage : Page
     // 故已有卡的图标不会因重建回到 null 占位而闪烁。ItemsSource 只在 OnLoaded 设一次。
     private readonly System.Collections.ObjectModel.ObservableCollection<TakenCard> _cards = new();
 
+    // 专注模式不透明度滑块防抖:松手 / 停止拖动后 400ms 才落盘(Save 会触发 Changed,幕布开着即自动刷新)。
+    private readonly DispatcherTimer _opacitySaveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
+    // 初始化期间(OnLoaded 设初值)抑制 ValueChanged 落盘,避免开页就写一次配置。
+    private bool _curtainUiInit;
+
     public DashboardPage()
     {
         InitializeComponent();
@@ -135,6 +141,16 @@ public sealed partial class DashboardPage : Page
         _timer.Tick += Timer_Tick;
         _timer.Start();
         RefreshLive();
+
+        // 专注模式控件初值:滑块绑当前配置,开关跟 CurtainService.IsOn。
+        // _curtainUiInit 抑制本次 ValueChanged 落盘(只读初值,不算用户操作)。
+        _curtainUiInit = true;
+        OpacitySlider.Value = ClampForSlider(cfg.CurtainOpacity);
+        UpdateOpacityText(OpacitySlider.Value);
+        CurtainToggle.IsChecked = CurtainService.IsOn;
+        _curtainUiInit = false;
+
+        _opacitySaveTimer.Tick += OpacitySaveTimer_Tick;
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
@@ -143,6 +159,9 @@ public sealed partial class DashboardPage : Page
         _timer.Tick -= Timer_Tick;
         if (_logHandler is not null) App.Engine.Log -= _logHandler;
         if (_changedHandler is not null) ConfigService.Instance.Changed -= _changedHandler;
+
+        _opacitySaveTimer.Stop();
+        _opacitySaveTimer.Tick -= OpacitySaveTimer_Tick;
     }
 
     /// <summary>
@@ -173,6 +192,19 @@ public sealed partial class DashboardPage : Page
         // EngineEnabled 可能被外部改动,保持开关一致(IsOn 未变则不触发 Toggled)。
         if (EngineToggle.IsOn != cfg.EngineEnabled)
             EngineToggle.IsOn = cfg.EngineEnabled;
+
+        // 不透明度可能被外部改动(SettingsPage/外部改 config.json):正在拖动滑块时不抢值,
+        // 否则同步滑块(_curtainUiInit 抑制由此引发的 ValueChanged 回写,杜绝反馈循环)。
+        double target = ClampForSlider(cfg.CurtainOpacity);
+        if (Math.Abs(OpacitySlider.Value - target) > 0.0005 && _opacitySaveTimer.IsEnabled == false)
+        {
+            _curtainUiInit = true;
+            OpacitySlider.Value = target;
+            UpdateOpacityText(target);
+            _curtainUiInit = false;
+        }
+
+        SyncCurtainToggle();
     }
 
     private void Timer_Tick(object? sender, object e) => RefreshLive();
@@ -245,6 +277,9 @@ public sealed partial class DashboardPage : Page
         }
 
         TakenEmpty.Visibility = _cards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        // 专注模式可能由托盘 / 热键在别处切换,保持本页开关视觉一致。
+        SyncCurtainToggle();
     }
 
     // 给一张新卡解析图标:先同步快取(命中即刻显示,不闪);未命中才后台预热 + 回填到该卡对象上。
@@ -351,6 +386,54 @@ public sealed partial class DashboardPage : Page
     private void Reapply_Click(object sender, RoutedEventArgs e)
     {
         App.Engine.Poke();
+    }
+
+    // ---- 专注模式幕布 ----
+
+    /// <summary>把开关视觉对齐到 CurtainService 真实状态(用 Click 而非 Toggled 改值不会再触发回调)。</summary>
+    private void SyncCurtainToggle()
+    {
+        bool on = CurtainService.IsOn;
+        if (CurtainToggle.IsChecked != on)
+            CurtainToggle.IsChecked = on;
+    }
+
+    private void CurtainToggle_Click(object sender, RoutedEventArgs e)
+    {
+        CurtainService.Toggle();
+        // Toggle 同步执行,IsOn 已更新;把开关对齐(若 Toggle 内部失败也不会卡在错误视觉上)。
+        SyncCurtainToggle();
+    }
+
+    private void OpacitySlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        UpdateOpacityText(e.NewValue);
+        if (_curtainUiInit) return; // 初始化 / 外部同步引发的赋值,不回写
+
+        // 防抖:拖动期间频繁触发,重置计时器,停 400ms 后才落盘一次。
+        _opacitySaveTimer.Stop();
+        _opacitySaveTimer.Start();
+    }
+
+    private void OpacitySaveTimer_Tick(object? sender, object e)
+    {
+        _opacitySaveTimer.Stop();
+        var svc = ConfigService.Instance;
+        double v = Math.Round(OpacitySlider.Value, 2);
+        if (Math.Abs(svc.Config.CurtainOpacity - v) < 0.0005) return; // 没变就不写
+        svc.Config.CurtainOpacity = v;
+        svc.Save(); // 触发 Changed:幕布开着时 CurtainService 自动刷新透明度
+    }
+
+    private void UpdateOpacityText(double v) => OpacityValueText.Text = ((int)Math.Round(v * 100)) + "%";
+
+    /// <summary>把配置里的不透明度夹进滑块范围(0.2~0.95),避免越界值被滑块静默截断后产生回写。</summary>
+    private static double ClampForSlider(double v)
+    {
+        if (double.IsNaN(v)) return 0.7;
+        if (v < 0.2) return 0.2;
+        if (v > 0.95) return 0.95;
+        return v;
     }
 
     private void EngineToggle_Toggled(object sender, RoutedEventArgs e)

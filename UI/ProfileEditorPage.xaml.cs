@@ -53,6 +53,7 @@ public sealed partial class ProfileEditorPage : Page
         MatchKind = src.MatchKind,
         MatchValue = src.MatchValue,
         ExePath = src.ExePath,
+        LaunchCommand = src.LaunchCommand,
         Borderless = src.Borderless,
         Method = src.Method,
         DelayMs = src.DelayMs,
@@ -112,6 +113,7 @@ public sealed partial class ProfileEditorPage : Page
         ApplyMatchPlaceholder();
         MatchValueBox.Text = p.MatchValue;
         ExePathBox.Text = p.ExePath ?? "";
+        LaunchCommandBox.Text = p.LaunchCommand ?? "";
 
         BorderlessToggle.IsOn = p.Borderless;
         DelayBox.Value = p.DelayMs;
@@ -216,6 +218,14 @@ public sealed partial class ProfileEditorPage : Page
         // 空串归一为 null(避免存盘出现空字符串与"未设置"两种态)。
         string v = ExePathBox.Text?.Trim() ?? "";
         _work.ExePath = string.IsNullOrEmpty(v) ? null : v;
+    }
+
+    private void LaunchCommandBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_loading || _work is null) return;
+        // 空串归一为 null(空表示"直接运行可执行文件",与未设置同义)。
+        string v = LaunchCommandBox.Text?.Trim() ?? "";
+        _work.LaunchCommand = string.IsNullOrEmpty(v) ? null : v;
     }
 
     // 浏览 .exe:WinUI3 桌面下 FileOpenPicker 必须 InitializeWithWindow 绑主窗口句柄(否则抛 COM 异常)。
@@ -722,6 +732,7 @@ public sealed partial class ProfileEditorPage : Page
             real.MatchKind = _work.MatchKind;
             real.MatchValue = _work.MatchValue;
             real.ExePath = _work.ExePath;
+            real.LaunchCommand = _work.LaunchCommand;
             real.Borderless = _work.Borderless;
             real.Method = _work.Method;
             real.DelayMs = _work.DelayMs;

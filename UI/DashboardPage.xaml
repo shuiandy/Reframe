@@ -11,6 +11,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
@@ -39,8 +40,43 @@
         <controls:LiveMonitorMap x:Name="MonitorMap" Grid.Row="2"
                                  HorizontalAlignment="Stretch" VerticalAlignment="Top"/>
 
+        <!-- 专注模式:遮暗游戏区以外区域(点击穿透)。开关跟随 CurtainService.IsOn;
+             不透明度滑块绑 Config.CurtainOpacity,松手防抖后 Save(开着的话幕布自动刷新)。 -->
+        <Border Grid.Row="3"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1" CornerRadius="6" Padding="16,12">
+            <Grid ColumnSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <ToggleButton Grid.Column="0" x:Name="CurtainToggle"
+                              Content="专注模式" MinWidth="96"
+                              VerticalAlignment="Center"
+                              Click="CurtainToggle_Click"/>
+
+                <TextBlock Grid.Column="1" Text="遮暗" Opacity="0.7"
+                           VerticalAlignment="Center"/>
+
+                <Slider Grid.Column="2" x:Name="OpacitySlider"
+                        Width="200" Minimum="0.2" Maximum="0.95"
+                        StepFrequency="0.01" SmallChange="0.01" LargeChange="0.05"
+                        VerticalAlignment="Center"
+                        ValueChanged="OpacitySlider_ValueChanged"/>
+
+                <TextBlock Grid.Column="4" x:Name="OpacityValueText"
+                           Opacity="0.7" MinWidth="44" TextAlignment="Right"
+                           VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+
         <!-- 下方左右两栏:左=接管中的窗口卡片,右=日志(收窄) -->
-        <Grid Grid.Row="3" ColumnSpacing="16">
+        <Grid Grid.Row="4" ColumnSpacing="16">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="3*"/>
                 <ColumnDefinition Width="2*"/>

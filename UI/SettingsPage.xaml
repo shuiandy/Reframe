@@ -75,6 +75,37 @@
                         Click="RestoreAllButton_Click"/>
             </StackPanel>
 
+            <!-- 热键 -->
+            <StackPanel Spacing="6">
+                <TextBlock Text="热键" FontWeight="SemiBold"/>
+                <TextBlock TextWrapping="Wrap" Opacity="0.7" FontSize="12"
+                           Text="全局热键。手势形如 Ctrl+Alt+F、Win+Alt+1(修饰符 Ctrl/Alt/Shift/Win + 字母/数字/F1-F12,大小写不限)。改完按「应用热键」生效。"/>
+                <!-- 每个动作一行:中文名 + 手势 TextBox,运行时按动作表填充 -->
+                <StackPanel x:Name="HotkeyRows" Spacing="8"/>
+                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <Button x:Name="ApplyHotkeysButton" Content="应用热键"
+                            Click="ApplyHotkeysButton_Click"/>
+                    <Button x:Name="ResetHotkeysButton" Content="恢复默认"
+                            Click="ResetHotkeysButton_Click"/>
+                </StackPanel>
+                <TextBlock x:Name="HotkeyStatusText" TextWrapping="Wrap" FontSize="12"
+                           Visibility="Collapsed"/>
+            </StackPanel>
+
+            <!-- 配置备份 -->
+            <StackPanel Spacing="6">
+                <TextBlock Text="配置备份" FontWeight="SemiBold"/>
+                <TextBlock Text="把当前配置导出为 config.json,或从文件导入(导入会校验并覆盖当前配置)。" Opacity="0.7" FontSize="12" TextWrapping="Wrap"/>
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button x:Name="ExportConfigButton" Content="导出配置…"
+                            Click="ExportConfigButton_Click"/>
+                    <Button x:Name="ImportConfigButton" Content="导入配置…"
+                            Click="ImportConfigButton_Click"/>
+                </StackPanel>
+                <TextBlock x:Name="BackupStatusText" TextWrapping="Wrap" FontSize="12"
+                           Visibility="Collapsed"/>
+            </StackPanel>
+
             <!-- 配置文件路径 -->
             <StackPanel Spacing="6">
                 <TextBlock Text="配置文件" FontWeight="SemiBold"/>

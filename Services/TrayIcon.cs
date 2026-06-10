@@ -7,10 +7,10 @@ namespace Reframe.Services;
 ///
 /// 设计:独占一个后台线程,建 message-only 窗口 + 注册窗口类 + GetMessage 消息泵。
 /// 托盘交互(左键/右键菜单)由该窗口的 WndProc 在本线程收到 WM_USER 回调;
-/// 真正要动 UI/引擎的动作(打开窗口、开关引擎、退出)通过委托回调出去,
+/// 真正要动 UI/引擎的动作(打开窗口、开关引擎、专注模式、退出)通过委托回调出去,
 /// 由宿主(App)切回 UI 线程执行。Dispose 时 PostMessage(WM_CLOSE) 让线程收尾。
 ///
-/// 顺带承载一个全局热键(可选):同一窗口收 WM_HOTKEY → 抛 HotkeyPressed。
+/// 全局热键不再由本类承载(已迁至 <see cref="HotkeyService"/> 自己的消息窗口)。
 /// </summary>
 public sealed class TrayIcon : IDisposable
 {
@@ -19,12 +19,14 @@ public sealed class TrayIcon : IDisposable
     public Action? OnOpen;
     /// <summary>菜单"引擎开关"被点:参数为期望的新状态(取反当前勾选)。</summary>
     public Action<bool>? OnToggleEngine;
+    /// <summary>菜单"专注模式"被点:宿主切回 UI 线程后 Toggle 幕布。</summary>
+    public Action? OnToggleCurtain;
     /// <summary>菜单"退出":还原窗口 + 真正退出。</summary>
     public Action? OnExit;
     /// <summary>引擎当前是否启用,菜单据此显示勾选态(宿主提供取值器)。</summary>
     public Func<bool>? EngineEnabledProvider;
-    /// <summary>全局热键被按下(若注册了)。</summary>
-    public Action? OnHotkey;
+    /// <summary>专注模式当前是否开启,菜单据此显示勾选态(宿主提供取值器)。</summary>
+    public Func<bool>? CurtainOnProvider;
 
     private Thread? _thread;
     private IntPtr _hwnd;
@@ -36,33 +38,23 @@ public sealed class TrayIcon : IDisposable
     private IntPtr _iconHandle;            // 自取的图标,需在移除托盘后销毁
     private bool _ownIcon;                 // _iconHandle 是否需要 DestroyIcon
 
-    // 可选热键参数(注册在窗口建好之后)。
-    private uint _hotkeyMods, _hotkeyVk;
-    private bool _wantHotkey;
-
     private const string WindowClassName = "Reframe.TrayHostWindow";
     private const uint TrayCallbackMsg = WM_USER + 1;  // 托盘事件回传消息
     private const uint TrayIconId = 1;
-    private const int HotkeyId = 0xB0B0;               // RegisterHotKey 的 id 形参是 int
 
     // 菜单项命令 id
     private const uint CmdOpen = 1;
     private const uint CmdToggle = 2;
-    private const uint CmdExit = 3;
+    private const uint CmdCurtain = 3;
+    private const uint CmdExit = 4;
 
     public TrayIcon() => _wndProc = WndProcImpl;
 
-    /// <summary>
-    /// 启动托盘。tooltip 显示在悬停提示;registerHotkey/mods/vk 给可选全局热键。
-    /// mods/vk 见本文件常量(MOD_*、VK_*)。
-    /// </summary>
-    public void Start(string tooltip = "Reframe", bool registerHotkey = false, uint hotkeyMods = 0, uint hotkeyVk = 0)
+    /// <summary>启动托盘。tooltip 显示在悬停提示。全局热键由 HotkeyService 独立承载,这里不再注册。</summary>
+    public void Start(string tooltip = "Reframe")
     {
         if (_thread != null) return;
         _tooltip = tooltip;
-        _wantHotkey = registerHotkey;
-        _hotkeyMods = hotkeyMods;
-        _hotkeyVk = hotkeyVk;
 
         _thread = new Thread(ThreadProc)
         {
@@ -85,11 +77,7 @@ public sealed class TrayIcon : IDisposable
             0, 0, 0, 0, HWND_MESSAGE, IntPtr.Zero, GetModuleHandle(null), IntPtr.Zero);
 
         if (_hwnd != IntPtr.Zero)
-        {
             AddNotifyIcon();
-            if (_wantHotkey && _hotkeyVk != 0)
-                RegisterHotKey(_hwnd, HotkeyId, _hotkeyMods, _hotkeyVk);
-        }
 
         _ready.Set();
 
@@ -215,6 +203,9 @@ public sealed class TrayIcon : IDisposable
                         bool cur = EngineEnabledProvider?.Invoke() ?? true;
                         OnToggleEngine?.Invoke(!cur);
                         break;
+                    case CmdCurtain:
+                        OnToggleCurtain?.Invoke();
+                        break;
                     case CmdExit:
                         OnExit?.Invoke();
                         break;
@@ -222,14 +213,9 @@ public sealed class TrayIcon : IDisposable
                 return IntPtr.Zero;
             }
 
-            case WM_HOTKEY:
-                OnHotkey?.Invoke();
-                return IntPtr.Zero;
-
             case WM_CLOSE:
-                // 收尾必须在本线程(创建图标/热键的线程)做。
+                // 收尾必须在本线程(创建图标的线程)做。
                 RemoveNotifyIcon();
-                if (_wantHotkey) UnregisterHotKey(hWnd, HotkeyId);
                 DestroyWindow(hWnd);
                 return IntPtr.Zero;
 
@@ -267,6 +253,10 @@ public sealed class TrayIcon : IDisposable
             bool engineOn = EngineEnabledProvider?.Invoke() ?? true;
             uint toggleFlags = MF_STRING | (engineOn ? MF_CHECKED : MF_UNCHECKED);
             AppendMenu(menu, toggleFlags, CmdToggle, "引擎");
+
+            bool curtainOn = CurtainOnProvider?.Invoke() ?? false;
+            uint curtainFlags = MF_STRING | (curtainOn ? MF_CHECKED : MF_UNCHECKED);
+            AppendMenu(menu, curtainFlags, CmdCurtain, "专注模式");
 
             AppendMenu(menu, MF_SEPARATOR, 0, null);
             AppendMenu(menu, MF_STRING, CmdExit, "退出");
@@ -308,7 +298,6 @@ public sealed class TrayIcon : IDisposable
     private const uint WM_DESTROY = 0x0002;
     private const uint WM_CLOSE = 0x0010;
     private const uint WM_COMMAND = 0x0111;
-    private const uint WM_HOTKEY = 0x0312;
     private const uint WM_CONTEXTMENU = 0x007B;
     private const uint WM_LBUTTONUP = 0x0202;
     private const uint WM_RBUTTONUP = 0x0205;
@@ -383,13 +372,6 @@ public sealed class TrayIcon : IDisposable
 
     private const uint TPM_RIGHTBUTTON = 0x0002;
     private const uint TPM_BOTTOMALIGN = 0x0020;
-
-    // 热键修饰符 / 常用虚拟键(供宿主指定)。
-    public const uint MOD_ALT = 0x0001;
-    public const uint MOD_CONTROL = 0x0002;
-    public const uint MOD_SHIFT = 0x0004;
-    public const uint MOD_NOREPEAT = 0x4000;
-    public const uint VK_B = 0x42;
 
     private static readonly IntPtr IDI_APPLICATION = new(32512);
 
@@ -470,10 +452,4 @@ public sealed class TrayIcon : IDisposable
 
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hWnd);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
-
-    [DllImport("user32.dll")]
-    private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 }

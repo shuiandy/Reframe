@@ -17,6 +17,9 @@ public sealed partial class ProfileRow : System.ComponentModel.INotifyPropertyCh
     public string RulesSummary { get; init; } = "";
     public bool Enabled { get; set; }
 
+    /// <summary>有启动命令或可执行文件才可一键启动(否则「启动」按钮禁用)。</summary>
+    public bool CanLaunch { get; init; }
+
     // MatchKind=Process 用 IconCache 取进程图标;其它匹配方式无进程可言 → 一律默认字形。
     // 图标异步回填(Reload 时先 null,Task.Run 提取后切回 UI 线程 set),故用通知属性。
     private ImageSource? _icon;
@@ -126,6 +129,7 @@ public sealed partial class ProfilesPage : Page
         Enabled = p.Enabled,
         MatchSummary = MatchSummaryOf(p),
         RulesSummary = $"{p.Rules.Count} 条规则",
+        CanLaunch = !string.IsNullOrWhiteSpace(p.LaunchCommand) || !string.IsNullOrWhiteSpace(p.ExePath),
         ProcessNameForIcon = p.MatchKind == MatchKind.Process && !string.IsNullOrWhiteSpace(p.MatchValue)
             ? p.MatchValue
             : null,
@@ -161,6 +165,26 @@ public sealed partial class ProfilesPage : Page
         _suppressReload = false;
     }
 
+    // 行内「启动」按钮:据 Tag(ProfileId)定位 Profile,调 GameLauncher.Launch。
+    // 失败(没配启动方式/文件不存在/已在运行/异常)用 ContentDialog 显示 error。
+    private async void LaunchButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn || btn.Tag is not string id) return;
+        var profile = ConfigService.Instance.Config.Profiles.FirstOrDefault(x => x.Id == id);
+        if (profile is null) return;
+
+        if (GameLauncher.Launch(profile, out var error)) return;
+
+        var dialog = new ContentDialog
+        {
+            Title = "无法启动",
+            Content = error ?? "启动失败。",
+            CloseButtonText = "知道了",
+            XamlRoot = XamlRoot,
+        };
+        await dialog.ShowAsync();
+    }
+
     private void ProfileList_SelectionChanged(object sender, SelectionChangedEventArgs e)
         => UpdateCommandState();
 
@@ -173,21 +197,21 @@ public sealed partial class ProfilesPage : Page
 
     private ProfileRow? SelectedRow => ProfileList.SelectedItem as ProfileRow;
 
-    // 双击 = 进入编辑器。点 ToggleSwitch 上的双击不应导航(开关有自己的行为)。
+    // 双击 = 进入编辑器。点开关/启动按钮上的双击不应导航(它们有自己的行为)。
     private void ProfileList_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
-        if (IsWithinToggle(e.OriginalSource as DependencyObject)) return;
+        if (IsWithinInteractiveControl(e.OriginalSource as DependencyObject)) return;
         var row = RowFromEventSource(e.OriginalSource as DependencyObject);
         if (row is not null)
             Frame.Navigate(typeof(ProfileEditorPage), row.ProfileId);
     }
 
-    // 右键 = 在 ContextFlyout 打开前选中该行,使编辑/删除落到正确项;在开关上右键不弹菜单。
+    // 右键 = 在 ContextFlyout 打开前选中该行,使编辑/删除落到正确项;在开关/按钮上右键不弹菜单。
     private void ProfileRow_ContextRequested(UIElement sender, ContextRequestedEventArgs e)
     {
-        if (IsWithinToggle(e.OriginalSource as DependencyObject))
+        if (IsWithinInteractiveControl(e.OriginalSource as DependencyObject))
         {
-            e.Handled = true; // 吞掉,避免在开关上误弹行菜单
+            e.Handled = true; // 吞掉,避免在开关/按钮上误弹行菜单
             return;
         }
         if ((sender as FrameworkElement)?.DataContext is ProfileRow row)
@@ -200,11 +224,12 @@ public sealed partial class ProfilesPage : Page
             Frame.Navigate(typeof(ProfileEditorPage), row.ProfileId);
     }
 
-    private static bool IsWithinToggle(DependencyObject? src)
+    // 行内交互控件(开关/按钮)上的双击/右键不应触发行级导航或菜单——它们各有行为。
+    private static bool IsWithinInteractiveControl(DependencyObject? src)
     {
         while (src is not null && src is not ListViewItem)
         {
-            if (src is ToggleSwitch) return true;
+            if (src is ToggleSwitch or Microsoft.UI.Xaml.Controls.Primitives.ButtonBase) return true;
             src = VisualTreeHelper.GetParent(src);
         }
         return false;

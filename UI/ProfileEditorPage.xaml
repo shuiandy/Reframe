@@ -53,6 +53,12 @@
                     </StackPanel>
                     <TextBlock Text="反作弊保护的游戏(绝区零/原神等)可能取不到图标,可在此手动指定 exe 作为图标来源。"
                                Opacity="0.6" Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"/>
+
+                    <!-- 启动命令(可选):一键启动用。空则直接运行可执行文件;可填启动器命令或 URI(如 hoyoplay://) -->
+                    <TextBox x:Name="LaunchCommandBox" Header="启动命令(可选)" Width="480"
+                             HorizontalAlignment="Left"
+                             PlaceholderText="留空则直接运行可执行文件;可填启动器命令或 URI"
+                             TextChanged="LaunchCommandBox_TextChanged"/>
                 </StackPanel>
 
                 <!-- 启动分辨率预设(Unity) -->

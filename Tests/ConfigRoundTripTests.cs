@@ -288,4 +288,102 @@ public class ConfigRoundTripTests
         Assert.True(back.Profiles[0].Rules[0].MoveOnly);
         Assert.False(back.Profiles[0].Rules[1].MoveOnly);
     }
+
+    // ---- LaunchCommand(M5:一键启动) ----
+
+    [Fact(DisplayName = "Profile.LaunchCommand 默认 null,且往返仍为 null")]
+    public void LaunchCommand_DefaultNull_RoundTrip()
+    {
+        var cfg = AppConfig.CreateDefault();
+        Assert.Null(cfg.Profiles[0].LaunchCommand);
+        var back = Deserialize(Serialize(cfg));
+        Assert.Null(back.Profiles[0].LaunchCommand);
+    }
+
+    [Fact(DisplayName = "Profile.LaunchCommand 设值后往返保真(启动器 URI)")]
+    public void LaunchCommand_Uri_RoundTrip()
+    {
+        var cfg = AppConfig.CreateDefault();
+        cfg.Profiles[2].LaunchCommand = "hoyoplay://launchgame?gameId=1";
+        var back = Deserialize(Serialize(cfg));
+        Assert.Equal("hoyoplay://launchgame?gameId=1", back.Profiles[2].LaunchCommand);
+        // 其它未设的仍为 null
+        Assert.Null(back.Profiles[0].LaunchCommand);
+    }
+
+    [Fact(DisplayName = "Profile.LaunchCommand 设值后往返保真(含空格与反斜杠的本地路径)")]
+    public void LaunchCommand_LocalPath_RoundTrip()
+    {
+        var cfg = AppConfig.CreateDefault();
+        cfg.Profiles[1].LaunchCommand = @"D:\Games\Zenless Zone Zero\launcher.exe";
+        var back = Deserialize(Serialize(cfg));
+        Assert.Equal(@"D:\Games\Zenless Zone Zero\launcher.exe", back.Profiles[1].LaunchCommand);
+    }
+
+    // ---- CurtainOpacity(M5:专注模式幕布) ----
+
+    [Fact(DisplayName = "AppConfig.CurtainOpacity 默认 0.7,以数值存盘并往返保真")]
+    public void CurtainOpacity_Default_RoundTrip()
+    {
+        var cfg = AppConfig.CreateDefault();
+        Assert.Equal(0.7, cfg.CurtainOpacity, 12);
+        var back = Deserialize(Serialize(cfg));
+        Assert.Equal(0.7, back.CurtainOpacity, 12);
+    }
+
+    [Theory(DisplayName = "AppConfig.CurtainOpacity 各取值往返保真(含端值 0 / 1)")]
+    [InlineData(0.0)]
+    [InlineData(0.35)]
+    [InlineData(0.85)]
+    [InlineData(1.0)]
+    public void CurtainOpacity_Values_RoundTrip(double opacity)
+    {
+        var cfg = AppConfig.CreateDefault();
+        cfg.CurtainOpacity = opacity;
+        var back = Deserialize(Serialize(cfg));
+        Assert.Equal(opacity, back.CurtainOpacity, 12);
+    }
+
+    // ---- Hotkeys(M5:热键绑定字典) ----
+
+    [Fact(DisplayName = "AppConfig.Hotkeys 默认空字典,往返仍为空且非 null")]
+    public void Hotkeys_DefaultEmpty_RoundTrip()
+    {
+        var cfg = AppConfig.CreateDefault();
+        Assert.NotNull(cfg.Hotkeys);
+        Assert.Empty(cfg.Hotkeys);
+        var back = Deserialize(Serialize(cfg));
+        Assert.NotNull(back.Hotkeys);
+        Assert.Empty(back.Hotkeys);
+    }
+
+    [Fact(DisplayName = "AppConfig.Hotkeys 多条绑定往返保真(键值对全保留)")]
+    public void Hotkeys_Entries_RoundTrip()
+    {
+        var cfg = AppConfig.CreateDefault();
+        cfg.Hotkeys["ToggleBorderless"] = "Ctrl+Alt+B";
+        cfg.Hotkeys["ToggleCurtain"] = "Ctrl+Alt+F";
+        cfg.Hotkeys["SendToZone1"] = "Win+Alt+1";
+        cfg.Hotkeys["SendToZone2"] = "Win+Alt+2";
+        cfg.Hotkeys["SendToZone3"] = "Win+Alt+3";
+
+        var back = Deserialize(Serialize(cfg));
+
+        Assert.Equal(5, back.Hotkeys.Count);
+        Assert.Equal("Ctrl+Alt+B", back.Hotkeys["ToggleBorderless"]);
+        Assert.Equal("Ctrl+Alt+F", back.Hotkeys["ToggleCurtain"]);
+        Assert.Equal("Win+Alt+1", back.Hotkeys["SendToZone1"]);
+        Assert.Equal("Win+Alt+2", back.Hotkeys["SendToZone2"]);
+        Assert.Equal("Win+Alt+3", back.Hotkeys["SendToZone3"]);
+    }
+
+    [Fact(DisplayName = "AppConfig.Hotkeys 单条改绑往返保真(覆盖默认手势)")]
+    public void Hotkeys_Rebind_RoundTrip()
+    {
+        var cfg = AppConfig.CreateDefault();
+        cfg.Hotkeys["ToggleCurtain"] = "Ctrl+Shift+D";
+        var back = Deserialize(Serialize(cfg));
+        Assert.Single(back.Hotkeys);
+        Assert.Equal("Ctrl+Shift+D", back.Hotkeys["ToggleCurtain"]);
+    }
 }

@@ -145,6 +145,9 @@ public sealed class Profile
     /// 注册表写成目标分辨率,使游戏按目标分辨率渲染,再配合 MoveOnly 规则只定位不缩放。
     /// </summary>
     public UnityResolutionPreset? ResolutionPreset { get; set; }
+
+    /// <summary>启动命令(可空)。空则用 ExePath;支持启动器 URI(如 hoyoplay://)或任意可执行路径。</summary>
+    public string? LaunchCommand { get; set; }
 }
 
 public sealed class AppConfig
@@ -164,6 +167,15 @@ public sealed class AppConfig
     /// 免费申请:https://www.steamgriddb.com/profile/preferences/api 。空 = 该功能静默关闭。
     /// </summary>
     public string? SteamGridDbApiKey { get; set; }
+
+    /// <summary>专注模式幕布不透明度(0~1,遮暗游戏区以外区域)。</summary>
+    public double CurtainOpacity { get; set; } = 0.7;
+
+    /// <summary>
+    /// 热键绑定:动作 Id → 手势字符串(如 "Ctrl+Alt+F")。缺省项由 HotkeyService 用默认值补。
+    /// 动作 Id:ToggleBorderless / ToggleCurtain / SendToZone1 / SendToZone2 / SendToZone3
+    /// </summary>
+    public Dictionary<string, string> Hotkeys { get; set; } = new();
 
     public List<Layout> Layouts { get; set; } = new();
     public List<Profile> Profiles { get; set; } = new();

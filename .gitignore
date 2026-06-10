@@ -6,3 +6,5 @@ verify/
 build_check/
 build_check*.xbf
 build_checkUI/
+dist/
+publish_out/

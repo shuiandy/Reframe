@@ -16,6 +16,10 @@
     <WindowsPackageType>None</WindowsPackageType>
     <EnableMsixTooling>true</EnableMsixTooling>
     <AssemblyName>Reframe</AssemblyName>
+    <!-- 版本(publish.ps1 从 <Version> 读取并写入 zip 名) -->
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0.0</FileVersion>
+    <InformationalVersion>1.0.0</InformationalVersion>
     <!-- 窗口/任务栏/exe 图标(unpackaged:同时复制到输出供运行时 SetIcon/托盘加载) -->
     <ApplicationIcon>Assets\reframe.ico</ApplicationIcon>
   </PropertyGroup>

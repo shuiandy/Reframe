@@ -15,8 +15,12 @@ public partial class App : Application
     /// <summary>主窗口(OnLaunched 后非空)。页面如需直接触发可用;材质等主路径走 ConfigService.Changed。</summary>
     public static MainWindow? Main { get; private set; }
 
+    /// <summary>全局热键服务(OnLaunched 后非空)。设置页据此查"应用后"的注册状态。</summary>
+    public static HotkeyService? Hotkeys { get; private set; }
+
     private MainWindow? _window;
     private TrayIcon? _tray;
+    private HotkeyService? _hotkeys;
     private DispatcherQueue? _ui;
     private bool _exiting;
 
@@ -50,20 +54,22 @@ public partial class App : Application
 
         _window.Activate();
 
-        // 托盘常驻。回调都切回 UI 线程执行。Ctrl+Alt+B 全局热键:前台窗口去框/还原(toggle)。
+        // 全局热键统管(自带消息窗口线程):去框/还原、专注模式、送窗口入分区。配置变化自动重注册。
+        _hotkeys = new HotkeyService();
+        Hotkeys = _hotkeys;
+        _hotkeys.Start(_ui!, () => ConfigService.Instance.Config);
+
+        // 托盘常驻。回调都切回 UI 线程执行。专注模式勾选态跟 CurtainService.IsOn。
         _tray = new TrayIcon
         {
             OnOpen = () => _ui!.TryEnqueue(ShowMainWindow),
             OnToggleEngine = on => _ui!.TryEnqueue(() => SetEngineEnabled(on)),
+            OnToggleCurtain = () => _ui!.TryEnqueue(CurtainService.Toggle),
             OnExit = () => _ui!.TryEnqueue(ExitApp),
             EngineEnabledProvider = () => ConfigService.Instance.Config.EngineEnabled,
-            OnHotkey = () => _ui!.TryEnqueue(ToggleForegroundBorderless),
+            CurtainOnProvider = () => CurtainService.IsOn,
         };
-        _tray.Start(
-            tooltip: "Reframe",
-            registerHotkey: true,
-            hotkeyMods: TrayIcon.MOD_CONTROL | TrayIcon.MOD_ALT | TrayIcon.MOD_NOREPEAT,
-            hotkeyVk: TrayIcon.VK_B);
+        _tray.Start(tooltip: "Reframe");
     }
 
     private void OnAppWindowClosing(Microsoft.UI.Windowing.AppWindow sender,
@@ -99,26 +105,11 @@ public partial class App : Application
         _exiting = true;
 
         try { DragSnapService.Stop(); } catch { /* 先停吸附钩子,再拆引擎 */ }
+        try { _hotkeys?.Stop(); } catch { /* 注销全部热键 */ }
+        try { CurtainService.Off(); } catch { /* 幕布幂等关闭 */ }
         try { Engine?.Stop(restoreWindows: true); } catch { /* 尽力还原 */ }
         try { _tray?.Dispose(); } catch { /* ignore */ }   // 在 UI 线程 Dispose,不会自 join 托盘线程
 
         Exit(); // Application.Exit
-    }
-
-    /// <summary>全局热键:对当前前台窗口切换无边框(已接管→还原,未接管→去框)。</summary>
-    private void ToggleForegroundBorderless()
-    {
-        IntPtr h = WindowActivation.GetForeground();
-        if (h == IntPtr.Zero) return;
-        if (WindowOps.IsTracked(h))
-        {
-            WindowOps.Restore(h);
-        }
-        else
-        {
-            // 只去边框、不动几何、不置顶;快照由 Apply 内部自动留存。
-            var target = new PlacementResolver.Target(MakeBorderless: true, Rect: null, Topmost: false);
-            WindowOps.Apply(h, in target);
-        }
     }
 }
