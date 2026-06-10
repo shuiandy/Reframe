@@ -106,4 +106,60 @@ public static class NativeMethods
 
     [DllImport("user32.dll")]
     public static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr clip, MonitorEnumProc proc, IntPtr data);
+
+    public const uint MONITORINFOF_PRIMARY = 0x00000001;
+
+    [DllImport("user32.dll")]
+    public static extern bool IsWindow(IntPtr hWnd); // 句柄是否仍指向有效窗口
+
+    // ---- WinEvent 钩子(事件驱动检测) ----
+    public delegate void WinEventProc(IntPtr hWinEventHook, uint eventType, IntPtr hwnd,
+        int idObject, int idChild, uint idEventThread, uint dwmsEventTime);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr hmodWinEventProc,
+        WinEventProc lpfnWinEventProc, uint idProcess, uint idThread, uint dwFlags);
+
+    [DllImport("user32.dll")]
+    public static extern bool UnhookWinEvent(IntPtr hWinEventHook);
+
+    public const uint WINEVENT_OUTOFCONTEXT = 0x0000;   // 回调跑在本进程,不注入目标
+    public const uint WINEVENT_SKIPOWNPROCESS = 0x0002; // 不上报自身进程的事件
+
+    public const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
+    public const uint EVENT_OBJECT_SHOW = 0x8002;
+    public const uint EVENT_OBJECT_LOCATIONCHANGE = 0x800B;
+    public const uint EVENT_OBJECT_NAMECHANGE = 0x800C;
+
+    public const int OBJID_WINDOW = 0; // 只关心窗口本身,不要子对象/光标等
+
+    // ---- 钩子线程的消息泵 ----
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MSG
+    {
+        public IntPtr hwnd;
+        public uint message;
+        public IntPtr wParam;
+        public IntPtr lParam;
+        public uint time;
+        public int ptX;
+        public int ptY;
+    }
+
+    [DllImport("user32.dll")]
+    public static extern int GetMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+
+    [DllImport("user32.dll")]
+    public static extern bool TranslateMessage(in MSG lpMsg);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr DispatchMessage(in MSG lpMsg);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool PostThreadMessage(uint idThread, uint Msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll")]
+    public static extern uint GetCurrentThreadId();
+
+    public const uint WM_QUIT = 0x0012;
 }

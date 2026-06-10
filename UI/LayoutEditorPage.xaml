@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Reframe.UI.LayoutEditorPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <Grid Margin="20,12,20,12" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- 标题行 -->
+        <TextBlock Grid.Row="0" Text="编辑布局" Style="{ThemeResource TitleTextBlockStyle}"/>
+
+        <!-- 工具栏 -->
+        <StackPanel Grid.Row="1" Orientation="Vertical" Spacing="8">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <StackPanel Orientation="Vertical" Spacing="2">
+                    <TextBlock Text="名称" Style="{ThemeResource CaptionTextBlockStyle}"/>
+                    <TextBox x:Name="NameBox" Width="220" TextChanged="NameBox_TextChanged"/>
+                </StackPanel>
+                <StackPanel Orientation="Vertical" Spacing="2">
+                    <TextBlock Text="参考分辨率" Style="{ThemeResource CaptionTextBlockStyle}"/>
+                    <ComboBox x:Name="MonitorCombo" Width="240"
+                              PlaceholderText="选择显示器或手输"
+                              SelectionChanged="MonitorCombo_SelectionChanged"/>
+                </StackPanel>
+                <StackPanel Orientation="Vertical" Spacing="2">
+                    <TextBlock Text="宽" Style="{ThemeResource CaptionTextBlockStyle}"/>
+                    <NumberBox x:Name="RefWidthBox" Width="110"
+                               SpinButtonPlacementMode="Compact" Minimum="1" Maximum="61440"
+                               ValueChanged="RefSize_ValueChanged"/>
+                </StackPanel>
+                <StackPanel Orientation="Vertical" Spacing="2">
+                    <TextBlock Text="高" Style="{ThemeResource CaptionTextBlockStyle}"/>
+                    <NumberBox x:Name="RefHeightBox" Width="110"
+                               SpinButtonPlacementMode="Compact" Minimum="1" Maximum="34560"
+                               ValueChanged="RefSize_ValueChanged"/>
+                </StackPanel>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="预设模板:" VerticalAlignment="Center"
+                           Style="{ThemeResource CaptionTextBlockStyle}"/>
+                <Button Content="左右二等分" Tag="half" Click="Preset_Click"/>
+                <Button Content="三等分" Tag="thirds" Click="Preset_Click"/>
+                <Button Content="左⅔+右⅓" Tag="twoThirds" Click="Preset_Click"/>
+                <Button Content="16:9 居中" Tag="center169" Click="Preset_Click"/>
+                <Button Content="21:9 居左" Tag="left219" Click="Preset_Click"/>
+                <AppBarSeparator/>
+                <Button Content="添加分区" Click="AddZone_Click">
+                    <ToolTipService.ToolTip>
+                        <TextBlock Text="在画布中央添加一个新分区"/>
+                    </ToolTipService.ToolTip>
+                </Button>
+            </StackPanel>
+        </StackPanel>
+
+        <!-- 主体:左画布 + 右属性面板 -->
+        <Grid Grid.Row="2" ColumnSpacing="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0"
+                    Background="{ThemeResource LayerFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Padding="16">
+                <Viewbox StretchDirection="DownOnly" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <!-- 画布:背景框 + zone 层 + 对齐参考线层 -->
+                    <Border x:Name="CanvasFrame"
+                            Background="#101418"
+                            BorderBrush="#3A4048"
+                            BorderThickness="1">
+                        <Canvas x:Name="ZoneCanvas">
+                            <Canvas x:Name="GuideCanvas" IsHitTestVisible="False"/>
+                        </Canvas>
+                    </Border>
+                </Viewbox>
+            </Border>
+
+            <!-- 属性面板 -->
+            <Border Grid.Column="1" Width="280"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Padding="16">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="分区属性" Style="{ThemeResource BodyStrongTextBlockStyle}"/>
+
+                    <StackPanel x:Name="PropPanel" Spacing="10" Visibility="Collapsed">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="名称" Style="{ThemeResource CaptionTextBlockStyle}"/>
+                            <TextBox x:Name="ZoneNameBox" TextChanged="ZoneNameBox_TextChanged"/>
+                        </StackPanel>
+                        <Grid ColumnSpacing="8" RowSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <StackPanel Grid.Row="0" Grid.Column="0" Spacing="2">
+                                <TextBlock Text="X (px)" Style="{ThemeResource CaptionTextBlockStyle}"/>
+                                <NumberBox x:Name="ZoneXBox" Minimum="0" ValueChanged="ZonePx_ValueChanged"/>
+                            </StackPanel>
+                            <StackPanel Grid.Row="0" Grid.Column="1" Spacing="2">
+                                <TextBlock Text="Y (px)" Style="{ThemeResource CaptionTextBlockStyle}"/>
+                                <NumberBox x:Name="ZoneYBox" Minimum="0" ValueChanged="ZonePx_ValueChanged"/>
+                            </StackPanel>
+                            <StackPanel Grid.Row="1" Grid.Column="0" Spacing="2">
+                                <TextBlock Text="宽 (px)" Style="{ThemeResource CaptionTextBlockStyle}"/>
+                                <NumberBox x:Name="ZoneWBox" Minimum="1" ValueChanged="ZonePx_ValueChanged"/>
+                            </StackPanel>
+                            <StackPanel Grid.Row="1" Grid.Column="1" Spacing="2">
+                                <TextBlock Text="高 (px)" Style="{ThemeResource CaptionTextBlockStyle}"/>
+                                <NumberBox x:Name="ZoneHBox" Minimum="1" ValueChanged="ZonePx_ValueChanged"/>
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock x:Name="ZoneRatioText"
+                                   Style="{ThemeResource CaptionTextBlockStyle}"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        <Button Content="删除此分区" Click="DeleteZone_Click">
+                            <Button.Resources>
+                                <ResourceDictionary>
+                                    <SolidColorBrush x:Key="ButtonForeground" Color="#E04848"/>
+                                </ResourceDictionary>
+                            </Button.Resources>
+                        </Button>
+                    </StackPanel>
+
+                    <TextBlock x:Name="NoSelHint"
+                               Text="在画布中点选一个分区以编辑其属性。"
+                               TextWrapping="Wrap"
+                               Style="{ThemeResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- 底部按钮 -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+            <Button Content="取消" Click="Cancel_Click"/>
+            <Button Content="保存" Style="{ThemeResource AccentButtonStyle}" Click="Save_Click"/>
+        </StackPanel>
+    </Grid>
+</Page>

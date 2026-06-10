@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Reframe.UI.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ScrollViewer>
+        <StackPanel Padding="24" Spacing="20" MaxWidth="720" HorizontalAlignment="Left">
+            <TextBlock Text="设置" FontSize="28" FontWeight="SemiBold"/>
+
+            <!-- 轮询间隔 -->
+            <StackPanel Spacing="6">
+                <TextBlock Text="轮询间隔" FontWeight="SemiBold"/>
+                <TextBlock Text="引擎兜底扫描的周期(毫秒),越小越灵敏但越费 CPU。" Opacity="0.7" FontSize="12"/>
+                <NumberBox x:Name="PollBox"
+                           Minimum="300" Maximum="60000"
+                           SmallChange="100" LargeChange="500"
+                           SpinButtonPlacementMode="Inline"
+                           ValueChanged="PollBox_ValueChanged"
+                           Width="200" HorizontalAlignment="Left"/>
+            </StackPanel>
+
+            <!-- 开机自启 -->
+            <StackPanel Spacing="6">
+                <TextBlock Text="开机自启" FontWeight="SemiBold"/>
+                <TextBlock Text="以管理员权限随登录启动(计划任务,免 UAC 弹窗)。" Opacity="0.7" FontSize="12"/>
+                <ToggleSwitch x:Name="StartupToggle"
+                              OnContent="已开启" OffContent="已关闭"
+                              Toggled="StartupToggle_Toggled"/>
+            </StackPanel>
+
+            <!-- 还原全部 -->
+            <StackPanel Spacing="6">
+                <TextBlock Text="窗口接管" FontWeight="SemiBold"/>
+                <TextBlock Text="把所有被 Reframe 改过的窗口还原为接管前的样式与位置。" Opacity="0.7" FontSize="12"/>
+                <Button x:Name="RestoreAllButton" Content="还原全部已接管窗口"
+                        Click="RestoreAllButton_Click"/>
+            </StackPanel>
+
+            <!-- 配置文件路径 -->
+            <StackPanel Spacing="6">
+                <TextBlock Text="配置文件" FontWeight="SemiBold"/>
+                <TextBlock x:Name="ConfigPathText" Opacity="0.7" FontSize="12"
+                           IsTextSelectionEnabled="True" TextWrapping="Wrap"/>
+                <Button x:Name="OpenFolderButton" Content="打开所在文件夹"
+                        Click="OpenFolderButton_Click"/>
+            </StackPanel>
+
+            <!-- 关于 -->
+            <StackPanel Spacing="6">
+                <TextBlock Text="关于" FontWeight="SemiBold"/>
+                <TextBlock x:Name="VersionText" Opacity="0.7" FontSize="12"/>
+                <TextBlock Text="Reframe — 自用窗口管理器:无边框化 + 按显示器自适应布局。" Opacity="0.7" FontSize="12" TextWrapping="Wrap"/>
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

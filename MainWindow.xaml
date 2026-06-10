@@ -3,26 +3,43 @@
     x:Class="Reframe.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:muxc="using:Microsoft.UI.Xaml.Controls"
     Title="Reframe">
 
-    <Grid Padding="24" RowSpacing="16">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-        </Grid.RowDefinitions>
+    <muxc:NavigationView
+        x:Name="Nav"
+        IsBackButtonVisible="Collapsed"
+        IsSettingsVisible="False"
+        PaneDisplayMode="Left"
+        IsPaneToggleButtonVisible="True"
+        SelectionChanged="Nav_SelectionChanged">
 
-        <!-- M1 临时仪表盘:引擎开关 + 配置概览。M2 换成 NavigationView 完整 UI -->
-        <StackPanel Orientation="Horizontal" Spacing="16">
-            <TextBlock Text="Reframe" FontSize="28" FontWeight="SemiBold" VerticalAlignment="Center"/>
-            <ToggleSwitch x:Name="EngineToggle" Header="引擎"
-                          OnContent="运行中" OffContent="已停止"
-                          Toggled="EngineToggle_Toggled"/>
-        </StackPanel>
+        <muxc:NavigationView.MenuItems>
+            <muxc:NavigationViewItem Content="仪表盘" Tag="dashboard">
+                <muxc:NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE7F4;"/>
+                </muxc:NavigationViewItem.Icon>
+            </muxc:NavigationViewItem>
+            <muxc:NavigationViewItem Content="配置文件" Tag="profiles">
+                <muxc:NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE7C1;"/>
+                </muxc:NavigationViewItem.Icon>
+            </muxc:NavigationViewItem>
+            <muxc:NavigationViewItem Content="布局" Tag="layouts">
+                <muxc:NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE80A;"/>
+                </muxc:NavigationViewItem.Icon>
+            </muxc:NavigationViewItem>
+        </muxc:NavigationView.MenuItems>
 
-        <TextBlock x:Name="SummaryText" Grid.Row="1" Opacity="0.7"/>
+        <muxc:NavigationView.FooterMenuItems>
+            <muxc:NavigationViewItem Content="设置" Tag="settings">
+                <muxc:NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE713;"/>
+                </muxc:NavigationViewItem.Icon>
+            </muxc:NavigationViewItem>
+        </muxc:NavigationView.FooterMenuItems>
 
-        <ListView x:Name="LogList" Grid.Row="2"
-                  SelectionMode="None" IsItemClickEnabled="False"/>
-    </Grid>
+        <Frame x:Name="ContentFrame"/>
+    </muxc:NavigationView>
 </Window>
