@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="Reframe.UI.SnapOverlayWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- 全透明根:本窗"点击穿透",仅做视觉。各 zone 由代码动态填进 Canvas。 -->
+    <Grid Background="Transparent">
+        <Canvas x:Name="ZoneCanvas"/>
+    </Grid>
+</Window>

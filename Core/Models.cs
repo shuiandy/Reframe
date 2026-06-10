@@ -144,6 +144,9 @@ public sealed class AppConfig
     public int PollIntervalMs { get; set; } = 1500;
     public bool EngineEnabled { get; set; } = true;
 
+    /// <summary>按住修饰键(Shift)拖窗口时,显示分区覆盖层并在松手时吸附到分区(FancyZones 式)。</summary>
+    public bool DragSnapEnabled { get; set; } = true;
+
     public List<Layout> Layouts { get; set; } = new();
     public List<Profile> Profiles { get; set; } = new();
 

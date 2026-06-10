@@ -25,6 +25,7 @@ public sealed partial class SettingsPage : Page
         {
             var cfg = ConfigService.Instance.Config;
             PollBox.Value = cfg.PollIntervalMs;
+            DragSnapToggle.IsOn = cfg.DragSnapEnabled;
             StartupToggle.IsOn = StartupTaskService.IsEnabled();
             ConfigPathText.Text = ConfigStore.Path_;
 
@@ -43,6 +44,17 @@ public sealed partial class SettingsPage : Page
         int v = (int)Math.Round(args.NewValue);
         if (svc.Config.PollIntervalMs == v) return;
         svc.Config.PollIntervalMs = v;
+        svc.Save();
+    }
+
+    private void DragSnapToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+
+        var svc = ConfigService.Instance;
+        bool on = DragSnapToggle.IsOn;
+        if (svc.Config.DragSnapEnabled == on) return;
+        svc.Config.DragSnapEnabled = on;
         svc.Save();
     }
 

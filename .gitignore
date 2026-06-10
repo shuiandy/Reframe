@@ -4,3 +4,5 @@ obj/
 .vs/
 verify/
 build_check/
+build_check*.xbf
+build_checkUI/

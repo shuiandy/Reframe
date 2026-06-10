@@ -8,6 +8,14 @@
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
+
+            <!-- 让 NavigationView 内容区透出云母(默认是不透明 acrylic 层,会遮死 Mica)。
+                 透明刷对 light/dark 通用;页面内容因此直接坐在云母上(Win11 原生观感)。 -->
+            <SolidColorBrush x:Key="NavigationViewContentBackground" Color="Transparent" />
+            <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="Transparent" />
+            <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="Transparent" />
+            <!-- 内容区与 Pane 之间的分隔边框,透明背景下默认描边显脏,去掉 -->
+            <Thickness x:Key="NavigationViewContentGridBorderThickness">0</Thickness>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

@@ -29,6 +29,15 @@
                               Toggled="StartupToggle_Toggled"/>
             </StackPanel>
 
+            <!-- 拖拽吸附 -->
+            <StackPanel Spacing="6">
+                <TextBlock Text="拖拽吸附" FontWeight="SemiBold"/>
+                <TextBlock Text="按住 Shift 拖动任意窗口时显示分区覆盖层,松手把窗口吸进所在分区。" Opacity="0.7" FontSize="12"/>
+                <ToggleSwitch x:Name="DragSnapToggle"
+                              OnContent="已开启" OffContent="已关闭"
+                              Toggled="DragSnapToggle_Toggled"/>
+            </StackPanel>
+
             <!-- 还原全部 -->
             <StackPanel Spacing="6">
                 <TextBlock Text="窗口接管" FontWeight="SemiBold"/>

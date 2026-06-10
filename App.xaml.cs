@@ -32,6 +32,9 @@ public partial class App : Application
         Engine = new Watcher(() => ConfigService.Instance.Config);
         Engine.Start();
 
+        // 拖拽吸附:按住修饰键拖窗口 → 分区覆盖层 → 松手入位。内部自管线程/钩子。
+        DragSnapService.Start(() => ConfigService.Instance.Config);
+
         // 配置变化(UI 保存 / 外部改 config.json)→ 立刻重写 Unity 分辨率预设(游戏多半未运行,写了即生效)。
         ConfigService.Instance.Changed += () => Engine?.OnConfigChanged();
 
@@ -91,6 +94,7 @@ public partial class App : Application
         if (_exiting) return;
         _exiting = true;
 
+        try { DragSnapService.Stop(); } catch { /* 先停吸附钩子,再拆引擎 */ }
         try { Engine?.Stop(restoreWindows: true); } catch { /* 尽力还原 */ }
         try { _tray?.Dispose(); } catch { /* ignore */ }   // 在 UI 线程 Dispose,不会自 join 托盘线程
 

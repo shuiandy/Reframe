@@ -128,9 +128,30 @@ public sealed class TrayIcon : IDisposable
         Shell_NotifyIcon(NIM_ADD, ref data);
     }
 
-    /// <summary>取 Reframe.exe 第 0 个图标;失败用系统应用图标兜底。</summary>
+    /// <summary>
+    /// 取托盘图标:优先从输出目录 Assets\reframe.ico 直接 LoadImage(尺寸最贴、最清晰),
+    /// 退化到从 exe 第 0 个图标 ExtractIconEx,再退化到系统应用图标。
+    /// </summary>
     private IntPtr ResolveIcon()
     {
+        // 1) 优先 Assets\reframe.ico:按托盘小图标尺寸加载,边缘比 ExtractIconEx 更锐。
+        try
+        {
+            string ico = Path.Combine(AppContext.BaseDirectory, "Assets", "reframe.ico");
+            if (File.Exists(ico))
+            {
+                int cx = GetSystemMetrics(SM_CXSMICON);
+                int cy = GetSystemMetrics(SM_CYSMICON);
+                IntPtr h = LoadImage(IntPtr.Zero, ico, IMAGE_ICON, cx, cy,
+                    LR_LOADFROMFILE | LR_DEFAULTSIZE);
+                if (h != IntPtr.Zero)
+                {
+                    _iconHandle = h; _ownIcon = true; return _iconHandle;
+                }
+            }
+        }
+        catch { /* 落到 ExtractIconEx */ }
+
         try
         {
             string exe = Environment.ProcessPath ?? "";
@@ -371,6 +392,20 @@ public sealed class TrayIcon : IDisposable
     public const uint VK_B = 0x42;
 
     private static readonly IntPtr IDI_APPLICATION = new(32512);
+
+    // LoadImage:从文件按指定尺寸加载图标。
+    private const uint IMAGE_ICON = 1;
+    private const uint LR_LOADFROMFILE = 0x00000010;
+    private const uint LR_DEFAULTSIZE = 0x00000040;
+    private const int SM_CXSMICON = 49;
+    private const int SM_CYSMICON = 50;
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr LoadImage(IntPtr hInst, string name, uint type,
+        int cx, int cy, uint fuLoad);
+
+    [DllImport("user32.dll")]
+    private static extern int GetSystemMetrics(int nIndex);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern ushort RegisterClassEx(ref WNDCLASSEX lpwcx);

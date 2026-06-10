@@ -21,6 +21,11 @@
                     Background="Transparent" HorizontalAlignment="Left"
                     IsOpen="False">
             <AppBarButton x:Name="NewButton" Icon="Add" Label="新建" Click="NewButton_Click"/>
+            <AppBarButton x:Name="FromWindowButton" Label="从窗口创建" Click="FromWindowButton_Click">
+                <AppBarButton.Icon>
+                    <FontIcon Glyph="&#xE8A7;"/>
+                </AppBarButton.Icon>
+            </AppBarButton>
             <AppBarButton x:Name="DeleteButton" Icon="Delete" Label="删除"
                           Click="DeleteButton_Click" IsEnabled="False"/>
         </CommandBar>

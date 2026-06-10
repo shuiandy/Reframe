@@ -2,7 +2,9 @@
 <Page
     x:Class="Reframe.UI.DashboardPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Reframe.UI"
+    xmlns:controls="using:Reframe.UI.Controls">
 
     <Grid Padding="24" RowSpacing="16">
         <Grid.RowDefinitions>
@@ -12,7 +14,7 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- 标题 + 引擎总开关:标题在左,引擎标签+开关+状态在右,一行垂直居中 -->
+        <!-- 标题 + 引擎总开关:标题在左,引擎标签+开关在右,一行垂直居中 -->
         <Grid VerticalAlignment="Center">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
@@ -33,27 +35,72 @@
         <!-- 概览行 -->
         <TextBlock x:Name="SummaryText" Grid.Row="1" Opacity="0.7"/>
 
-        <!-- 当前命中的窗口 -->
-        <StackPanel Grid.Row="2" Spacing="8">
-            <TextBlock Text="当前命中的窗口" FontWeight="SemiBold"/>
-            <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1"
-                    CornerRadius="4" Padding="4" MinHeight="60">
-                <ListView x:Name="HitList" SelectionMode="None" IsItemClickEnabled="False"
-                          MaxHeight="160">
-                    <ListView.Footer>
-                        <TextBlock x:Name="HitEmpty" Text="暂无命中窗口" Opacity="0.5"
-                                   Margin="8,4" Visibility="Collapsed"/>
-                    </ListView.Footer>
-                </ListView>
-            </Border>
-        </StackPanel>
+        <!-- 实时屏幕小地图(主视觉) -->
+        <controls:LiveMonitorMap x:Name="MonitorMap" Grid.Row="2" Height="260"/>
 
-        <!-- 日志流 -->
-        <StackPanel Grid.Row="3" Spacing="8">
-            <TextBlock Text="日志" FontWeight="SemiBold"/>
-            <ListView x:Name="LogList" SelectionMode="None" IsItemClickEnabled="False"
-                      BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1"
-                      CornerRadius="4"/>
-        </StackPanel>
+        <!-- 下方左右两栏:左=接管中的窗口卡片,右=日志(收窄) -->
+        <Grid Grid.Row="3" ColumnSpacing="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="3*"/>
+                <ColumnDefinition Width="2*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 接管中的窗口 -->
+            <Grid Grid.Column="0" RowSpacing="8">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <TextBlock Text="接管中的窗口" FontWeight="SemiBold"/>
+                <Grid Grid.Row="1">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl x:Name="TakenList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="local:TakenCard">
+                                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                            BorderThickness="1" CornerRadius="6"
+                                            Padding="12,10" Margin="0,0,0,8">
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" Spacing="2">
+                                                <TextBlock Text="{x:Bind ProfileName}"
+                                                           FontWeight="SemiBold"/>
+                                                <TextBlock Text="{x:Bind Title}" Opacity="0.85"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{x:Bind RectText}" Opacity="0.6"
+                                                           FontSize="12"
+                                                           FontFamily="Consolas"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                                        Spacing="8" VerticalAlignment="Center">
+                                                <Button Content="还原" Tag="{x:Bind Handle}"
+                                                        Click="RestoreWindow_Click"/>
+                                                <Button Content="重新应用"
+                                                        Click="Reapply_Click"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                    <TextBlock x:Name="TakenEmpty" Text="暂无被接管的窗口"
+                               Opacity="0.5" VerticalAlignment="Top" Margin="2,4"/>
+                </Grid>
+            </Grid>
+
+            <!-- 日志(收窄,约 5 行可滚动) -->
+            <StackPanel Grid.Column="1" Spacing="8">
+                <TextBlock Text="日志" FontWeight="SemiBold"/>
+                <ListView x:Name="LogList" SelectionMode="None" IsItemClickEnabled="False"
+                          MaxHeight="160"
+                          BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                          BorderThickness="1" CornerRadius="6"/>
+            </StackPanel>
+        </Grid>
     </Grid>
 </Page>

@@ -145,6 +145,8 @@ public static class NativeMethods
     public const uint WINEVENT_SKIPOWNPROCESS = 0x0002; // 不上报自身进程的事件
 
     public const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
+    public const uint EVENT_SYSTEM_MOVESIZESTART = 0x000A; // 用户开始用鼠标拖/缩窗口
+    public const uint EVENT_SYSTEM_MOVESIZEEND = 0x000B;   // 用户结束拖/缩窗口
     public const uint EVENT_OBJECT_SHOW = 0x8002;
     public const uint EVENT_OBJECT_LOCATIONCHANGE = 0x800B;
     public const uint EVENT_OBJECT_NAMECHANGE = 0x800C;
@@ -180,4 +182,25 @@ public static class NativeMethods
     public static extern uint GetCurrentThreadId();
 
     public const uint WM_QUIT = 0x0012;
+
+    // ---- 拖拽吸附:键状态 / 光标位置 ----
+    // 高位(0x8000)表示该键当前按下。只读瞬时状态,不影响输入队列。
+    [DllImport("user32.dll")]
+    public static extern short GetAsyncKeyState(int vKey);
+
+    public const int VK_SHIFT = 0x10;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT { public int X, Y; }
+
+    // 返回的是虚拟桌面物理像素坐标(进程 PerMonitorV2)。
+    [DllImport("user32.dll")]
+    public static extern bool GetCursorPos(out POINT lpPoint);
+
+    // ---- 覆盖层"点击穿透"用的扩展样式 ----
+    // TRANSPARENT:命中测试穿过本窗到下层;LAYERED:配合 TRANSPARENT 才真正穿透;
+    // NOACTIVATE:点击不抢焦点;TOOLWINDOW:不进 Alt-Tab/任务栏。
+    public const long WS_EX_TRANSPARENT = 0x00000020L;
+    public const long WS_EX_LAYERED = 0x00080000L;
+    public const long WS_EX_NOACTIVATE = 0x08000000L;
 }

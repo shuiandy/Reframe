@@ -16,6 +16,8 @@
     <WindowsPackageType>None</WindowsPackageType>
     <EnableMsixTooling>true</EnableMsixTooling>
     <AssemblyName>Reframe</AssemblyName>
+    <!-- 窗口/任务栏/exe 图标(unpackaged:同时复制到输出供运行时 SetIcon/托盘加载) -->
+    <ApplicationIcon>Assets\reframe.ico</ApplicationIcon>
   </PropertyGroup>
 
   <!-- 测试是独立工程(Tests\Reframe.Core.Tests.csproj),不能被主 App 的隐式 glob 吸进来编译 -->
@@ -23,6 +25,17 @@
     <Compile Remove="Tests\**" />
     <Page Remove="Tests\**" />
     <None Remove="Tests\**" />
+    <!-- tools\IconGen 是一次性图标生成工具(独立 exe),不参与主 App 编译 -->
+    <Compile Remove="tools\**" />
+    <Page Remove="tools\**" />
+    <None Remove="tools\**" />
+  </ItemGroup>
+
+  <!-- 资源随输出复制:unpackaged 运行时需从输出目录 Assets\reframe.ico 加载窗口/托盘图标 -->
+  <ItemGroup>
+    <Content Include="Assets\reframe.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>

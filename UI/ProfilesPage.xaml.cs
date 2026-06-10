@@ -126,6 +126,72 @@ public sealed partial class ProfilesPage : Page
         Frame.Navigate(typeof(ProfileEditorPage), profile.Id);
     }
 
+    private async void FromWindowButton_Click(object sender, RoutedEventArgs e)
+    {
+        var picker = new WindowPickerDialog { XamlRoot = XamlRoot };
+        if (await picker.ShowAsync() != ContentDialogResult.Primary) return;
+        if (picker.SelectedWindow is not { } w) return;
+
+        var cfg = ConfigService.Instance.Config;
+
+        // 进程名:WindowScanner 给的是不含 .exe 的小写;配置里统一存 .exe(与默认配置一致,匹配端会 StripExe)。
+        string proc = string.IsNullOrEmpty(w.ProcessName) ? "" : w.ProcessName;
+        string matchValue = string.IsNullOrEmpty(proc) ? "" : proc + ".exe";
+
+        // 同进程名已有 profile → 确认是否再建一个。
+        if (!string.IsNullOrEmpty(proc))
+        {
+            var dup = cfg.Profiles.FirstOrDefault(p =>
+                p.MatchKind == MatchKind.Process &&
+                string.Equals(StripExe(p.MatchValue), proc, StringComparison.OrdinalIgnoreCase));
+            if (dup is not null)
+            {
+                var confirm = new ContentDialog
+                {
+                    Title = "已有针对该进程的配置",
+                    Content = $"已有针对该进程的配置“{(string.IsNullOrWhiteSpace(dup.Name) ? "未命名" : dup.Name)}”,仍要再建一个吗?",
+                    PrimaryButtonText = "仍要新建",
+                    CloseButtonText = "取消",
+                    DefaultButton = ContentDialogButton.Close,
+                    XamlRoot = XamlRoot,
+                };
+                if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
+            }
+        }
+
+        var profile = new Profile
+        {
+            Name = Truncate(w.Title, 40),
+            MatchKind = MatchKind.Process,
+            MatchValue = matchValue,
+            DelayMs = 1000,
+            Rules =
+            {
+                new PlacementRule
+                {
+                    Monitor = new MonitorFilter(),   // 任意屏
+                    Kind = PlacementKind.Fullscreen, // 铺满
+                },
+            },
+        };
+        cfg.Profiles.Add(profile);
+
+        _suppressReload = true;
+        ConfigService.Instance.Save();
+        _suppressReload = false;
+
+        Frame.Navigate(typeof(ProfileEditorPage), profile.Id);
+    }
+
+    private static string StripExe(string s)
+        => s.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? s[..^4] : s;
+
+    private static string Truncate(string s, int max)
+    {
+        s = string.IsNullOrWhiteSpace(s) ? "未命名" : s.Trim();
+        return s.Length <= max ? s : s[..max];
+    }
+
     private async void DeleteButton_Click(object sender, RoutedEventArgs e)
     {
         if (ProfileList.SelectedItem is not ProfileRow row) return;

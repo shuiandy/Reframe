@@ -37,6 +37,24 @@ public sealed class Watcher : IDisposable
 
     public Watcher(Func<AppConfig> getConfig) => _getConfig = getConfig;
 
+    // ---- M4 仪表盘契约:被接管窗口快照 + 主动重新调度 ----
+
+    /// <summary>当前被接管的一个窗口:句柄 + 接管它的 profileId。</summary>
+    public sealed record TakenWindow(IntPtr Handle, string ProfileId);
+
+    /// <summary>当前被接管窗口的快照(读 _takeover 字典,过滤已销毁句柄)。</summary>
+    public IReadOnlyList<TakenWindow> GetTakenWindows()
+    {
+        var list = new List<TakenWindow>();
+        foreach (var kv in _takeover)
+            if (NativeMethods.IsWindow(kv.Key))
+                list.Add(new TakenWindow(kv.Key, kv.Value));
+        return list;
+    }
+
+    /// <summary>立即调度一次扫描(重新应用)。引擎未运行时无副作用。</summary>
+    public void Poke() => ScheduleTick();
+
     public void Start()
     {
         if (_running) return;
