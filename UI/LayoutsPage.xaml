@@ -32,8 +32,8 @@
             <Grid>
                 <GridView x:Name="LayoutsGrid"
                           SelectionMode="Single"
-                          IsItemClickEnabled="True"
-                          ItemClick="LayoutsGrid_ItemClick"
+                          IsItemClickEnabled="False"
+                          DoubleTapped="LayoutsGrid_DoubleTapped"
                           SelectionChanged="LayoutsGrid_SelectionChanged">
                     <!-- 卡片 hover:由系统 GridViewItem 容器驱动(无自定义动画)。
                          容器圆角对齐内卡;pointer-over 用内置状态切换边框/背景刷,
@@ -60,7 +60,28 @@
                                  内卡边框透明,让容器的 accent 描边成为唯一边线,避免双线。 -->
                             <Grid Width="220" Height="180" Padding="10" RowSpacing="6"
                                   Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                  CornerRadius="7">
+                                  CornerRadius="7"
+                                  ContextRequested="LayoutCard_ContextRequested">
+                                <Grid.ContextFlyout>
+                                    <MenuFlyout>
+                                        <MenuFlyoutItem Text="编辑" Click="EditButton_Click">
+                                            <MenuFlyoutItem.Icon>
+                                                <SymbolIcon Symbol="Edit"/>
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Text="复制" Click="DuplicateButton_Click">
+                                            <MenuFlyoutItem.Icon>
+                                                <SymbolIcon Symbol="Copy"/>
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutSeparator/>
+                                        <MenuFlyoutItem Text="删除" Click="DeleteButton_Click">
+                                            <MenuFlyoutItem.Icon>
+                                                <SymbolIcon Symbol="Delete"/>
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                    </MenuFlyout>
+                                </Grid.ContextFlyout>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="*"/>
                                     <RowDefinition Height="Auto"/>

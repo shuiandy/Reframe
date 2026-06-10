@@ -8,6 +8,9 @@ public enum MatchKind { Process, Title, TitleRegex }
 /// <summary>无边框实现。GpuScaling 为 M4 预留(WGC 捕获 + 覆盖层渲染)。</summary>
 public enum BorderlessMethod { Win32, GpuScaling }
 
+/// <summary>主窗口背景材质。Mica/MicaAlt = 云母及其变体,Acrylic = 桌面亚克力(毛玻璃)。</summary>
+public enum BackdropKind { Mica, MicaAlt, Acrylic }
+
 /// <summary>规则命中后对窗口几何做什么。</summary>
 public enum PlacementKind
 {
@@ -146,6 +149,9 @@ public sealed class AppConfig
 
     /// <summary>按住修饰键(Shift)拖窗口时,显示分区覆盖层并在松手时吸附到分区(FancyZones 式)。</summary>
     public bool DragSnapEnabled { get; set; } = true;
+
+    /// <summary>主窗口背景材质。改即生效(经 ConfigService.Changed → MainWindow.ApplyBackdrop)。</summary>
+    public BackdropKind Backdrop { get; set; } = BackdropKind.Mica;
 
     public List<Layout> Layouts { get; set; } = new();
     public List<Profile> Profiles { get; set; } = new();

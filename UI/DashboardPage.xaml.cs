@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using Reframe.Core;
 using Reframe.Interop;
 using Reframe.Services;
@@ -11,12 +12,33 @@ using Reframe.Services;
 namespace Reframe.UI;
 
 /// <summary>仪表盘上"接管中的窗口"一张卡片的数据(x:Bind 用)。</summary>
-public sealed class TakenCard
+public sealed partial class TakenCard : System.ComponentModel.INotifyPropertyChanged
 {
     public IntPtr Handle { get; init; }
+    public uint ProcessId { get; init; }
     public string ProfileName { get; init; } = "";
     public string Title { get; init; } = "";
     public string RectText { get; init; } = "";
+
+    // 图标异步回填(刷新很频繁,故构建卡片时先 null,后台预热 → UI 线程回填)。
+    private ImageSource? _icon;
+    public ImageSource? Icon
+    {
+        get => _icon;
+        set
+        {
+            if (ReferenceEquals(_icon, value)) return;
+            _icon = value;
+            PropertyChanged?.Invoke(this, new(nameof(Icon)));
+            PropertyChanged?.Invoke(this, new(nameof(RealIconVisibility)));
+            PropertyChanged?.Invoke(this, new(nameof(FallbackIconVisibility)));
+        }
+    }
+
+    public Visibility RealIconVisibility => Icon is null ? Visibility.Collapsed : Visibility.Visible;
+    public Visibility FallbackIconVisibility => Icon is null ? Visibility.Visible : Visibility.Collapsed;
+
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
 }
 
 public sealed partial class DashboardPage : Page
@@ -90,7 +112,7 @@ public sealed partial class DashboardPage : Page
             .ToList();
         MonitorMap.Refresh(monitors, takenTuples, cfg);
 
-        // 卡片列表:逐窗口取标题 + 实时矩形 + profile 名。
+        // 卡片列表:逐窗口取标题 + 实时矩形 + profile 名 + pid(供图标用)。
         var cards = new List<TakenCard>();
         foreach (var t in taken)
         {
@@ -99,9 +121,11 @@ public sealed partial class DashboardPage : Page
             string rectText = NativeMethods.GetWindowRect(t.Handle, out var rc)
                 ? $"{rc.Left},{rc.Top}  {rc.Right - rc.Left}×{rc.Bottom - rc.Top}"
                 : "(矩形不可用)";
+            NativeMethods.GetWindowThreadProcessId(t.Handle, out uint pid);
             cards.Add(new TakenCard
             {
                 Handle = t.Handle,
+                ProcessId = pid,
                 ProfileName = profileName,
                 Title = string.IsNullOrEmpty(title) ? "(无标题)" : title,
                 RectText = rectText,
@@ -110,6 +134,36 @@ public sealed partial class DashboardPage : Page
 
         TakenList.ItemsSource = cards;
         TakenEmpty.Visibility = cards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        LoadCardIcons(cards);
+    }
+
+    // 图标异步回填:后台用 pid 解析进程名并预热路径(可能慢),再切回 UI 线程构建/回填位图。
+    // IconCache 结果按进程名缓存,故 1.5s 一次的刷新里命中后开销极小。
+    private void LoadCardIcons(List<TakenCard> cards)
+    {
+        foreach (var card in cards)
+        {
+            if (card.ProcessId == 0) continue;
+            uint pid = card.ProcessId;
+            var target = card;
+            _ = Task.Run(() =>
+            {
+                // ByProcessId 内部:取进程名 → 学路径 → ByProcessName。后台做完慢活,
+                // 但位图须在 UI 线程建,所以这里只预热,UI 线程那跳再真正取(命中缓存几乎瞬时)。
+                IconCache.PrewarmByProcessName(ProcessNameOf(pid));
+                DispatcherQueue.TryEnqueue(() => target.Icon = IconCache.ByProcessId(pid));
+            });
+        }
+    }
+
+    private static string? ProcessNameOf(uint pid)
+    {
+        try
+        {
+            using var p = System.Diagnostics.Process.GetProcessById((int)pid);
+            return p.ProcessName;
+        }
+        catch { return null; }
     }
 
     /// <summary>按句柄取窗口标题(用现有 P/Invoke,不依赖全量枚举)。</summary>

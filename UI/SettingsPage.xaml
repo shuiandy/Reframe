@@ -8,6 +8,20 @@
         <StackPanel Padding="24" Spacing="20" MaxWidth="720" HorizontalAlignment="Left">
             <TextBlock Text="设置" FontSize="28" FontWeight="SemiBold"/>
 
+            <!-- 外观 -->
+            <StackPanel Spacing="6">
+                <TextBlock Text="外观" FontWeight="SemiBold"/>
+                <TextBlock Text="主窗口的背景材质,改即生效。亚克力在窗口失焦时会回退为纯色(系统行为)。" Opacity="0.7" FontSize="12" TextWrapping="Wrap"/>
+                <ComboBox x:Name="BackdropCombo"
+                          Header="窗口背景材质"
+                          SelectionChanged="BackdropCombo_SelectionChanged"
+                          Width="240" HorizontalAlignment="Left">
+                    <ComboBoxItem Content="云母(Mica)"/>
+                    <ComboBoxItem Content="云母变体(Mica Alt)"/>
+                    <ComboBoxItem Content="亚克力(毛玻璃)"/>
+                </ComboBox>
+            </StackPanel>
+
             <!-- 轮询间隔 -->
             <StackPanel Spacing="6">
                 <TextBlock Text="轮询间隔" FontWeight="SemiBold"/>

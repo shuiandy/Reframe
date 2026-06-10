@@ -26,14 +26,16 @@
                     <FontIcon Glyph="&#xE8A7;"/>
                 </AppBarButton.Icon>
             </AppBarButton>
+            <AppBarButton x:Name="EditButton" Icon="Edit" Label="编辑"
+                          Click="EditButton_Click" IsEnabled="False"/>
             <AppBarButton x:Name="DeleteButton" Icon="Delete" Label="删除"
                           Click="DeleteButton_Click" IsEnabled="False"/>
         </CommandBar>
 
         <ListView x:Name="ProfileList" Grid.Row="2"
                   SelectionMode="Single"
-                  IsItemClickEnabled="True"
-                  ItemClick="ProfileList_ItemClick"
+                  IsItemClickEnabled="False"
+                  DoubleTapped="ProfileList_DoubleTapped"
                   SelectionChanged="ProfileList_SelectionChanged">
             <ListView.ItemContainerStyle>
                 <Style TargetType="ListViewItem">
@@ -43,8 +45,25 @@
             </ListView.ItemContainerStyle>
             <ListView.ItemTemplate>
                 <DataTemplate x:DataType="local:ProfileRow">
-                    <Grid ColumnSpacing="16">
+                    <Grid ColumnSpacing="16" Background="Transparent"
+                          ContextRequested="ProfileRow_ContextRequested">
+                        <Grid.ContextFlyout>
+                            <MenuFlyout>
+                                <MenuFlyoutItem Text="编辑" Click="EditButton_Click">
+                                    <MenuFlyoutItem.Icon>
+                                        <SymbolIcon Symbol="Edit"/>
+                                    </MenuFlyoutItem.Icon>
+                                </MenuFlyoutItem>
+                                <MenuFlyoutSeparator/>
+                                <MenuFlyoutItem Text="删除" Click="DeleteButton_Click">
+                                    <MenuFlyoutItem.Icon>
+                                        <SymbolIcon Symbol="Delete"/>
+                                    </MenuFlyoutItem.Icon>
+                                </MenuFlyoutItem>
+                            </MenuFlyout>
+                        </Grid.ContextFlyout>
                         <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
@@ -58,13 +77,23 @@
                                       Toggled="EnabledToggle_Toggled"
                                       Tag="{x:Bind ProfileId}"/>
 
-                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <!-- 行首图标:进程匹配显示其图标,取不到/非进程匹配回落默认字形(显隐互斥) -->
+                        <Grid Grid.Column="1" Width="24" Height="24" VerticalAlignment="Center">
+                            <FontIcon Glyph="&#xE7FC;"
+                                      FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                      FontSize="18" Opacity="0.6"
+                                      Visibility="{x:Bind FallbackIconVisibility, Mode=OneWay}"/>
+                            <Image Source="{x:Bind Icon, Mode=OneWay}" Width="24" Height="24"
+                                   Visibility="{x:Bind RealIconVisibility, Mode=OneWay}"/>
+                        </Grid>
+
+                        <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="2">
                             <TextBlock Text="{x:Bind Name}" Style="{ThemeResource BodyStrongTextBlockStyle}"/>
                             <TextBlock Text="{x:Bind MatchSummary}" Opacity="0.7"
                                        Style="{ThemeResource CaptionTextBlockStyle}"/>
                         </StackPanel>
 
-                        <TextBlock Grid.Column="2" VerticalAlignment="Center"
+                        <TextBlock Grid.Column="3" VerticalAlignment="Center"
                                    Text="{x:Bind RulesSummary}" Opacity="0.7"
                                    Style="{ThemeResource CaptionTextBlockStyle}"/>
                     </Grid>

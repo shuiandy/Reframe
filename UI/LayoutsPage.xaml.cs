@@ -2,6 +2,8 @@ using System.Collections.ObjectModel;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using Reframe.Core;
 using Layout = Reframe.Core.Layout;
@@ -76,10 +78,26 @@ public sealed partial class LayoutsPage : Page
     private void LayoutsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
         => UpdateCommandState();
 
-    private void LayoutsGrid_ItemClick(object sender, ItemClickEventArgs e)
+    // 双击 = 进入编辑器。从事件源向上找到承载该项的 GridViewItem,取其 Content 拿到对应布局。
+    private void LayoutsGrid_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
-        if (e.ClickedItem is LayoutItem item)
+        var item = ItemFromEventSource(e.OriginalSource as DependencyObject);
+        if (item is not null)
             Frame.Navigate(typeof(LayoutEditorPage), item.Model.Id);
+    }
+
+    // 右键 = 在 ContextFlyout 打开前先选中该卡片,使复用 SelectedLayout 的编辑/复制/删除落到正确项上。
+    private void LayoutCard_ContextRequested(UIElement sender, ContextRequestedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is LayoutItem item)
+            LayoutsGrid.SelectedItem = item;
+    }
+
+    private LayoutItem? ItemFromEventSource(DependencyObject? src)
+    {
+        while (src is not null && src is not GridViewItem)
+            src = VisualTreeHelper.GetParent(src);
+        return (src as GridViewItem)?.Content as LayoutItem;
     }
 
     private void EditButton_Click(object sender, RoutedEventArgs e)

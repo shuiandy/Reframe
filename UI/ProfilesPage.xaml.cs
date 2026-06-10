@@ -1,5 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using Reframe.Core;
 using Reframe.Services;
@@ -7,13 +9,37 @@ using Reframe.Services;
 namespace Reframe.UI;
 
 /// <summary>列表行视图模型(只读展示用,真正的数据落在 Config.Profiles 上)。</summary>
-public sealed class ProfileRow
+public sealed partial class ProfileRow : System.ComponentModel.INotifyPropertyChanged
 {
     public string ProfileId { get; init; } = "";
     public string Name { get; init; } = "";
     public string MatchSummary { get; init; } = "";
     public string RulesSummary { get; init; } = "";
     public bool Enabled { get; set; }
+
+    // MatchKind=Process 用 IconCache 取进程图标;其它匹配方式无进程可言 → 一律默认字形。
+    // 图标异步回填(Reload 时先 null,Task.Run 提取后切回 UI 线程 set),故用通知属性。
+    private ImageSource? _icon;
+    public ImageSource? Icon
+    {
+        get => _icon;
+        set
+        {
+            if (ReferenceEquals(_icon, value)) return;
+            _icon = value;
+            PropertyChanged?.Invoke(this, new(nameof(Icon)));
+            PropertyChanged?.Invoke(this, new(nameof(RealIconVisibility)));
+            PropertyChanged?.Invoke(this, new(nameof(FallbackIconVisibility)));
+        }
+    }
+
+    /// <summary>进程匹配且需要尝试取图标时,存其进程名(不含 .exe);否则 null = 始终默认字形。</summary>
+    public string? ProcessNameForIcon { get; init; }
+
+    public Visibility RealIconVisibility => Icon is null ? Visibility.Collapsed : Visibility.Visible;
+    public Visibility FallbackIconVisibility => Icon is null ? Visibility.Visible : Visibility.Collapsed;
+
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
 }
 
 public sealed partial class ProfilesPage : Page
@@ -49,7 +75,25 @@ public sealed partial class ProfilesPage : Page
         bool empty = rows.Count == 0;
         EmptyHint.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
         ProfileList.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
-        DeleteButton.IsEnabled = ProfileList.SelectedItem is not null;
+        UpdateCommandState();
+
+        LoadIconsAsync(rows);
+    }
+
+    // 图标异步提取,不阻塞列表构建:后台线程做可能慢的路径解析(预热),再切回 UI 线程构建/回填位图
+    // (WriteableBitmap 必须在 UI 线程创建;预热后这一跳几乎只剩内存命中 + 一次 GetDIBits,很快)。
+    private void LoadIconsAsync(List<ProfileRow> rows)
+    {
+        foreach (var row in rows)
+        {
+            if (string.IsNullOrEmpty(row.ProcessNameForIcon)) continue;
+            string proc = row.ProcessNameForIcon;
+            _ = Task.Run(() =>
+            {
+                IconCache.PrewarmByProcessName(proc);
+                DispatcherQueue.TryEnqueue(() => row.Icon = IconCache.ByProcessName(proc));
+            });
+        }
     }
 
     private static ProfileRow ToRow(Profile p) => new()
@@ -59,6 +103,9 @@ public sealed partial class ProfilesPage : Page
         Enabled = p.Enabled,
         MatchSummary = MatchSummaryOf(p),
         RulesSummary = $"{p.Rules.Count} 条规则",
+        ProcessNameForIcon = p.MatchKind == MatchKind.Process && !string.IsNullOrWhiteSpace(p.MatchValue)
+            ? p.MatchValue
+            : null,
     };
 
     private static string MatchSummaryOf(Profile p)
@@ -92,12 +139,59 @@ public sealed partial class ProfilesPage : Page
     }
 
     private void ProfileList_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        => DeleteButton.IsEnabled = ProfileList.SelectedItem is not null;
+        => UpdateCommandState();
 
-    private void ProfileList_ItemClick(object sender, ItemClickEventArgs e)
+    private void UpdateCommandState()
     {
-        if (e.ClickedItem is ProfileRow row)
+        bool has = ProfileList.SelectedItem is not null;
+        EditButton.IsEnabled = has;
+        DeleteButton.IsEnabled = has;
+    }
+
+    private ProfileRow? SelectedRow => ProfileList.SelectedItem as ProfileRow;
+
+    // 双击 = 进入编辑器。点 ToggleSwitch 上的双击不应导航(开关有自己的行为)。
+    private void ProfileList_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    {
+        if (IsWithinToggle(e.OriginalSource as DependencyObject)) return;
+        var row = RowFromEventSource(e.OriginalSource as DependencyObject);
+        if (row is not null)
             Frame.Navigate(typeof(ProfileEditorPage), row.ProfileId);
+    }
+
+    // 右键 = 在 ContextFlyout 打开前选中该行,使编辑/删除落到正确项;在开关上右键不弹菜单。
+    private void ProfileRow_ContextRequested(UIElement sender, ContextRequestedEventArgs e)
+    {
+        if (IsWithinToggle(e.OriginalSource as DependencyObject))
+        {
+            e.Handled = true; // 吞掉,避免在开关上误弹行菜单
+            return;
+        }
+        if ((sender as FrameworkElement)?.DataContext is ProfileRow row)
+            ProfileList.SelectedItem = row;
+    }
+
+    private void EditButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (SelectedRow is { } row)
+            Frame.Navigate(typeof(ProfileEditorPage), row.ProfileId);
+    }
+
+    private static bool IsWithinToggle(DependencyObject? src)
+    {
+        while (src is not null && src is not ListViewItem)
+        {
+            if (src is ToggleSwitch) return true;
+            src = VisualTreeHelper.GetParent(src);
+        }
+        return false;
+    }
+
+    private static ProfileRow? RowFromEventSource(DependencyObject? src)
+    {
+        while (src is not null && src is not ListViewItem)
+            src = VisualTreeHelper.GetParent(src);
+        return (src as ListViewItem)?.Content as ProfileRow;
     }
 
     private void NewButton_Click(object sender, RoutedEventArgs e)

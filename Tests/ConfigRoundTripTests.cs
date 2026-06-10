@@ -209,6 +209,33 @@ public class ConfigRoundTripTests
         Assert.True(rp.Windowed);
     }
 
+    // ---- 背景材质 ----
+
+    [Fact(DisplayName = "Backdrop 默认 Mica,且以字符串形式存盘")]
+    public void Backdrop_DefaultMica_SerializedAsString()
+    {
+        var cfg = AppConfig.CreateDefault();
+        Assert.Equal(BackdropKind.Mica, cfg.Backdrop);
+
+        var json = Serialize(cfg);
+        Assert.Contains("\"Mica\"", json);
+
+        var back = Deserialize(json);
+        Assert.Equal(BackdropKind.Mica, back.Backdrop);
+    }
+
+    [Theory(DisplayName = "Backdrop 三种取值往返保真")]
+    [InlineData(BackdropKind.Mica)]
+    [InlineData(BackdropKind.MicaAlt)]
+    [InlineData(BackdropKind.Acrylic)]
+    public void Backdrop_AllKinds_RoundTrip(BackdropKind kind)
+    {
+        var cfg = AppConfig.CreateDefault();
+        cfg.Backdrop = kind;
+        var back = Deserialize(Serialize(cfg));
+        Assert.Equal(kind, back.Backdrop);
+    }
+
     [Fact(DisplayName = "PlacementRule.MoveOnly 默认 false,置真后往返保真")]
     public void MoveOnly_RoundTrip()
     {

@@ -12,6 +12,9 @@ public partial class App : Application
 
     public static Watcher Engine { get; private set; } = null!;
 
+    /// <summary>主窗口(OnLaunched 后非空)。页面如需直接触发可用;材质等主路径走 ConfigService.Changed。</summary>
+    public static MainWindow? Main { get; private set; }
+
     private MainWindow? _window;
     private TrayIcon? _tray;
     private DispatcherQueue? _ui;
@@ -39,6 +42,7 @@ public partial class App : Application
         ConfigService.Instance.Changed += () => Engine?.OnConfigChanged();
 
         _window = new MainWindow();
+        Main = _window;
         _ui = _window.DispatcherQueue;
 
         // 点 X 不退出:取消关闭、隐藏到托盘,引擎继续跑。退出只走托盘菜单。

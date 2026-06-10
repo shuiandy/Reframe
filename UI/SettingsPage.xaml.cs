@@ -24,6 +24,7 @@ public sealed partial class SettingsPage : Page
         try
         {
             var cfg = ConfigService.Instance.Config;
+            BackdropCombo.SelectedIndex = (int)cfg.Backdrop;  // 枚举顺序与 ComboBoxItem 顺序一致
             PollBox.Value = cfg.PollIntervalMs;
             DragSnapToggle.IsOn = cfg.DragSnapEnabled;
             StartupToggle.IsOn = StartupTaskService.IsEnabled();
@@ -33,6 +34,20 @@ public sealed partial class SettingsPage : Page
             VersionText.Text = $"版本 {ver?.ToString() ?? "—"}";
         }
         finally { _loading = false; }
+    }
+
+    private void BackdropCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading) return;
+
+        int idx = BackdropCombo.SelectedIndex;
+        if (idx < 0) return;
+
+        var svc = ConfigService.Instance;
+        var kind = (BackdropKind)idx;  // 枚举顺序与 ComboBoxItem 顺序一致
+        if (svc.Config.Backdrop == kind) return;
+        svc.Config.Backdrop = kind;
+        svc.Save();  // Save → Changed → MainWindow.ApplyBackdrop,无需直接调
     }
 
     private void PollBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)

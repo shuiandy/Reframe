@@ -1,6 +1,9 @@
+using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Reframe.Core;
+using Reframe.Services;
 using Reframe.UI;
 
 namespace Reframe;
@@ -11,9 +14,13 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
 
-        // 云母背景:WinAppSDK 1.8 + Win11 原生支持,无需 fallback。
-        // NavigationView 的 Pane/内容背景刷在 App.xaml 已设透明,云母得以透出。
-        SystemBackdrop = new MicaBackdrop();
+        // 背景材质:由配置决定(云母 / 云母变体 / 亚克力),WinAppSDK 1.8 + Win11 原生支持,无需 fallback。
+        // NavigationView 的 Pane/内容背景刷在 App.xaml 已设透明,材质得以透出。
+        ApplyBackdrop();
+
+        // 配置变化(设置页改材质 / 外部热重载 config.json)→ 切回 UI 线程重新应用。
+        // MainWindow 生命周期 = 应用全程,不退订。
+        ConfigService.Instance.Changed += OnConfigChanged;
 
         // 窗口左上角 + 任务栏图标。unpackaged 下 ApplicationIcon 不会自动落到 AppWindow,
         // 显式从输出目录加载(csproj 已配 CopyToOutputDirectory)。
@@ -28,6 +35,21 @@ public sealed partial class MainWindow : Window
         if (ContentFrame.Content is null)
             ContentFrame.Navigate(typeof(DashboardPage));
     }
+
+    /// <summary>按当前配置设置窗口背景材质。改即生效;须在 UI 线程调用。</summary>
+    public void ApplyBackdrop()
+    {
+        SystemBackdrop = ConfigService.Instance.Config.Backdrop switch
+        {
+            BackdropKind.MicaAlt => new MicaBackdrop { Kind = MicaKind.BaseAlt },
+            BackdropKind.Acrylic => new DesktopAcrylicBackdrop(),
+            _                    => new MicaBackdrop { Kind = MicaKind.Base },
+        };
+    }
+
+    /// <summary>配置变更回调(任意线程)。切回 UI 线程重新应用材质。</summary>
+    private void OnConfigChanged()
+        => DispatcherQueue.TryEnqueue(ApplyBackdrop);
 
     private void Nav_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
