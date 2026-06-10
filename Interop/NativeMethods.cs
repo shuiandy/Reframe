@@ -119,6 +119,14 @@ public static class NativeMethods
     [DllImport("user32.dll")]
     public static extern bool IsWindow(IntPtr hWnd); // 句柄是否仍指向有效窗口
 
+    // ---- DWM:cloaked(隐藏)检测 ----
+    // 被 DWM "cloaked" 的窗口虽 IsWindowVisible=true,但实际不在当前可见桌面:
+    // 挂起的 UWP、切到别的虚拟桌面后留在他面的窗口等。枚举"可建配置的真实窗口"时应剔除。
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out int pvAttribute, int cbAttribute);
+
+    public const int DWMWA_CLOAKED = 14;
+
     // ---- 前台窗口 / 光标限制 ----
     [DllImport("user32.dll")]
     public static extern IntPtr GetForegroundWindow();

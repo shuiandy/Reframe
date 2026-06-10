@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using Reframe.Core;
+using Reframe.Interop;
 using Reframe.Services;
 
 namespace Reframe.UI;
@@ -45,27 +46,119 @@ public sealed partial class ProfileRow : System.ComponentModel.INotifyPropertyCh
     public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
 }
 
+/// <summary>
+/// 左栏「运行中的窗口」一行。按 Handle 复用(见 RefreshWindows 的 diff):身份字段(Handle/ProcessId)
+/// 不变,文本字段与 Icon 经 INotifyPropertyChanged 原地更新,既不重建集合也不闪图标。x:Bind 需要顶层 public 类。
+/// </summary>
+public sealed partial class WindowRow : System.ComponentModel.INotifyPropertyChanged
+{
+    public IntPtr Handle { get; init; }
+    public uint ProcessId { get; init; }
+    public string ProcessName { get; init; } = "";   // 不含 .exe,小写;建 profile / 黑名单用
+
+    private string _title = "";
+    public string Title
+    {
+        get => _title;
+        set { if (_title != value) { _title = value; Raise(nameof(Title)); } }
+    }
+
+    // 次要灰字:进程 exe 完整路径(取得到),否则回落 "进程名.exe"。
+    private string _pathLabel = "";
+    public string PathLabel
+    {
+        get => _pathLabel;
+        set { if (_pathLabel != value) { _pathLabel = value; Raise(nameof(PathLabel)); } }
+    }
+
+    private string _sizeLabel = "";
+    public string SizeLabel
+    {
+        get => _sizeLabel;
+        set { if (_sizeLabel != value) { _sizeLabel = value; Raise(nameof(SizeLabel)); } }
+    }
+
+    // 同进程已有配置 → 行尾显示「已有配置」灰字。随配置增删原地更新。
+    private bool _hasProfile;
+    public bool HasProfile
+    {
+        get => _hasProfile;
+        set { if (_hasProfile != value) { _hasProfile = value; Raise(nameof(HasProfile)); Raise(nameof(HasProfileVisibility)); } }
+    }
+
+    public Visibility HasProfileVisibility => HasProfile ? Visibility.Visible : Visibility.Collapsed;
+
+    // 图标:同步命中(TryGetCached/ByProcessId)即刻设;未命中后台预热再回填(回填到复用的行对象上,此后不再闪)。
+    private ImageSource? _icon;
+    public ImageSource? Icon
+    {
+        get => _icon;
+        set
+        {
+            if (ReferenceEquals(_icon, value)) return;
+            _icon = value;
+            Raise(nameof(Icon));
+            Raise(nameof(RealIconVisibility));
+            Raise(nameof(FallbackIconVisibility));
+        }
+    }
+
+    public Visibility RealIconVisibility => Icon is null ? Visibility.Collapsed : Visibility.Visible;
+    public Visibility FallbackIconVisibility => Icon is null ? Visibility.Visible : Visibility.Collapsed;
+
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+    private void Raise(string prop) => PropertyChanged?.Invoke(this, new(prop));
+}
+
 public sealed partial class ProfilesPage : Page
 {
     // Save() 会触发 Changed,Changed 又会重建列表 —— 用此标志吞掉自己引发的回声,避免列表抖动。
     private bool _suppressReload;
 
+    // 左栏窗口列表:_windows 是全量持久集合,按 Handle 复用做增量 diff(参考 DashboardPage),
+    // 行对象(WindowRow)身份稳定、Icon 不闪。_windowsView 是绑给 ListView 的"过滤视图",
+    // 只持有 _windows 里同一批行对象的引用子集(按搜索框命中);切换可见性靠增删视图成员而非容器可见性
+    // (容器可见性在虚拟化/未实现容器时不可靠,会误判空)。行对象共享 → 视图增删不重置 Icon。
+    private readonly List<WindowRow> _windows = new();
+    private readonly System.Collections.ObjectModel.ObservableCollection<WindowRow> _windowsView = new();
+    private readonly DispatcherTimer _windowTimer = new() { Interval = TimeSpan.FromSeconds(3) };
+
     public ProfilesPage()
     {
         InitializeComponent();
-        Loaded += (_, _) =>
-        {
-            ConfigService.Instance.Changed += OnConfigChanged;
-            Reload();
-        };
-        Unloaded += (_, _) => ConfigService.Instance.Changed -= OnConfigChanged;
+        Loaded += OnLoaded;
+        Unloaded += OnUnloaded;
+    }
+
+    private void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        ConfigService.Instance.Changed += OnConfigChanged;
+        Reload();
+
+        WindowList.ItemsSource = _windowsView; // 过滤视图,只设一次
+        RefreshWindows();
+        _windowTimer.Tick += WindowTimer_Tick;
+        _windowTimer.Start();
+    }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        ConfigService.Instance.Changed -= OnConfigChanged;
+        _windowTimer.Stop();
+        _windowTimer.Tick -= WindowTimer_Tick;
     }
 
     private void OnConfigChanged()
     {
         if (_suppressReload) return;
-        DispatcherQueue.TryEnqueue(Reload);
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            Reload();
+            ApplyWindowFilter(); // 配置增删 → 左栏「已有配置」标记需重算
+        });
     }
+
+    // ======================== 右栏:配置列表 ========================
 
     private void Reload()
     {
@@ -268,11 +361,152 @@ public sealed partial class ProfilesPage : Page
         Frame.Navigate(typeof(ProfileEditorPage), profile.Id);
     }
 
-    private async void FromWindowButton_Click(object sender, RoutedEventArgs e)
+    private async void DeleteButton_Click(object sender, RoutedEventArgs e)
     {
-        var picker = new WindowPickerDialog { XamlRoot = XamlRoot };
-        if (await picker.ShowAsync() != ContentDialogResult.Primary) return;
-        if (picker.SelectedWindow is not { } w) return;
+        if (ProfileList.SelectedItem is not ProfileRow row) return;
+        var cfg = ConfigService.Instance.Config;
+        var profile = cfg.Profiles.FirstOrDefault(x => x.Id == row.ProfileId);
+        if (profile is null) return;
+
+        var dialog = new ContentDialog
+        {
+            Title = "删除配置文件",
+            Content = $"确定要删除“{(string.IsNullOrWhiteSpace(profile.Name) ? "未命名" : profile.Name)}”吗?此操作不可撤销。",
+            PrimaryButtonText = "删除",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = XamlRoot,
+        };
+
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+
+        cfg.Profiles.Remove(profile);
+        _suppressReload = true;
+        ConfigService.Instance.Save();
+        _suppressReload = false;
+        Reload();
+        ApplyWindowFilter(); // 左栏「已有配置」标记需重算
+    }
+
+    // ======================== 左栏:运行中的窗口 ========================
+
+    private void WindowTimer_Tick(object? sender, object e) => RefreshWindows();
+
+    private void RefreshButton_Click(object sender, RoutedEventArgs e) => RefreshWindows();
+
+    private void SearchBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyWindowFilter();
+
+    /// <summary>
+    /// 刷新左栏窗口列表:扫描候选窗口(已剔除 cloaked / 小窗 / 系统外壳),按 Handle 对 _windows
+    /// 做增量 diff(消失的删、新增的加、仍在的原地更新),不整列重建避免闪烁。随后按搜索框过滤可见项。
+    /// </summary>
+    private void RefreshWindows()
+    {
+        var scanned = WindowScanner.EnumerateCandidates();
+        var live = new HashSet<IntPtr>(scanned.Select(w => w.Handle));
+
+        // 删:已不在扫描结果中的句柄。
+        for (int i = _windows.Count - 1; i >= 0; i--)
+            if (!live.Contains(_windows[i].Handle))
+                _windows.RemoveAt(i);
+
+        foreach (var w in scanned)
+        {
+            string sizeLabel = w.Width > 0 && w.Height > 0 ? $"{w.Width}×{w.Height}" : "";
+            bool hasProfile = HasProfileForProcess(w.ProcessName);
+
+            var existing = _windows.FirstOrDefault(r => r.Handle == w.Handle);
+            if (existing is null)
+            {
+                var row = new WindowRow
+                {
+                    Handle = w.Handle,
+                    ProcessId = w.ProcessId,
+                    ProcessName = w.ProcessName,
+                    Title = w.Title,
+                    PathLabel = PathLabelOf(w),
+                    SizeLabel = sizeLabel,
+                    HasProfile = hasProfile,
+                    Icon = IconCache.ByProcessId(w.ProcessId), // 在跑的窗口优先用 pid 入口(精确且顺便学路径)
+                };
+                _windows.Add(row);
+            }
+            else
+            {
+                // 原地更新会变的字段(标题/尺寸/已有配置标记);Icon 已有则保留不闪。
+                existing.Title = w.Title;
+                existing.SizeLabel = sizeLabel;
+                existing.HasProfile = hasProfile;
+                if (existing.Icon is null)
+                    existing.Icon = IconCache.ByProcessId(w.ProcessId);
+            }
+        }
+
+        ApplyWindowFilter();
+    }
+
+    /// <summary>
+    /// 按搜索框文本把 _windows 的命中子集同步进 _windowsView(原地增删,保持顺序)。
+    /// _windows 与 _windowsView 共享同一批 WindowRow 实例,故视图增删不重置 Icon/状态,不闪。
+    /// </summary>
+    private void ApplyWindowFilter()
+    {
+        string q = (SearchBox?.Text ?? "").Trim();
+
+        // 同步「已有配置」标记(配置增删后调用,扫描间隔外也能即时反映)。
+        foreach (var row in _windows)
+            row.HasProfile = HasProfileForProcess(row.ProcessName);
+
+        bool Match(WindowRow r) => q.Length == 0
+            || r.Title.Contains(q, StringComparison.OrdinalIgnoreCase)
+            || (r.ProcessName + ".exe").Contains(q, StringComparison.OrdinalIgnoreCase);
+
+        var desired = _windows.Where(Match).ToList();
+
+        // 删:视图里已不该出现的。
+        for (int i = _windowsView.Count - 1; i >= 0; i--)
+            if (!desired.Contains(_windowsView[i]))
+                _windowsView.RemoveAt(i);
+
+        // 增/排序:按 desired 顺序就位(原地移动/插入,引用相等不动)。
+        for (int i = 0; i < desired.Count; i++)
+        {
+            var row = desired[i];
+            int cur = _windowsView.IndexOf(row);
+            if (cur < 0) _windowsView.Insert(i, row);
+            else if (cur != i) _windowsView.Move(cur, i);
+        }
+
+        bool empty = desired.Count == 0;
+        WindowEmptyHint.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
+        WindowList.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    /// <summary>进程 exe 完整路径(取得到),否则回落 "进程名.exe";进程名也空则 "(未知进程)"。</summary>
+    private static string PathLabelOf(WindowInfo w)
+    {
+        string? path = IconCache.TryResolveExePath(w.ProcessId);
+        if (!string.IsNullOrEmpty(path)) return path;
+        return string.IsNullOrEmpty(w.ProcessName) ? "(未知进程)" : w.ProcessName + ".exe";
+    }
+
+    /// <summary>是否已有针对该进程名(MatchKind=Process)的配置。</summary>
+    private static bool HasProfileForProcess(string processName)
+    {
+        if (string.IsNullOrEmpty(processName)) return false;
+        return ConfigService.Instance.Config.Profiles.Any(p =>
+            p.MatchKind == MatchKind.Process &&
+            string.Equals(StripExe(p.MatchValue), processName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static WindowRow? WindowRowFromSender(object sender)
+        => (sender as FrameworkElement)?.DataContext as WindowRow;
+
+    // 「+ 创建配置」(行主按钮 / 右键菜单项):沿用对话框版逻辑——
+    // Name=标题截断、MatchKind=Process、预置任意屏→铺满规则、重复进程确认框、Save 后导航到编辑页。
+    private async void CreateProfile_Click(object sender, RoutedEventArgs e)
+    {
+        if (WindowRowFromSender(sender) is not { } w) return;
 
         var cfg = ConfigService.Instance.Config;
 
@@ -325,6 +559,18 @@ public sealed partial class ProfilesPage : Page
         Frame.Navigate(typeof(ProfileEditorPage), profile.Id);
     }
 
+    // 右键「立即去边框」:对该窗口句柄临时去边框(不入配置)。已被跟踪则还原(切换语义)。
+    private void QuickBorderless_Click(object sender, RoutedEventArgs e)
+    {
+        if (WindowRowFromSender(sender) is not { } w) return;
+        if (w.Handle == IntPtr.Zero || !NativeMethods.IsWindow(w.Handle)) return;
+
+        if (WindowOps.IsTracked(w.Handle))
+            WindowOps.Restore(w.Handle);
+        else
+            WindowOps.Apply(w.Handle, new PlacementResolver.Target(true, null, false));
+    }
+
     private static string StripExe(string s)
         => s.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? s[..^4] : s;
 
@@ -332,31 +578,5 @@ public sealed partial class ProfilesPage : Page
     {
         s = string.IsNullOrWhiteSpace(s) ? "未命名" : s.Trim();
         return s.Length <= max ? s : s[..max];
-    }
-
-    private async void DeleteButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (ProfileList.SelectedItem is not ProfileRow row) return;
-        var cfg = ConfigService.Instance.Config;
-        var profile = cfg.Profiles.FirstOrDefault(x => x.Id == row.ProfileId);
-        if (profile is null) return;
-
-        var dialog = new ContentDialog
-        {
-            Title = "删除配置文件",
-            Content = $"确定要删除“{(string.IsNullOrWhiteSpace(profile.Name) ? "未命名" : profile.Name)}”吗?此操作不可撤销。",
-            PrimaryButtonText = "删除",
-            CloseButtonText = "取消",
-            DefaultButton = ContentDialogButton.Close,
-            XamlRoot = XamlRoot,
-        };
-
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
-
-        cfg.Profiles.Remove(profile);
-        _suppressReload = true;
-        ConfigService.Instance.Save();
-        _suppressReload = false;
-        Reload();
     }
 }

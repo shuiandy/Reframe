@@ -11,109 +11,230 @@
     <Grid Padding="24" RowSpacing="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
         <TextBlock Text="配置文件" Style="{ThemeResource TitleTextBlockStyle}"/>
 
-        <CommandBar Grid.Row="1" DefaultLabelPosition="Right"
-                    Background="Transparent" HorizontalAlignment="Left"
-                    IsOpen="False">
-            <AppBarButton x:Name="NewButton" Icon="Add" Label="新建" Click="NewButton_Click"/>
-            <AppBarButton x:Name="FromWindowButton" Label="从窗口创建" Click="FromWindowButton_Click">
-                <AppBarButton.Icon>
-                    <FontIcon Glyph="&#xE8A7;"/>
-                </AppBarButton.Icon>
-            </AppBarButton>
-            <AppBarButton x:Name="EditButton" Icon="Edit" Label="编辑"
-                          Click="EditButton_Click" IsEnabled="False"/>
-            <AppBarButton x:Name="DeleteButton" Icon="Delete" Label="删除"
-                          Click="DeleteButton_Click" IsEnabled="False"/>
-        </CommandBar>
+        <!-- 主页式双栏:左=运行中的窗口(常驻),中间 1px 分隔线,右=配置列表 -->
+        <Grid Grid.Row="1" ColumnSpacing="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="3*"/>
+            </Grid.ColumnDefinitions>
 
-        <ListView x:Name="ProfileList" Grid.Row="2"
-                  SelectionMode="Single"
-                  IsItemClickEnabled="False"
-                  DoubleTapped="ProfileList_DoubleTapped"
-                  SelectionChanged="ProfileList_SelectionChanged">
-            <ListView.ItemContainerStyle>
-                <Style TargetType="ListViewItem">
-                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                    <Setter Property="Padding" Value="12,8"/>
-                </Style>
-            </ListView.ItemContainerStyle>
-            <ListView.ItemTemplate>
-                <DataTemplate x:DataType="local:ProfileRow">
-                    <Grid ColumnSpacing="16" Background="Transparent"
-                          ContextRequested="ProfileRow_ContextRequested">
-                        <Grid.ContextFlyout>
-                            <MenuFlyout>
-                                <MenuFlyoutItem Text="编辑" Click="EditButton_Click">
-                                    <MenuFlyoutItem.Icon>
-                                        <SymbolIcon Symbol="Edit"/>
-                                    </MenuFlyoutItem.Icon>
-                                </MenuFlyoutItem>
-                                <MenuFlyoutSeparator/>
-                                <MenuFlyoutItem Text="删除" Click="DeleteButton_Click">
-                                    <MenuFlyoutItem.Icon>
-                                        <SymbolIcon Symbol="Delete"/>
-                                    </MenuFlyoutItem.Icon>
-                                </MenuFlyoutItem>
-                            </MenuFlyout>
-                        </Grid.ContextFlyout>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
+            <!-- ===== 左栏:运行中的窗口 ===== -->
+            <Grid Grid.Column="0" RowSpacing="8">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
 
-                        <ToggleSwitch Grid.Column="0"
-                                      VerticalAlignment="Center"
-                                      MinWidth="0"
-                                      OnContent="" OffContent=""
-                                      IsOn="{x:Bind Enabled, Mode=TwoWay}"
-                                      Toggled="EnabledToggle_Toggled"
-                                      Tag="{x:Bind ProfileId}"/>
+                <TextBlock Text="运行中的窗口" Style="{ThemeResource SubtitleTextBlockStyle}"/>
 
-                        <!-- 行首图标:进程匹配显示其图标,取不到/非进程匹配回落默认字形(显隐互斥) -->
-                        <Grid Grid.Column="1" Width="24" Height="24" VerticalAlignment="Center">
-                            <FontIcon Glyph="&#xE7FC;"
-                                      FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                                      FontSize="18" Opacity="0.6"
-                                      Visibility="{x:Bind FallbackIconVisibility, Mode=OneWay}"/>
-                            <Image Source="{x:Bind Icon, Mode=OneWay}" Width="24" Height="24"
-                                   Visibility="{x:Bind RealIconVisibility, Mode=OneWay}"/>
-                        </Grid>
+                <!-- 搜索 + 刷新 -->
+                <Grid Grid.Row="1" ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="SearchBox" Grid.Column="0"
+                             PlaceholderText="按标题或进程名筛选…"
+                             TextChanged="SearchBox_TextChanged"/>
+                    <Button x:Name="RefreshButton" Grid.Column="1"
+                            Click="RefreshButton_Click" ToolTipService.ToolTip="刷新窗口列表">
+                        <FontIcon Glyph="&#xE72C;" FontFamily="{ThemeResource SymbolThemeFontFamily}"/>
+                    </Button>
+                </Grid>
 
-                        <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="2">
-                            <TextBlock Text="{x:Bind Name}" Style="{ThemeResource BodyStrongTextBlockStyle}"/>
-                            <TextBlock Text="{x:Bind MatchSummary}" Opacity="0.7"
-                                       Style="{ThemeResource CaptionTextBlockStyle}"/>
-                        </StackPanel>
+                <ListView x:Name="WindowList" Grid.Row="2"
+                          SelectionMode="None"
+                          IsItemClickEnabled="False"
+                          HorizontalAlignment="Stretch"
+                          ScrollViewer.HorizontalScrollMode="Disabled"
+                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Setter Property="Padding" Value="12,8"/>
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="local:WindowRow">
+                            <Grid ColumnSpacing="12" Background="Transparent">
+                                <Grid.ContextFlyout>
+                                    <MenuFlyout>
+                                        <MenuFlyoutItem Text="创建配置" Click="CreateProfile_Click">
+                                            <MenuFlyoutItem.Icon>
+                                                <SymbolIcon Symbol="Add"/>
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Text="立即去边框" Click="QuickBorderless_Click">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE740;"/>
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                    </MenuFlyout>
+                                </Grid.ContextFlyout>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*" MinWidth="60"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
 
-                        <Button Grid.Column="3" VerticalAlignment="Center"
-                                Background="Transparent" BorderThickness="0" Padding="8"
-                                IsEnabled="{x:Bind CanLaunch}"
-                                Tag="{x:Bind ProfileId}"
-                                Click="LaunchButton_Click"
-                                ToolTipService.ToolTip="启动">
-                            <FontIcon Glyph="&#xE768;" FontSize="16"/>
-                        </Button>
+                                <Grid Grid.Column="0" Width="24" Height="24" VerticalAlignment="Center">
+                                    <FontIcon Glyph="&#xECAA;"
+                                              FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                              FontSize="18" Opacity="0.6"
+                                              Visibility="{x:Bind FallbackIconVisibility, Mode=OneWay}"/>
+                                    <Image Source="{x:Bind Icon, Mode=OneWay}" Width="24" Height="24"
+                                           Visibility="{x:Bind RealIconVisibility, Mode=OneWay}"/>
+                                </Grid>
 
-                        <TextBlock Grid.Column="4" VerticalAlignment="Center"
-                                   Text="{x:Bind RulesSummary}" Opacity="0.7"
-                                   Style="{ThemeResource CaptionTextBlockStyle}"/>
-                    </Grid>
-                </DataTemplate>
-            </ListView.ItemTemplate>
-        </ListView>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Text="{x:Bind Title, Mode=OneWay}" TextTrimming="CharacterEllipsis"
+                                               TextWrapping="NoWrap"
+                                               Style="{ThemeResource BodyStrongTextBlockStyle}"/>
+                                    <TextBlock Text="{x:Bind PathLabel, Mode=OneWay}" Opacity="0.7"
+                                               TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
+                                               Style="{ThemeResource CaptionTextBlockStyle}"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <TextBlock Text="{x:Bind SizeLabel, Mode=OneWay}" Opacity="0.7"
+                                                   Style="{ThemeResource CaptionTextBlockStyle}"/>
+                                        <TextBlock Text="已有配置" Opacity="0.55"
+                                                   Style="{ThemeResource CaptionTextBlockStyle}"
+                                                   Visibility="{x:Bind HasProfileVisibility, Mode=OneWay}"/>
+                                    </StackPanel>
+                                </StackPanel>
 
-        <TextBlock x:Name="EmptyHint" Grid.Row="2"
-                   Text="还没有配置文件,点击上方“新建”创建一个。"
-                   Opacity="0.6" HorizontalAlignment="Center" VerticalAlignment="Center"
-                   Visibility="Collapsed"/>
+                                <Button Grid.Column="3" VerticalAlignment="Center" Padding="9,7"
+                                        Click="CreateProfile_Click"
+                                        ToolTipService.ToolTip="据此窗口创建配置">
+                                    <FontIcon Glyph="&#xE710;" FontSize="14"/>
+                                </Button>
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+
+                <TextBlock x:Name="WindowEmptyHint" Grid.Row="2"
+                           Text="没有可选的窗口。" Opacity="0.6"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           Visibility="Collapsed"/>
+            </Grid>
+
+            <!-- 中间分隔线 -->
+            <Border Grid.Column="1" Width="1"
+                    Background="{ThemeResource CardStrokeColorDefaultBrush}"/>
+
+            <!-- ===== 右栏:配置列表 ===== -->
+            <Grid Grid.Column="2" RowSpacing="8">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Text="配置列表" Style="{ThemeResource SubtitleTextBlockStyle}"/>
+
+                <CommandBar Grid.Row="1" DefaultLabelPosition="Right"
+                            Background="Transparent" HorizontalAlignment="Left"
+                            IsOpen="False">
+                    <AppBarButton x:Name="NewButton" Icon="Add" Label="新建" Click="NewButton_Click"/>
+                    <AppBarButton x:Name="EditButton" Icon="Edit" Label="编辑"
+                                  Click="EditButton_Click" IsEnabled="False"/>
+                    <AppBarButton x:Name="DeleteButton" Icon="Delete" Label="删除"
+                                  Click="DeleteButton_Click" IsEnabled="False"/>
+                </CommandBar>
+
+                <ListView x:Name="ProfileList" Grid.Row="2"
+                          SelectionMode="Single"
+                          IsItemClickEnabled="False"
+                          DoubleTapped="ProfileList_DoubleTapped"
+                          SelectionChanged="ProfileList_SelectionChanged">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Setter Property="Padding" Value="12,8"/>
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="local:ProfileRow">
+                            <Grid ColumnSpacing="8" Background="Transparent"
+                                  ContextRequested="ProfileRow_ContextRequested">
+                                <Grid.ContextFlyout>
+                                    <MenuFlyout>
+                                        <MenuFlyoutItem Text="编辑" Click="EditButton_Click">
+                                            <MenuFlyoutItem.Icon>
+                                                <SymbolIcon Symbol="Edit"/>
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutSeparator/>
+                                        <MenuFlyoutItem Text="删除" Click="DeleteButton_Click">
+                                            <MenuFlyoutItem.Icon>
+                                                <SymbolIcon Symbol="Delete"/>
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                    </MenuFlyout>
+                                </Grid.ContextFlyout>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*" MinWidth="60"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <ToggleSwitch Grid.Column="0"
+                                              VerticalAlignment="Center"
+                                              MinWidth="0"
+                                              OnContent="" OffContent=""
+                                              IsOn="{x:Bind Enabled, Mode=TwoWay}"
+                                              Toggled="EnabledToggle_Toggled"
+                                              Tag="{x:Bind ProfileId}"/>
+
+                                <!-- 行首图标:进程匹配显示其图标,取不到/非进程匹配回落默认字形(显隐互斥) -->
+                                <Grid Grid.Column="1" Width="24" Height="24" VerticalAlignment="Center">
+                                    <FontIcon Glyph="&#xE7FC;"
+                                              FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                              FontSize="18" Opacity="0.6"
+                                              Visibility="{x:Bind FallbackIconVisibility, Mode=OneWay}"/>
+                                    <Image Source="{x:Bind Icon, Mode=OneWay}" Width="24" Height="24"
+                                           Visibility="{x:Bind RealIconVisibility, Mode=OneWay}"/>
+                                </Grid>
+
+                                <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Text="{x:Bind Name}" TextTrimming="CharacterEllipsis"
+                                               TextWrapping="NoWrap"
+                                               Style="{ThemeResource BodyStrongTextBlockStyle}"/>
+                                    <TextBlock Text="{x:Bind MatchSummary}" Opacity="0.7"
+                                               TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
+                                               Style="{ThemeResource CaptionTextBlockStyle}"/>
+                                    <TextBlock Text="{x:Bind RulesSummary}" Opacity="0.55"
+                                               TextWrapping="NoWrap"
+                                               Style="{ThemeResource CaptionTextBlockStyle}"/>
+                                </StackPanel>
+
+                                <Button Grid.Column="3" VerticalAlignment="Center"
+                                        Background="Transparent" BorderThickness="0" Padding="8"
+                                        IsEnabled="{x:Bind CanLaunch}"
+                                        Tag="{x:Bind ProfileId}"
+                                        Click="LaunchButton_Click"
+                                        ToolTipService.ToolTip="启动">
+                                    <FontIcon Glyph="&#xE768;" FontSize="16"/>
+                                </Button>
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+
+                <TextBlock x:Name="EmptyHint" Grid.Row="2"
+                           Text="还没有配置文件,点击上方“新建”或从左栏窗口创建一个。"
+                           Opacity="0.6" HorizontalAlignment="Center" VerticalAlignment="Center"
+                           Visibility="Collapsed"/>
+            </Grid>
+        </Grid>
     </Grid>
 </Page>

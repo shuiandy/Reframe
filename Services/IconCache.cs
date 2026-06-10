@@ -213,6 +213,20 @@ public static class IconCache
         return ByProcessName(name);
     }
 
+    /// <summary>
+    /// 按进程 ID 取其 exe 完整路径(复用 MainModule → QueryFullProcessImageNameW 兜底链路)。
+    /// 给"运行中窗口"列表展示次行路径用。取不到(进程已退/无权限且兜底失败)返回 null。
+    /// </summary>
+    public static string? TryResolveExePath(uint pid)
+    {
+        try
+        {
+            using var p = Process.GetProcessById((int)pid);
+            return TryGetProcessImagePath(p);
+        }
+        catch { return null; }
+    }
+
     // ---- 路径解析与学习 ----
 
     private static string Normalize(string name)
