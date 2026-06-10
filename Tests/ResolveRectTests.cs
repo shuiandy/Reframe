@@ -53,14 +53,15 @@ public class ResolveRectTests
     private static PlacementRule FullscreenRule(int w = 0, int h = 0, bool useWork = false)
         => new() { Monitor = new MonitorFilter { Width = w, Height = h }, Kind = PlacementKind.Fullscreen, UseWorkArea = useWork };
 
-    private static PlacementRule ZoneRule(string zoneId, int w = 0, int h = 0, bool useWork = false)
+    private static PlacementRule ZoneRule(string zoneId, int w = 0, int h = 0, bool useWork = false, bool moveOnly = false)
         => new()
         {
             Monitor = new MonitorFilter { Width = w, Height = h },
             Kind = PlacementKind.Zone,
             LayoutId = LayoutId,
             ZoneId = zoneId,
-            UseWorkArea = useWork
+            UseWorkArea = useWork,
+            MoveOnly = moveOnly
         };
 
     private static void AssertRect(RECT? actual, int l, int t, int r, int b)
@@ -419,5 +420,66 @@ public class ResolveRectTests
         Assert.Equal((0, 1280), (r1.Left, r1.Right));
         Assert.Equal((1280, 2560), (r2.Left, r2.Right));
         Assert.Equal((2560, 3840), (r3.Left, r3.Right));
+    }
+
+    // ---- MoveOnly:只定位不调尺寸(Unity 固定渲染分辨率游戏) ----
+
+    [Fact(DisplayName = "MoveOnly:Zone 命中 → 位置=zone 左上角、尺寸=窗口当前尺寸(不缩放)")]
+    public void MoveOnly_Zone_PositionAtZoneOrigin_KeepsCurrentSize()
+    {
+        var mon = Mon(0, 0, 7680, 2160);
+        var p = ProfWithRules(ZoneRule(GameZoneId, moveOnly: true));
+        // 游戏窗口当前是 5120×2088(注册表渲染分辨率),恰好不在 zone 左上角
+        var cur = R(300, 120, 300 + 5120, 120 + 2088);
+        var rect = PlacementResolver.ResolveRect(mon, mon, cur, p, CfgWithZones());
+        // zone 游戏区左上角 = (0,0);尺寸保持 5120×2088
+        AssertRect(rect, 0, 0, 5120, 2088);
+    }
+
+    [Fact(DisplayName = "MoveOnly:非零原点屏上,位置=zone 左上角(含屏原点),尺寸不变")]
+    public void MoveOnly_NonZeroOrigin_PositionIncludesMonitorOrigin()
+    {
+        // 屏在 x=5120,zone 游戏区左上角 = 屏原点 (5120,0)
+        var mon = Mon(5120, 0, 7680, 2160);
+        var p = ProfWithRules(ZoneRule(GameZoneId, moveOnly: true));
+        var cur = R(9999, 50, 9999 + 5120, 50 + 2088); // 当前乱放
+        var rect = PlacementResolver.ResolveRect(mon, mon, cur, p, CfgWithZones());
+        AssertRect(rect, 5120, 0, 5120 + 5120, 0 + 2088);
+    }
+
+    [Fact(DisplayName = "MoveOnly + Offsets:偏移挪动目标左上角,尺寸仍取窗口当前尺寸")]
+    public void MoveOnly_WithOffsets_OffsetsMoveTopLeftOnly()
+    {
+        var mon = Mon(0, 0, 7680, 2160);
+        var p = ProfWithRules(ZoneRule(GameZoneId, moveOnly: true));
+        p.Offsets = new Offsets { Left = 10, Top = 20, Right = -30, Bottom = -40 };
+        var cur = R(0, 0, 5120, 2088);
+        var rect = PlacementResolver.ResolveRect(mon, mon, cur, p, CfgWithZones());
+        // zone 左上角 (0,0) 加 Left/Top 偏移 → (10,20);尺寸保持 5120×2088,Right/Bottom 偏移不参与尺寸
+        AssertRect(rect, 10, 20, 10 + 5120, 20 + 2088);
+    }
+
+    [Fact(DisplayName = "MoveOnly + KeepAspectRatio:MoveOnly 优先(不 letterbox,只挪位置)")]
+    public void MoveOnly_TakesPrecedenceOver_KeepAspectRatio()
+    {
+        var mon = Mon(0, 0, 7680, 2160);
+        var p = ProfWithRules(ZoneRule(GameZoneId, moveOnly: true));
+        p.KeepAspectRatio = true; // 同时开,应被 MoveOnly 压制
+        var cur = R(200, 100, 200 + 5120, 100 + 2088);
+        var rect = PlacementResolver.ResolveRect(mon, mon, cur, p, CfgWithZones());
+        // 若 letterbox 生效会得到居中缩放后的矩形;MoveOnly 优先 → 直接 zone 左上角 + 原尺寸
+        AssertRect(rect, 0, 0, 5120, 2088);
+    }
+
+    [Fact(DisplayName = "MoveOnly + Fullscreen:位置=屏左上角,尺寸保持窗口当前尺寸")]
+    public void MoveOnly_Fullscreen_PositionAtMonitorOrigin()
+    {
+        var mon = Mon(0, 0, 7680, 2160);
+        var rule = FullscreenRule();
+        rule.MoveOnly = true;
+        var p = ProfWithRules(rule);
+        var cur = R(500, 300, 500 + 5120, 300 + 2088);
+        var rect = PlacementResolver.ResolveRect(mon, mon, cur, p, new AppConfig());
+        AssertRect(rect, 0, 0, 5120, 2088);
     }
 }

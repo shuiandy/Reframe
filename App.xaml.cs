@@ -32,6 +32,9 @@ public partial class App : Application
         Engine = new Watcher(() => ConfigService.Instance.Config);
         Engine.Start();
 
+        // 配置变化(UI 保存 / 外部改 config.json)→ 立刻重写 Unity 分辨率预设(游戏多半未运行,写了即生效)。
+        ConfigService.Instance.Changed += () => Engine?.OnConfigChanged();
+
         _window = new MainWindow();
         _ui = _window.DispatcherQueue;
 

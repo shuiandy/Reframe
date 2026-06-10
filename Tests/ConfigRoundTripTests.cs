@@ -175,4 +175,48 @@ public class ConfigRoundTripTests
         Assert.True(back.Profiles[0].Topmost);
         Assert.True(back.Profiles[0].KeepAspectRatio);
     }
+
+    // ---- Unity 分辨率预设 + MoveOnly ----
+
+    [Fact(DisplayName = "ResolutionPreset 默认为 null,且往返仍为 null")]
+    public void ResolutionPreset_DefaultsNull_RoundTrip()
+    {
+        var cfg = AppConfig.CreateDefault();
+        Assert.Null(cfg.Profiles[0].ResolutionPreset);
+        var back = Deserialize(Serialize(cfg));
+        Assert.Null(back.Profiles[0].ResolutionPreset);
+    }
+
+    [Fact(DisplayName = "ResolutionPreset 全字段往返保真(原神 5120×2088 窗口化)")]
+    public void ResolutionPreset_FullRoundTrip()
+    {
+        var cfg = AppConfig.CreateDefault();
+        cfg.Profiles[2].ResolutionPreset = new UnityResolutionPreset
+        {
+            Enabled = true,
+            RegistryPath = @"Software\miHoYo\原神",
+            Width = 5120,
+            Height = 2088,
+            Windowed = true,
+        };
+        var back = Deserialize(Serialize(cfg));
+        var rp = back.Profiles[2].ResolutionPreset;
+        Assert.NotNull(rp);
+        Assert.True(rp!.Enabled);
+        Assert.Equal(@"Software\miHoYo\原神", rp.RegistryPath);
+        Assert.Equal(5120, rp.Width);
+        Assert.Equal(2088, rp.Height);
+        Assert.True(rp.Windowed);
+    }
+
+    [Fact(DisplayName = "PlacementRule.MoveOnly 默认 false,置真后往返保真")]
+    public void MoveOnly_RoundTrip()
+    {
+        var cfg = AppConfig.CreateDefault();
+        Assert.False(cfg.Profiles[0].Rules[0].MoveOnly); // 默认
+        cfg.Profiles[0].Rules[0].MoveOnly = true;
+        var back = Deserialize(Serialize(cfg));
+        Assert.True(back.Profiles[0].Rules[0].MoveOnly);
+        Assert.False(back.Profiles[0].Rules[1].MoveOnly);
+    }
 }

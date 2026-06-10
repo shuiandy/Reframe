@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using Reframe.Interop;
 
 namespace Reframe.Core;
@@ -49,7 +50,21 @@ public sealed class Watcher : IDisposable
         _pollLoop = Task.Run(() => PollLoopAsync(_cts.Token));
 
         Log?.Invoke("引擎已启动");
+
+        // 启动即把所有启用的 Unity 分辨率预设写一次(不分 MatchKind):游戏多半还没起,写了立即生效。
+        ApplyResolutionPresets(forceAllKinds: true);
+
         ScheduleTick(); // 启动即先扫一遍现有窗口
+    }
+
+    /// <summary>
+    /// 配置变化时调用(App 订阅 ConfigService.Changed):把所有启用的 Unity 分辨率预设写一次。
+    /// 与启动同口径,不分 MatchKind——用户刚改完配置,通常游戏未运行,写了即生效。
+    /// </summary>
+    public void OnConfigChanged()
+    {
+        if (!_running) return;
+        ApplyResolutionPresets(forceAllKinds: true);
     }
 
     /// <param name="restoreWindows">停止时是否把接管过的窗口还原。</param>
@@ -162,6 +177,9 @@ public sealed class Watcher : IDisposable
 
     private void Tick(AppConfig cfg)
     {
+        // 进程未运行时纠正注册表预设(进程在跑写了也没用——游戏退出会写回)。
+        ApplyResolutionPresets(forceAllKinds: false);
+
         var windows = WindowScanner.EnumerateTopLevel();
         foreach (var w in windows)
         {
@@ -229,6 +247,62 @@ public sealed class Watcher : IDisposable
             g.Count++;
             return true;
         }
+    }
+
+    /// <summary>
+    /// 应用 Unity 启动分辨率预设(见 <see cref="UnityPreset"/>)。
+    /// <para><paramref name="forceAllKinds"/>=true(引擎启动 / 配置变化):写所有启用的预设,不分 MatchKind、不做进程判定。</para>
+    /// <para>false(每次 Tick):只对 MatchKind=Process 的 profile,且其进程**不在运行**、注册表当前值≠目标时才纠正
+    /// (读比较很便宜;进程在跑就跳过,因为游戏退出时会把当前值写回)。其它 MatchKind 不在 tick 纠正(无可靠进程判定)。</para>
+    /// </summary>
+    private void ApplyResolutionPresets(bool forceAllKinds)
+    {
+        var cfg = _getConfig();
+        foreach (var p in cfg.Profiles)
+        {
+            var preset = p.ResolutionPreset;
+            if (preset is not { Enabled: true }) continue;
+            if (string.IsNullOrWhiteSpace(preset.RegistryPath)) continue;
+
+            if (!forceAllKinds)
+            {
+                // Tick 纠正:只处理进程匹配,且仅当进程不在运行时
+                if (p.MatchKind != MatchKind.Process) continue;
+                if (IsProcessRunning(p.MatchValue)) continue;
+                // 已经是目标值就别重复写
+                if (UnityPreset.AlreadyMatches(preset.RegistryPath, preset.Width, preset.Height, preset.Windowed))
+                    continue;
+            }
+
+            try
+            {
+                bool wrote = UnityPreset.Write(preset.RegistryPath, preset.Width, preset.Height, preset.Windowed);
+                if (wrote)
+                    Log?.Invoke($"已写入分辨率预设 {preset.Width}×{preset.Height} → {preset.RegistryPath}");
+                else
+                    Log?.Invoke($"分辨率预设未写入:注册表路径或键值不存在 → HKCU\\{preset.RegistryPath}(未安装该游戏或路径填错?)");
+            }
+            catch (Exception ex)
+            {
+                Log?.Invoke("写入分辨率预设异常: " + ex.Message);
+            }
+        }
+    }
+
+    /// <summary>按进程名(忽略 .exe、大小写)判断是否有该进程在运行。</summary>
+    private static bool IsProcessRunning(string matchValue)
+    {
+        if (string.IsNullOrWhiteSpace(matchValue)) return false;
+        string name = matchValue.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            ? matchValue[..^4]
+            : matchValue;
+        try
+        {
+            var procs = Process.GetProcessesByName(name);
+            try { return procs.Length > 0; }
+            finally { foreach (var pr in procs) pr.Dispose(); }
+        }
+        catch { return false; }
     }
 
     /// <summary>句柄已失效的条目从字典剔除,防止无限增长。</summary>

@@ -84,6 +84,23 @@ public sealed class PlacementRule
 
     /// <summary>true = 以工作区(rcWork,避开任务栏)为基准;false = 整屏(rcMonitor)。</summary>
     public bool UseWorkArea { get; set; }
+
+    /// <summary>
+    /// 只定位:把窗口左上角放到目标矩形左上角,保持窗口当前尺寸不变(不 resize)。
+    /// 用于"渲染分辨率钉死在注册表"的 Unity 游戏(见 <see cref="UnityResolutionPreset"/>):
+    /// resize 只会整张缩放(拉伸),所以这里只挪位置。与 KeepAspectRatio 冲突时 MoveOnly 优先。
+    /// </summary>
+    public bool MoveOnly { get; set; }
+}
+
+/// <summary>Unity 游戏的启动分辨率预设:启动前把 Screenmanager 注册表写成目标值(原神等"渲染分辨率钉死在注册表"的游戏)。</summary>
+public sealed class UnityResolutionPreset
+{
+    public bool Enabled { get; set; }
+    public string RegistryPath { get; set; } = "";  // 如 Software\miHoYo\原神(HKCU 下相对路径)
+    public int Width { get; set; }
+    public int Height { get; set; }
+    public bool Windowed { get; set; } = true;       // Is Fullscreen mode = 0
 }
 
 /// <summary>一个游戏/应用的完整配置。</summary>
@@ -113,6 +130,12 @@ public sealed class Profile
     public bool PreserveClientArea { get; set; }
     public bool MuteInBackground { get; set; }
     public bool ClipCursor { get; set; }
+
+    /// <summary>
+    /// Unity 启动分辨率预设(可空,默认无)。启用后引擎会在游戏未运行时把 Screenmanager
+    /// 注册表写成目标分辨率,使游戏按目标分辨率渲染,再配合 MoveOnly 规则只定位不缩放。
+    /// </summary>
+    public UnityResolutionPreset? ResolutionPreset { get; set; }
 }
 
 public sealed class AppConfig

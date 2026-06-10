@@ -44,6 +44,34 @@
                     </StackPanel>
                 </StackPanel>
 
+                <!-- 启动分辨率预设(Unity) -->
+                <Expander x:Name="ResolutionExpander" Header="启动分辨率预设 (Unity)" IsExpanded="False"
+                          HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                    <StackPanel Spacing="12" Padding="0,8,0,0">
+                        <TextBlock Text="适用于渲染分辨率钉死在注册表的 Unity 游戏(如原神)。启动游戏前生效;游戏运行中修改无效。"
+                                   Opacity="0.7" TextWrapping="Wrap"
+                                   Style="{ThemeResource CaptionTextBlockStyle}"/>
+                        <ToggleSwitch x:Name="ResEnabledToggle" Header="启用启动分辨率预设"
+                                      OnContent="开" OffContent="关" Toggled="ResEnabled_Toggled"/>
+                        <TextBox x:Name="ResPathBox" Header="注册表路径 (HKCU 下相对路径)" Width="420"
+                                 HorizontalAlignment="Left"
+                                 PlaceholderText="Software\miHoYo\原神"
+                                 TextChanged="ResPath_TextChanged"/>
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <NumberBox x:Name="ResWidthBox" Header="宽" Width="160"
+                                       Minimum="0" Maximum="32768" SmallChange="1" LargeChange="100"
+                                       SpinButtonPlacementMode="Compact"
+                                       ValueChanged="ResSize_ValueChanged"/>
+                            <NumberBox x:Name="ResHeightBox" Header="高" Width="160"
+                                       Minimum="0" Maximum="32768" SmallChange="1" LargeChange="100"
+                                       SpinButtonPlacementMode="Compact"
+                                       ValueChanged="ResSize_ValueChanged"/>
+                        </StackPanel>
+                        <CheckBox x:Name="ResWindowedCheck" Content="窗口化 (Is Fullscreen mode = 0)"
+                                  Checked="ResWindowed_Changed" Unchecked="ResWindowed_Changed"/>
+                    </StackPanel>
+                </Expander>
+
                 <!-- 无边框区 -->
                 <StackPanel Spacing="12">
                     <TextBlock Text="无边框" Style="{ThemeResource SubtitleTextBlockStyle}"/>

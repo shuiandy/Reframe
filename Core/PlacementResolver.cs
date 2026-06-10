@@ -116,6 +116,22 @@ public static class PlacementResolver
             Bottom = t.Bottom + o.Bottom
         };
 
+        // 只定位(MoveOnly):把窗口左上角放到目标矩形左上角,保持窗口当前尺寸不变。
+        // 用于渲染分辨率钉死在注册表的 Unity 游戏——resize 只会整张拉伸。
+        // MoveOnly 与 KeepAspectRatio 互斥时 MoveOnly 优先(letterbox 在固定渲染分辨率下没意义)。
+        if (rule.MoveOnly)
+        {
+            int cw = currentWindowRect.Right - currentWindowRect.Left;
+            int ch = currentWindowRect.Bottom - currentWindowRect.Top;
+            return new NativeMethods.RECT
+            {
+                Left = t.Left,
+                Top = t.Top,
+                Right = t.Left + cw,
+                Bottom = t.Top + ch
+            };
+        }
+
         // 保持宽高比:以 currentWindowRect 的宽高比,在目标矩形内等比最大化并居中(letterbox)。
         if (p.KeepAspectRatio)
             t = Letterbox(t, currentWindowRect);

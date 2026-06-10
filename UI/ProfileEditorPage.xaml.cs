@@ -67,6 +67,7 @@ public sealed partial class ProfileEditorPage : Page
         PreserveClientArea = src.PreserveClientArea,
         MuteInBackground = src.MuteInBackground,
         ClipCursor = src.ClipCursor,
+        ResolutionPreset = ClonePreset(src.ResolutionPreset),
         Rules = src.Rules.Select(CloneRule).ToList(),
     };
 
@@ -80,7 +81,20 @@ public sealed partial class ProfileEditorPage : Page
             ? null
             : new RectPx { X = r.CustomRect.X, Y = r.CustomRect.Y, W = r.CustomRect.W, H = r.CustomRect.H },
         UseWorkArea = r.UseWorkArea,
+        MoveOnly = r.MoveOnly,
     };
+
+    private static UnityResolutionPreset? ClonePreset(UnityResolutionPreset? src)
+        => src is null
+            ? null
+            : new UnityResolutionPreset
+            {
+                Enabled = src.Enabled,
+                RegistryPath = src.RegistryPath,
+                Width = src.Width,
+                Height = src.Height,
+                Windowed = src.Windowed,
+            };
 
     private void LoadFromModel(Profile p)
     {
@@ -111,9 +125,50 @@ public sealed partial class ProfileEditorPage : Page
         MuteToggle.IsOn = p.MuteInBackground;
         ClipToggle.IsOn = p.ClipCursor;
 
+        // 启动分辨率预设(可空:无则显示默认禁用态)
+        var rp = p.ResolutionPreset;
+        ResEnabledToggle.IsOn = rp?.Enabled ?? false;
+        ResPathBox.Text = rp?.RegistryPath ?? "";
+        ResWidthBox.Value = rp?.Width ?? 0;
+        ResHeightBox.Value = rp?.Height ?? 0;
+        ResWindowedCheck.IsChecked = rp?.Windowed ?? true;
+        if (rp is not null) ResolutionExpander.IsExpanded = rp.Enabled;
+
         _loading = false;
 
         RebuildRules();
+    }
+
+    // ---------- 启动分辨率预设(Unity) ----------
+
+    /// <summary>确保 _work.ResolutionPreset 存在(任一字段被编辑时按需创建)。</summary>
+    private UnityResolutionPreset EnsurePreset()
+        => _work!.ResolutionPreset ??= new UnityResolutionPreset();
+
+    private void ResEnabled_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading || _work is null) return;
+        EnsurePreset().Enabled = ResEnabledToggle.IsOn;
+    }
+
+    private void ResPath_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_loading || _work is null) return;
+        EnsurePreset().RegistryPath = ResPathBox.Text;
+    }
+
+    private void ResSize_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
+    {
+        if (_loading || _work is null) return;
+        int v = double.IsNaN(args.NewValue) ? 0 : (int)args.NewValue;
+        if (sender == ResWidthBox) EnsurePreset().Width = v;
+        else if (sender == ResHeightBox) EnsurePreset().Height = v;
+    }
+
+    private void ResWindowed_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loading || _work is null) return;
+        EnsurePreset().Windowed = ResWindowedCheck.IsChecked == true;
     }
 
     // ---------- 基本区 ----------
@@ -260,6 +315,18 @@ public sealed partial class ProfileEditorPage : Page
         workAreaCheck.Checked += (_, _) => rule.UseWorkArea = true;
         workAreaCheck.Unchecked += (_, _) => rule.UseWorkArea = false;
         body.Children.Add(workAreaCheck);
+
+        // —— 只定位(不调尺寸):用于渲染分辨率钉死在注册表的 Unity 游戏 ——
+        var moveOnlyCheck = new CheckBox
+        {
+            Content = "只定位(不调尺寸)",
+            IsChecked = rule.MoveOnly,
+        };
+        ToolTipService.SetToolTip(moveOnlyCheck,
+            "只把窗口左上角移到目标位置,保持游戏自身尺寸不变(避免拉伸)。配合启动分辨率预设使用。");
+        moveOnlyCheck.Checked += (_, _) => rule.MoveOnly = true;
+        moveOnlyCheck.Unchecked += (_, _) => rule.MoveOnly = false;
+        body.Children.Add(moveOnlyCheck);
 
         return new Border
         {
@@ -630,6 +697,8 @@ public sealed partial class ProfileEditorPage : Page
             real.PreserveClientArea = _work.PreserveClientArea;
             real.MuteInBackground = _work.MuteInBackground;
             real.ClipCursor = _work.ClipCursor;
+            // 启动分辨率预设:整体克隆写回(可空)。
+            real.ResolutionPreset = ClonePreset(_work.ResolutionPreset);
             // 规则整列替换为副本规则的再克隆(避免把副本对象漏给真实模型造成后续共享)。
             real.Rules = _work.Rules.Select(CloneRule).ToList();
             ConfigService.Instance.Save();
