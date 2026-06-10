@@ -9,7 +9,11 @@ namespace Reframe.UI;
 
 public sealed partial class ProfileEditorPage : Page
 {
-    private Profile? _profile;
+    // 「点保存才生效」:进入时对真实 Profile 做深拷贝,全部编辑落在 _work 副本上;
+    // 保存时把 _work 字段写回真实对象(保留其引用,不替换列表元素),再 Save()。
+    // 引擎读的是真实对象,未保存的副本改动对其不可见。
+    private string? _realId;     // 真实 Profile 的 Id(保存时定位写回目标)
+    private Profile? _work;      // 编辑副本,所有 UI 事件只动它
     // 加载阶段抑制控件事件回写,避免初始化 SelectedIndex/Text 时污染模型。
     private bool _loading;
 
@@ -22,19 +26,61 @@ public sealed partial class ProfileEditorPage : Page
     {
         base.OnNavigatedTo(e);
         var id = e.Parameter as string;
-        _profile = id is null
+        var real = id is null
             ? null
             : ConfigService.Instance.Config.Profiles.FirstOrDefault(p => p.Id == id);
 
-        if (_profile is null)
+        if (real is null)
         {
+            _realId = null;
+            _work = null;
             MissingHint.Visibility = Visibility.Visible;
             SaveButton.IsEnabled = false;
             return;
         }
 
-        LoadFromModel(_profile);
+        _realId = real.Id;
+        _work = Clone(real);     // 深拷贝:编辑只动副本
+        LoadFromModel(_work);
     }
+
+    // ---------- 深拷贝(Id 全部保持不变,引用关系靠 Id) ----------
+    private static Profile Clone(Profile src) => new()
+    {
+        Id = src.Id,
+        Name = src.Name,
+        Enabled = src.Enabled,
+        MatchKind = src.MatchKind,
+        MatchValue = src.MatchValue,
+        Borderless = src.Borderless,
+        Method = src.Method,
+        DelayMs = src.DelayMs,
+        Offsets = new Offsets
+        {
+            Left = src.Offsets.Left,
+            Top = src.Offsets.Top,
+            Right = src.Offsets.Right,
+            Bottom = src.Offsets.Bottom,
+        },
+        Topmost = src.Topmost,
+        KeepAspectRatio = src.KeepAspectRatio,
+        PreserveClientArea = src.PreserveClientArea,
+        MuteInBackground = src.MuteInBackground,
+        ClipCursor = src.ClipCursor,
+        Rules = src.Rules.Select(CloneRule).ToList(),
+    };
+
+    private static PlacementRule CloneRule(PlacementRule r) => new()
+    {
+        Monitor = new MonitorFilter { Width = r.Monitor.Width, Height = r.Monitor.Height },
+        Kind = r.Kind,
+        LayoutId = r.LayoutId,
+        ZoneId = r.ZoneId,
+        CustomRect = r.CustomRect is null
+            ? null
+            : new RectPx { X = r.CustomRect.X, Y = r.CustomRect.Y, W = r.CustomRect.W, H = r.CustomRect.H },
+        UseWorkArea = r.UseWorkArea,
+    };
 
     private void LoadFromModel(Profile p)
     {
@@ -74,14 +120,14 @@ public sealed partial class ProfileEditorPage : Page
 
     private void NameBox_TextChanged(object sender, TextChangedEventArgs e)
     {
-        if (_loading || _profile is null) return;
-        _profile.Name = NameBox.Text;
+        if (_loading || _work is null) return;
+        _work.Name = NameBox.Text;
     }
 
     private void MatchKindBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_loading || _profile is null) return;
-        _profile.MatchKind = MatchKindBox.SelectedIndex switch
+        if (_loading || _work is null) return;
+        _work.MatchKind = MatchKindBox.SelectedIndex switch
         {
             1 => MatchKind.Title,
             2 => MatchKind.TitleRegex,
@@ -103,43 +149,43 @@ public sealed partial class ProfileEditorPage : Page
 
     private void MatchValueBox_TextChanged(object sender, TextChangedEventArgs e)
     {
-        if (_loading || _profile is null) return;
-        _profile.MatchValue = MatchValueBox.Text;
+        if (_loading || _work is null) return;
+        _work.MatchValue = MatchValueBox.Text;
     }
 
     private void BorderlessToggle_Toggled(object sender, RoutedEventArgs e)
     {
-        if (_loading || _profile is null) return;
-        _profile.Borderless = BorderlessToggle.IsOn;
+        if (_loading || _work is null) return;
+        _work.Borderless = BorderlessToggle.IsOn;
     }
 
     private void DelayBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
     {
-        if (_loading || _profile is null) return;
+        if (_loading || _work is null) return;
         if (!double.IsNaN(args.NewValue))
-            _profile.DelayMs = (int)args.NewValue;
+            _work.DelayMs = (int)args.NewValue;
     }
 
     // ---------- 高级区 ----------
 
     private void Offset_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
     {
-        if (_loading || _profile is null) return;
+        if (_loading || _work is null) return;
         int v = double.IsNaN(args.NewValue) ? 0 : (int)args.NewValue;
-        if (sender == OffLeftBox) _profile.Offsets.Left = v;
-        else if (sender == OffTopBox) _profile.Offsets.Top = v;
-        else if (sender == OffRightBox) _profile.Offsets.Right = v;
-        else if (sender == OffBottomBox) _profile.Offsets.Bottom = v;
+        if (sender == OffLeftBox) _work.Offsets.Left = v;
+        else if (sender == OffTopBox) _work.Offsets.Top = v;
+        else if (sender == OffRightBox) _work.Offsets.Right = v;
+        else if (sender == OffBottomBox) _work.Offsets.Bottom = v;
     }
 
     private void M3Toggle_Toggled(object sender, RoutedEventArgs e)
     {
-        if (_loading || _profile is null) return;
-        _profile.Topmost = TopmostToggle.IsOn;
-        _profile.KeepAspectRatio = AspectToggle.IsOn;
-        _profile.PreserveClientArea = ClientToggle.IsOn;
-        _profile.MuteInBackground = MuteToggle.IsOn;
-        _profile.ClipCursor = ClipToggle.IsOn;
+        if (_loading || _work is null) return;
+        _work.Topmost = TopmostToggle.IsOn;
+        _work.KeepAspectRatio = AspectToggle.IsOn;
+        _work.PreserveClientArea = ClientToggle.IsOn;
+        _work.MuteInBackground = MuteToggle.IsOn;
+        _work.ClipCursor = ClipToggle.IsOn;
     }
 
     // ---------- 规则表 ----------
@@ -147,15 +193,15 @@ public sealed partial class ProfileEditorPage : Page
     private void RebuildRules()
     {
         RulesPanel.Children.Clear();
-        if (_profile is null) return;
-        for (int i = 0; i < _profile.Rules.Count; i++)
-            RulesPanel.Children.Add(BuildRuleRow(_profile.Rules[i], i));
+        if (_work is null) return;
+        for (int i = 0; i < _work.Rules.Count; i++)
+            RulesPanel.Children.Add(BuildRuleRow(_work.Rules[i], i));
     }
 
     private void AddRule_Click(object sender, RoutedEventArgs e)
     {
-        if (_profile is null) return;
-        _profile.Rules.Add(new PlacementRule
+        if (_work is null) return;
+        _work.Rules.Add(new PlacementRule
         {
             Monitor = new MonitorFilter(),
             Kind = PlacementKind.Fullscreen,
@@ -186,7 +232,7 @@ public sealed partial class ProfileEditorPage : Page
         upBtn.IsEnabled = index > 0;
         upBtn.Click += (_, _) => MoveRule(index, -1);
         var downBtn = IconButton("", "下移");
-        downBtn.IsEnabled = _profile is not null && index < _profile.Rules.Count - 1;
+        downBtn.IsEnabled = _work is not null && index < _work.Rules.Count - 1;
         downBtn.Click += (_, _) => MoveRule(index, +1);
         var delBtn = IconButton("", "删除");
         delBtn.Click += (_, _) => RemoveRule(index);
@@ -503,20 +549,20 @@ public sealed partial class ProfileEditorPage : Page
 
     private void MoveRule(int index, int delta)
     {
-        if (_profile is null) return;
+        if (_work is null) return;
         int target = index + delta;
-        if (target < 0 || target >= _profile.Rules.Count) return;
-        var item = _profile.Rules[index];
-        _profile.Rules.RemoveAt(index);
-        _profile.Rules.Insert(target, item);
+        if (target < 0 || target >= _work.Rules.Count) return;
+        var item = _work.Rules[index];
+        _work.Rules.RemoveAt(index);
+        _work.Rules.Insert(target, item);
         RebuildRules();
     }
 
     private void RemoveRule(int index)
     {
-        if (_profile is null) return;
-        if (index < 0 || index >= _profile.Rules.Count) return;
-        _profile.Rules.RemoveAt(index);
+        if (_work is null) return;
+        if (index < 0 || index >= _work.Rules.Count) return;
+        _work.Rules.RemoveAt(index);
         RebuildRules();
     }
 
@@ -558,17 +604,43 @@ public sealed partial class ProfileEditorPage : Page
 
     private void Save_Click(object sender, RoutedEventArgs e)
     {
-        if (_profile is null)
+        if (_work is null || _realId is null)
         {
-            Frame.GoBack();
+            if (Frame.CanGoBack) Frame.GoBack();
             return;
         }
-        ConfigService.Instance.Save();
+
+        // 写回真实对象:保留其引用与列表实例不被替换(只改内容),引擎正在持有它。
+        var real = ConfigService.Instance.Config.Profiles.FirstOrDefault(p => p.Id == _realId);
+        if (real is not null)
+        {
+            real.Name = _work.Name;
+            real.Enabled = _work.Enabled;
+            real.MatchKind = _work.MatchKind;
+            real.MatchValue = _work.MatchValue;
+            real.Borderless = _work.Borderless;
+            real.Method = _work.Method;
+            real.DelayMs = _work.DelayMs;
+            real.Offsets.Left = _work.Offsets.Left;
+            real.Offsets.Top = _work.Offsets.Top;
+            real.Offsets.Right = _work.Offsets.Right;
+            real.Offsets.Bottom = _work.Offsets.Bottom;
+            real.Topmost = _work.Topmost;
+            real.KeepAspectRatio = _work.KeepAspectRatio;
+            real.PreserveClientArea = _work.PreserveClientArea;
+            real.MuteInBackground = _work.MuteInBackground;
+            real.ClipCursor = _work.ClipCursor;
+            // 规则整列替换为副本规则的再克隆(避免把副本对象漏给真实模型造成后续共享)。
+            real.Rules = _work.Rules.Select(CloneRule).ToList();
+            ConfigService.Instance.Save();
+        }
+
         if (Frame.CanGoBack) Frame.GoBack();
     }
 
     private void Cancel_Click(object sender, RoutedEventArgs e)
     {
+        // 取消:丢弃副本,不写回、不保存。
         if (Frame.CanGoBack) Frame.GoBack();
     }
 

@@ -3,3 +3,4 @@ obj/
 *.user
 .vs/
 verify/
+build_check/

@@ -31,6 +31,8 @@ public sealed class Watcher : IDisposable
     // ---- 防拉锯:对已接管窗口,10s 内最多重新应用 3 次 ----
     private const int ThrashWindowMs = 10000;
     private const int ThrashMaxApplies = 3;
+    // 每个窗口的拉锯告警最多记 2 条,此后永久静默(窗口销毁清理时随字典项一起重置)。
+    private const int ThrashMaxWarns = 2;
 
     public Watcher(Func<AppConfig> getConfig) => _getConfig = getConfig;
 
@@ -154,7 +156,8 @@ public sealed class Watcher : IDisposable
     {
         public DateTime WindowStart = DateTime.UtcNow;
         public int Count;
-        public bool Warned;
+        public bool Warned;        // 本 10s 窗口内是否已告警(防同一窗口期重复)
+        public int TotalWarns;     // 该窗口累计告警条数,达上限后永久静默
     }
 
     private void Tick(AppConfig cfg)
@@ -211,10 +214,15 @@ public sealed class Watcher : IDisposable
             }
             if (g.Count >= ThrashMaxApplies)
             {
-                if (!g.Warned)
+                // 每个 10s 窗口最多告警一次,且整个窗口生命周期累计最多 ThrashMaxWarns 条,之后永久静默。
+                if (!g.Warned && g.TotalWarns < ThrashMaxWarns)
                 {
                     g.Warned = true;
-                    Log?.Invoke($"「{p.Name}」反复被改回,本轮放过(疑似与游戏窗口管理冲突)");
+                    g.TotalWarns++;
+                    string tail = g.TotalWarns >= ThrashMaxWarns
+                        ? "(后续相同冲突不再提示,直到窗口重建或引擎重启)"
+                        : "";
+                    Log?.Invoke($"「{p.Name}」反复被改回,本轮放过(疑似与游戏窗口管理冲突){tail}");
                 }
                 return false;
             }

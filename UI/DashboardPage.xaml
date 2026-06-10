@@ -12,13 +12,23 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- 标题 + 引擎总开关 -->
-        <StackPanel Orientation="Horizontal" Spacing="20" VerticalAlignment="Center">
-            <TextBlock Text="仪表盘" FontSize="28" FontWeight="SemiBold" VerticalAlignment="Center"/>
-            <ToggleSwitch x:Name="EngineToggle" Header="引擎"
-                          OnContent="运行中" OffContent="已停止"
-                          Toggled="EngineToggle_Toggled"/>
-        </StackPanel>
+        <!-- 标题 + 引擎总开关:标题在左,引擎标签+开关+状态在右,一行垂直居中 -->
+        <Grid VerticalAlignment="Center">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="仪表盘" FontSize="28" FontWeight="SemiBold"
+                       VerticalAlignment="Center"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10"
+                        VerticalAlignment="Center">
+                <TextBlock Text="引擎" VerticalAlignment="Center"/>
+                <ToggleSwitch x:Name="EngineToggle"
+                              OnContent="运行中" OffContent="已停止"
+                              VerticalAlignment="Center"
+                              Toggled="EngineToggle_Toggled"/>
+            </StackPanel>
+        </Grid>
 
         <!-- 概览行 -->
         <TextBlock x:Name="SummaryText" Grid.Row="1" Opacity="0.7"/>
