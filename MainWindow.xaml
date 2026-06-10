@@ -16,6 +16,7 @@
             IsSettingsVisible="False"
             PaneDisplayMode="Left"
             IsPaneToggleButtonVisible="True"
+            OpenPaneLength="200"
             IsTitleBarAutoPaddingEnabled="False"
             SelectionChanged="Nav_SelectionChanged">
 
