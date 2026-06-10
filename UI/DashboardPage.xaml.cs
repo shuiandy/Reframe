@@ -144,7 +144,16 @@ public sealed partial class DashboardPage : Page
 
         // 专注模式控件初值:滑块绑当前配置,开关跟 CurtainService.IsOn。
         // _curtainUiInit 抑制本次 ValueChanged 落盘(只读初值,不算用户操作)。
+        // 注意:Slider 的 Minimum/Maximum/StepFrequency 在此处用代码设置,而非 XAML 标记。
+        // WinUI 3 在标记里给 Slider 赋小数 Minimum(默认 Maximum=100)时,RangeBase 的属性强制
+        // (Minimum→Maximum→Value 联动)会在 LoadComponent 解析期抛 XamlParseException(0xc000027b),
+        // 启动即崩。代码里按 Min→Max→Step 顺序赋值可绕开标记解析期的强制时序问题。
         _curtainUiInit = true;
+        OpacitySlider.Minimum = 0.2;
+        OpacitySlider.Maximum = 0.95;
+        OpacitySlider.StepFrequency = 0.01;
+        OpacitySlider.SmallChange = 0.01;
+        OpacitySlider.LargeChange = 0.05;
         OpacitySlider.Value = ClampForSlider(cfg.CurtainOpacity);
         UpdateOpacityText(OpacitySlider.Value);
         CurtainToggle.IsChecked = CurtainService.IsOn;

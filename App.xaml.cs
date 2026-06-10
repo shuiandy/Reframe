@@ -27,6 +27,32 @@ public partial class App : Application
     public App()
     {
         InitializeComponent();
+
+        // 崩溃日志:把未处理异常落到 %LOCALAPPDATA%\Reframe\crash.log。
+        // XAML/WinRT 层异常(0xc000027b stowed exception)否则只在事件查看器看到模块名,无堆栈。
+        UnhandledException += (_, e) =>
+        {
+            LogCrash("XAML UnhandledException", e.Exception);
+            // 不设 e.Handled = true:让进程照常崩,但我们已留下堆栈。
+        };
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            LogCrash("AppDomain UnhandledException", e.ExceptionObject as Exception);
+        System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (_, e) =>
+            LogCrash("UnobservedTaskException", e.Exception);
+    }
+
+    private static void LogCrash(string source, Exception? ex)
+    {
+        try
+        {
+            string dir = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Reframe");
+            System.IO.Directory.CreateDirectory(dir);
+            string text = $"=== {DateTime.Now:yyyy-MM-dd HH:mm:ss} [{source}] ==={Environment.NewLine}" +
+                          (ex?.ToString() ?? "(null exception)") + Environment.NewLine + Environment.NewLine;
+            System.IO.File.AppendAllText(System.IO.Path.Combine(dir, "crash.log"), text);
+        }
+        catch { /* 日志失败不能再抛 */ }
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
