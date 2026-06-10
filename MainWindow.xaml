@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="Reframe.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Reframe">
+
+    <Grid Padding="24" RowSpacing="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- M1 临时仪表盘:引擎开关 + 配置概览。M2 换成 NavigationView 完整 UI -->
+        <StackPanel Orientation="Horizontal" Spacing="16">
+            <TextBlock Text="Reframe" FontSize="28" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            <ToggleSwitch x:Name="EngineToggle" Header="引擎"
+                          OnContent="运行中" OffContent="已停止"
+                          Toggled="EngineToggle_Toggled"/>
+        </StackPanel>
+
+        <TextBlock x:Name="SummaryText" Grid.Row="1" Opacity="0.7"/>
+
+        <ListView x:Name="LogList" Grid.Row="2"
+                  SelectionMode="None" IsItemClickEnabled="False"/>
+    </Grid>
+</Window>
