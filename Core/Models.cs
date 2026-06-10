@@ -147,12 +147,13 @@ public sealed class AppConfig
             MatchValue = val,
             Rules =
             {
-                new PlacementRule   // 本地 57″:套布局游戏区
+                new PlacementRule   // 本地 57″:套布局游戏区(避开任务栏)
                 {
                     Monitor = new MonitorFilter { Width = 7680, Height = 2160 },
                     Kind = PlacementKind.Zone,
                     LayoutId = layout.Id,
-                    ZoneId = gameZone.Id
+                    ZoneId = gameZone.Id,
+                    UseWorkArea = true
                 },
                 new PlacementRule   // 其它任何屏(VDD 串流):铺满
                 {
