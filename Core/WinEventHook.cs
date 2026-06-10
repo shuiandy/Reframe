@@ -10,8 +10,11 @@ namespace Reframe.Core;
 /// </summary>
 public sealed class WinEventHook : IDisposable
 {
-    /// <summary>命中事件的窗口句柄(已过滤到顶层窗口)。后台线程触发。</summary>
-    public event Action<IntPtr>? WindowEvent;
+    /// <summary>
+    /// 命中事件:(eventType, hwnd)。eventType 让消费方区分前台切换(EVENT_SYSTEM_FOREGROUND)
+    /// 与窗口出现/标题/位置变化。已过滤到窗口本身(idObject==OBJID_WINDOW)。后台线程触发。
+    /// </summary>
+    public event Action<uint, IntPtr>? WindowEvent;
 
     // 委托必须保存为字段:OUT_OF_CONTEXT 下回调由系统跨线程调用,
     // 局部变量会被 GC 回收导致回调地址失效(经典坑)。
@@ -74,7 +77,7 @@ public sealed class WinEventHook : IDisposable
         if (hwnd == IntPtr.Zero) return;
         if (idObject != NativeMethods.OBJID_WINDOW || idChild != 0) return;
 
-        WindowEvent?.Invoke(hwnd);
+        WindowEvent?.Invoke(eventType, hwnd);
     }
 
     public void Dispose()

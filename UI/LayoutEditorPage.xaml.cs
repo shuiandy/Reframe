@@ -15,14 +15,14 @@ namespace Reframe.UI;
 
 public sealed partial class LayoutEditorPage : Page
 {
-    // ---- 画布尺寸:固定 DIP 宽度,高按 Ref 宽高比;Viewbox 再 DownOnly 缩到容器内 ----
-    private const double CanvasBaseWidth = 1000;
+    // ---- 画布尺寸:用满容器可用宽度,高按 Ref 宽高比;过高时再按可用高度回退,始终居中 ----
     private const double SnapPx = 8;            // 吸附阈值(画布 DIP)
+    private const double FallbackCanvasWidth = 900;  // 容器尚未测量出宽度时的兜底宽
 
     private string? _layoutId;
     private Layout _work = new();               // 工作副本,保存时才写回真实配置
-    private double _canvasW = CanvasBaseWidth;
-    private double _canvasH = CanvasBaseWidth * 9 / 16;
+    private double _canvasW = FallbackCanvasWidth;
+    private double _canvasH = FallbackCanvasWidth * 9 / 16;
 
     private readonly List<ZoneVisual> _visuals = new();
     private Zone? _selected;
@@ -75,9 +75,14 @@ public sealed partial class LayoutEditorPage : Page
     };
 
     // ---------- 参考分辨率 ----------
+    // 末位"自定义"项,当 Ref 不匹配任何显示器时回显当前分辨率。
+    private ComboBoxItem? _customItem;
+
     private void InitMonitorCombo()
     {
+        _suppressSync = true;
         MonitorCombo.Items.Clear();
+        _customItem = null;
         try
         {
             foreach (var m in MonitorService.GetMonitors())
@@ -90,6 +95,57 @@ public sealed partial class LayoutEditorPage : Page
             }
         }
         catch { /* 服务尚未就绪时静默 */ }
+        _suppressSync = false;
+
+        // 进入时回显当前 Ref:匹配显示器则选中,否则补一项"自定义"。
+        SyncMonitorCombo();
+    }
+
+    // 让 ComboBox 显示当前 _work 的参考分辨率:命中某显示器则选中该项,
+    // 否则维护一个"WxH(自定义)"项并选中,避免停留在占位符。
+    private void SyncMonitorCombo()
+    {
+        int w = _work.RefWidth, h = _work.RefHeight;
+        _suppressSync = true;
+
+        ComboBoxItem? match = null;
+        foreach (var obj in MonitorCombo.Items)
+        {
+            if (obj is ComboBoxItem { Tag: int[] wh } item && wh.Length == 2 && wh[0] == w && wh[1] == h)
+            {
+                match = item;
+                break;
+            }
+        }
+
+        if (match is not null)
+        {
+            // 命中显示器:移除可能残留的自定义项,选中匹配项。
+            if (_customItem is not null)
+            {
+                MonitorCombo.Items.Remove(_customItem);
+                _customItem = null;
+            }
+            MonitorCombo.SelectedItem = match;
+        }
+        else
+        {
+            // 未命中:复用或新建末位自定义项,回显当前分辨率。
+            string label = $"{w}×{h}(自定义)";
+            if (_customItem is null)
+            {
+                _customItem = new ComboBoxItem { Content = label, Tag = new int[] { w, h } };
+                MonitorCombo.Items.Add(_customItem);
+            }
+            else
+            {
+                _customItem.Content = label;
+                _customItem.Tag = new int[] { w, h };
+            }
+            MonitorCombo.SelectedItem = _customItem;
+        }
+
+        _suppressSync = false;
     }
 
     private void MonitorCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -120,18 +176,47 @@ public sealed partial class LayoutEditorPage : Page
         _work.RefHeight = h;
         RecomputeCanvasSize();
         RebuildCanvas();
-        SyncPropPanel();    // 像素显示随 Ref 变化
+        SyncPropPanel();        // 像素显示随 Ref 变化
+        SyncMonitorCombo();     // 参考分辨率回显随 Ref 变化(手输/匹配显示器)
     }
 
+    // 容器尺寸变化时(窗口拉伸、属性面板宽度恒定)重算画布并重新布局 zone。
+    private void CanvasHost_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        RecomputeCanvasSize();
+        LayoutVisuals();
+    }
+
+    // 画布占满容器可用宽度,高按参考宽高比;若高度超过容器可用高度则按高度回退、宽度随之收窄。
     private void RecomputeCanvasSize()
     {
         double aspect = (double)_work.RefWidth / _work.RefHeight;
-        _canvasW = CanvasBaseWidth;
-        _canvasH = CanvasBaseWidth / aspect;
+
+        // CanvasHost.Padding = 16(四周),可用区域要扣掉左右/上下各 16。
+        double padW = CanvasHost.Padding.Left + CanvasHost.Padding.Right;
+        double padH = CanvasHost.Padding.Top + CanvasHost.Padding.Bottom;
+        double availW = CanvasHost.ActualWidth - padW;
+        double availH = CanvasHost.ActualHeight - padH;
+
+        // 容器尚未测量出尺寸时用兜底宽,稍后 SizeChanged 会再次触发精确布局。
+        double w = availW > 1 ? availW : FallbackCanvasWidth;
+        double h = w / aspect;
+
+        // 高度超出可用高度(如 16:9、竖向布局)时改按高度约束,避免画布溢出滚动。
+        if (availH > 1 && h > availH)
+        {
+            h = availH;
+            w = h * aspect;
+        }
+
+        _canvasW = w;
+        _canvasH = h;
         CanvasFrame.Width = _canvasW;
         CanvasFrame.Height = _canvasH;
         ZoneCanvas.Width = _canvasW;
         ZoneCanvas.Height = _canvasH;
+        GuideCanvas.Width = _canvasW;
+        GuideCanvas.Height = _canvasH;
     }
 
     private void NameBox_TextChanged(object sender, TextChangedEventArgs e)

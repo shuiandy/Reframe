@@ -62,6 +62,7 @@ public static class NativeMethods
     public const long WS_EX_STATICEDGE = 0x00020000L;
     public const long WS_EX_TOOLWINDOW = 0x00000080L;
     public const long WS_EX_APPWINDOW = 0x00040000L;
+    public const long WS_EX_TOPMOST = 0x00000008L; // 由 SetWindowPos(HWND_TOPMOST/NOTOPMOST) 控制,还原时按快照判定
 
     // ---- 位置 / 尺寸 ----
     [StructLayout(LayoutKind.Sequential)]
@@ -74,10 +75,16 @@ public static class NativeMethods
     public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter,
         int X, int Y, int cx, int cy, uint uFlags);
 
+    public const uint SWP_NOSIZE = 0x0001;
+    public const uint SWP_NOMOVE = 0x0002;
     public const uint SWP_NOZORDER = 0x0004;
     public const uint SWP_NOACTIVATE = 0x0010;
     public const uint SWP_FRAMECHANGED = 0x0020;
     public const uint SWP_NOOWNERZORDER = 0x0200;
+
+    // Z 序锚点:置顶 / 取消置顶。仅在需要改变置顶状态时用作 hWndInsertAfter(此时不能带 SWP_NOZORDER)。
+    public static readonly IntPtr HWND_TOPMOST = new(-1);
+    public static readonly IntPtr HWND_NOTOPMOST = new(-2);
 
     [DllImport("user32.dll")]
     public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
@@ -111,6 +118,17 @@ public static class NativeMethods
 
     [DllImport("user32.dll")]
     public static extern bool IsWindow(IntPtr hWnd); // 句柄是否仍指向有效窗口
+
+    // ---- 前台窗口 / 光标限制 ----
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+
+    // ClipCursor(NULL) 解除限制;传矩形则把光标夹在该屏幕矩形内。坐标为虚拟桌面像素。
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool ClipCursor(in RECT lpRect);
+
+    [DllImport("user32.dll", SetLastError = true, EntryPoint = "ClipCursor")]
+    public static extern bool ClipCursorRelease(IntPtr lpRect); // 传 IntPtr.Zero = NULL,解除限制
 
     // ---- WinEvent 钩子(事件驱动检测) ----
     public delegate void WinEventProc(IntPtr hWinEventHook, uint eventType, IntPtr hwnd,

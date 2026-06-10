@@ -122,20 +122,30 @@ public sealed partial class LayoutsPage : Page
     {
         if (SelectedLayout is not { } target) return;
 
+        var cfg = ConfigService.Instance.Config;
+        // 统计受影响 profile:有任意规则引用本布局者。
+        int affected = cfg.Profiles.Count(p => p.Rules.Any(r => r.LayoutId == target.Id));
+
+        string body = affected == 0
+            ? $"确定删除布局「{target.Name}」吗?此操作无法撤销。"
+            : $"删除布局「{target.Name}」会移除 {affected} 个配置文件中引用它的规则(整条删除)。此操作无法撤销。";
+
         var dialog = new ContentDialog
         {
             Title = "删除布局",
-            Content = $"确定删除布局「{target.Name}」吗?引用它的规则会失效。此操作无法撤销。",
+            Content = body,
             PrimaryButtonText = "删除",
             CloseButtonText = "取消",
             DefaultButton = ContentDialogButton.Close,
             XamlRoot = XamlRoot
         };
 
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
-        {
-            ConfigService.Instance.Config.Layouts.RemoveAll(l => l.Id == target.Id);
-            ConfigService.Instance.Save();
-        }
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+
+        // 级联清理:把引用该布局的规则整条移除(不留空引用),再删布局,统一保存一次。
+        foreach (var p in cfg.Profiles)
+            p.Rules.RemoveAll(r => r.LayoutId == target.Id);
+        cfg.Layouts.RemoveAll(l => l.Id == target.Id);
+        ConfigService.Instance.Save();
     }
 }

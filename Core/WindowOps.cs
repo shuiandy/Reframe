@@ -34,14 +34,35 @@ public static class WindowOps
                 if (NativeMethods.IsIconic(hWnd))
                     NativeMethods.ShowWindow(hWnd, NativeMethods.SW_RESTORE);
 
+                // 纯移动/缩放,不动 Z 序(置顶由下面单独处理)。
                 NativeMethods.SetWindowPos(hWnd, IntPtr.Zero, r.Left, r.Top, cw, ch,
                     NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE |
                     NativeMethods.SWP_NOOWNERZORDER | NativeMethods.SWP_FRAMECHANGED);
                 changed = true;
             }
         }
+
+        // 置顶:仅在 profile 要求置顶、且窗口当前还不是 TOPMOST 时,才发一次改 Z 序的 SetWindowPos
+        // (此时去掉 SWP_NOZORDER,用 HWND_TOPMOST 作锚点)。非置顶 profile 不动 Z 序:既不强设
+        // NOTOPMOST,也不改普通窗口已有层级——清除置顶只在 Restore 按快照进行。
+        if (t.Topmost)
+        {
+            EnsureSnapshot(hWnd);
+            if (!IsTopmost(hWnd))
+            {
+                NativeMethods.SetWindowPos(hWnd, NativeMethods.HWND_TOPMOST, 0, 0, 0, 0,
+                    NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE |
+                    NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_NOOWNERZORDER);
+                changed = true;
+            }
+        }
+
         return changed;
     }
+
+    private static bool IsTopmost(IntPtr hWnd)
+        => ((long)NativeMethods.GetWindowLongPtr(hWnd, NativeMethods.GWL_EXSTYLE)
+            & NativeMethods.WS_EX_TOPMOST) != 0;
 
     /// <summary>还原单个窗口到接管前的样子。</summary>
     public static void Restore(IntPtr hWnd)
@@ -50,10 +71,20 @@ public static class WindowOps
 
         NativeMethods.SetWindowLongPtr(hWnd, NativeMethods.GWL_STYLE, (IntPtr)s.Style);
         NativeMethods.SetWindowLongPtr(hWnd, NativeMethods.GWL_EXSTYLE, (IntPtr)s.ExStyle);
+
+        // 还原位置(不动 Z 序);WS_EX_TOPMOST 走不了 SetWindowLongPtr,下面用 Z 序锚点单独还原。
         NativeMethods.SetWindowPos(hWnd, IntPtr.Zero,
             s.Rect.Left, s.Rect.Top, s.Rect.Right - s.Rect.Left, s.Rect.Bottom - s.Rect.Top,
             NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE |
             NativeMethods.SWP_NOOWNERZORDER | NativeMethods.SWP_FRAMECHANGED);
+
+        // 置顶状态按快照还原:原本置顶 → 仍 TOPMOST,原本不置顶 → 清成 NOTOPMOST
+        // (这正是"只对此前被我们置顶过的窗口在还原时清除"——若快照里就没置顶,这步把我们加的置顶撤掉)。
+        bool wasTopmost = (s.ExStyle & NativeMethods.WS_EX_TOPMOST) != 0;
+        IntPtr anchor = wasTopmost ? NativeMethods.HWND_TOPMOST : NativeMethods.HWND_NOTOPMOST;
+        NativeMethods.SetWindowPos(hWnd, anchor, 0, 0, 0, 0,
+            NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE |
+            NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_NOOWNERZORDER);
     }
 
     /// <summary>还原全部已接管窗口(引擎停止/应用退出)。</summary>
@@ -92,7 +123,7 @@ public static class WindowOps
         NativeMethods.SetWindowLongPtr(hWnd, NativeMethods.GWL_EXSTYLE, (IntPtr)newEx);
         NativeMethods.SetWindowPos(hWnd, IntPtr.Zero, 0, 0, 0, 0,
             NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE |
-            0x0001 /*SWP_NOSIZE*/ | 0x0002 /*SWP_NOMOVE*/ | NativeMethods.SWP_FRAMECHANGED);
+            NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOMOVE | NativeMethods.SWP_FRAMECHANGED);
         return true;
     }
 }

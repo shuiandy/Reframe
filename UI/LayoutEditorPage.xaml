@@ -69,23 +69,26 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
+            <!-- 画布容器:用满可用宽度,画布高度按参考宽高比决定,容器随之收缩 -->
             <Border Grid.Column="0"
+                    x:Name="CanvasHost"
                     Background="{ThemeResource LayerFillColorDefaultBrush}"
                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                     BorderThickness="1"
                     CornerRadius="6"
-                    Padding="16">
-                <Viewbox StretchDirection="DownOnly" HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <!-- 画布:背景框 + zone 层 + 对齐参考线层 -->
-                    <Border x:Name="CanvasFrame"
-                            Background="#101418"
-                            BorderBrush="#3A4048"
-                            BorderThickness="1">
-                        <Canvas x:Name="ZoneCanvas">
-                            <Canvas x:Name="GuideCanvas" IsHitTestVisible="False"/>
-                        </Canvas>
-                    </Border>
-                </Viewbox>
+                    Padding="16"
+                    VerticalAlignment="Top"
+                    SizeChanged="CanvasHost_SizeChanged">
+                <!-- 画布:背景框 + zone 层 + 对齐参考线层。尺寸由代码按可用宽度与宽高比设定。 -->
+                <Border x:Name="CanvasFrame"
+                        HorizontalAlignment="Center"
+                        Background="#101418"
+                        BorderBrush="#3A4048"
+                        BorderThickness="1">
+                    <Canvas x:Name="ZoneCanvas">
+                        <Canvas x:Name="GuideCanvas" IsHitTestVisible="False"/>
+                    </Canvas>
+                </Border>
             </Border>
 
             <!-- 属性面板 -->

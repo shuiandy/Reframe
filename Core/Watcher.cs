@@ -75,18 +75,30 @@ public sealed class Watcher : IDisposable
         {
             _debounce?.Dispose();
             _debounce = null;
+            ReleaseClipLocked(); // 引擎停止必须解除光标限制
+            UnmuteAllLocked();   // 引擎停止必须取消所有静音
         }
 
         if (restoreWindows)
         {
             WindowOps.RestoreAll();
+            _takeover.Clear();
             Log?.Invoke("已还原全部接管窗口");
         }
         Log?.Invoke("引擎已停止");
     }
 
     // 钩子回调里只做防抖,真正扫描留给计时器,避免在系统回调里干重活。
-    private void OnWindowEvent(IntPtr hwnd) => ScheduleTick();
+    // 前台切换额外即时更新光标限制(ClipCursor 必须前台才夹、失焦即放)。
+    private void OnWindowEvent(uint eventType, IntPtr hwnd)
+    {
+        if (eventType == NativeMethods.EVENT_SYSTEM_FOREGROUND)
+        {
+            UpdateClip(hwnd);
+            UpdateMute(hwnd);
+        }
+        ScheduleTick();
+    }
 
     private void ScheduleTick()
     {
@@ -123,8 +135,17 @@ public sealed class Watcher : IDisposable
     /// <summary>首次见到 (窗口,profile) 的时间,用于 DelayMs(游戏启动期窗口会重建)。</summary>
     private readonly ConcurrentDictionary<(IntPtr, string), DateTime> _firstSeen = new();
 
-    /// <summary>已宣告过接管的窗口,避免日志刷屏。</summary>
-    private readonly ConcurrentDictionary<IntPtr, byte> _announced = new();
+    /// <summary>
+    /// 接管映射:窗口句柄 → 接管它的 profileId。既做"宣告一次"去重,也供 ReleaseProfile
+    /// 按 profile 找回名下窗口、供 ClipCursor 判断前台是否属于某 ClipCursor profile。
+    /// </summary>
+    private readonly ConcurrentDictionary<IntPtr, string> _takeover = new();
+
+    /// <summary>当前被夹住光标的窗口句柄;IntPtr.Zero = 未夹。仅 _gate 下读写。</summary>
+    private IntPtr _clippedHwnd = IntPtr.Zero;
+
+    /// <summary>当前被我们静音的进程 PID 集合(MuteInBackground)。仅 _gate 下读写。</summary>
+    private readonly HashSet<uint> _mutedPids = new();
 
     /// <summary>防拉锯:每个已接管窗口最近一段时间内的重新应用次数。</summary>
     private readonly ConcurrentDictionary<IntPtr, ThrashGuard> _thrash = new();
@@ -156,14 +177,23 @@ public sealed class Watcher : IDisposable
 
                 var target = PlacementResolver.Resolve(w, p, cfg);
                 bool changed = WindowOps.Apply(w.Handle, in target);
-                if (changed && _announced.TryAdd(w.Handle, 0))
-                    Log?.Invoke($"接管「{p.Name}」: {w.Title}");
+
+                // 记录接管映射(供 ReleaseProfile / ClipCursor);首次记录时宣告一次
+                if (_takeover.TryAdd(w.Handle, p.Id))
+                {
+                    if (changed) Log?.Invoke($"接管「{p.Name}」: {w.Title}");
+                }
 
                 break; // 一个窗口只吃第一个命中的 profile
             }
         }
 
         CleanupDeadWindows();
+
+        // 当前前台若是某 ClipCursor profile 接管的窗口(刚被摆好),即时夹上;否则维持/解除。
+        var fg = NativeMethods.GetForegroundWindow();
+        UpdateClip(fg);
+        UpdateMute(fg);
     }
 
     /// <summary>已接管窗口的重应用节流:10s 窗口内超过 3 次则本轮放过并告警一次。</summary>
@@ -200,13 +230,168 @@ public sealed class Watcher : IDisposable
             if (!NativeMethods.IsWindow(key.Item1))
                 _firstSeen.TryRemove(key, out _);
 
-        foreach (var h in _announced.Keys)
+        foreach (var h in _takeover.Keys)
             if (!NativeMethods.IsWindow(h))
-                _announced.TryRemove(h, out _);
+                _takeover.TryRemove(h, out _);
 
         foreach (var h in _thrash.Keys)
             if (!NativeMethods.IsWindow(h))
                 _thrash.TryRemove(h, out _);
+
+        // 被夹光标的窗口若已销毁,立即解除限制
+        lock (_gate)
+        {
+            if (_clippedHwnd != IntPtr.Zero && !NativeMethods.IsWindow(_clippedHwnd))
+                ReleaseClipLocked();
+        }
+    }
+
+    // ---- ClipCursor 生命周期:前台才夹,失焦/销毁/停止即放 ----
+
+    /// <summary>
+    /// 按当前前台窗口刷新光标限制。前台是某 ClipCursor=true profile 接管的窗口 → 夹到其目标矩形;
+    /// 否则解除。多处调用(前台事件、Tick 末尾),用 _gate 串行化。
+    /// </summary>
+    private void UpdateClip(IntPtr foreground)
+    {
+        lock (_gate)
+        {
+            if (!_running) { ReleaseClipLocked(); return; }
+
+            if (foreground != IntPtr.Zero &&
+                _takeover.TryGetValue(foreground, out var profileId))
+            {
+                var cfg = _getConfig();
+                var p = FindProfile(cfg, profileId);
+                if (p is { ClipCursor: true })
+                {
+                    var rect = ResolveClipRect(foreground, p, cfg);
+                    if (rect is { } r)
+                    {
+                        NativeMethods.ClipCursor(in r);
+                        _clippedHwnd = foreground;
+                        return;
+                    }
+                }
+            }
+
+            // 前台不是 clip 窗口(或解析不出矩形):若之前夹着,解除
+            ReleaseClipLocked();
+        }
+    }
+
+    /// <summary>取该 profile 对该窗口的目标矩形;解析不出(如 Kind=None)则退回窗口当前矩形。</summary>
+    private static NativeMethods.RECT? ResolveClipRect(IntPtr hwnd, Profile p, AppConfig cfg)
+    {
+        var w = new WindowInfo { Handle = hwnd };
+        var rect = PlacementResolver.Resolve(w, p, cfg).Rect;
+        if (rect is { } r) return r;
+        return NativeMethods.GetWindowRect(hwnd, out var cur) ? cur : null;
+    }
+
+    /// <summary>解除光标限制(若有)。须在 _gate 下调用。</summary>
+    private void ReleaseClipLocked()
+    {
+        if (_clippedHwnd == IntPtr.Zero) return;
+        NativeMethods.ClipCursorRelease(IntPtr.Zero);
+        _clippedHwnd = IntPtr.Zero;
+    }
+
+    private static Profile? FindProfile(AppConfig cfg, string id)
+        => cfg.Profiles.FirstOrDefault(p => p.Id == id);
+
+    // ---- MuteInBackground 生命周期:前台=它→取消静音,前台≠它且开关开→静音;销毁/停止→取消静音 ----
+
+    /// <summary>
+    /// 按当前前台窗口刷新"后台静音":遍历所有接管窗口,其 profile 开了 MuteInBackground 的——
+    /// 该窗口在前台 → 取消静音;不在前台 → 静音。状态缓存在 _mutedPids,避免重复 COM 调用。
+    /// </summary>
+    private void UpdateMute(IntPtr foreground)
+    {
+        var cfg = _getConfig();
+        // hwnd → (pid, 是否前台) 汇总;同一 pid 多窗口时,只要有一个窗口在前台就算前台。
+        var want = new Dictionary<uint, bool>(); // pid → 应静音?
+        foreach (var kv in _takeover)
+        {
+            var p = FindProfile(cfg, kv.Value);
+            if (p is not { MuteInBackground: true }) continue;
+            if (!NativeMethods.IsWindow(kv.Key)) continue;
+
+            NativeMethods.GetWindowThreadProcessId(kv.Key, out uint pid);
+            if (pid == 0) continue;
+
+            bool isForeground = kv.Key == foreground;
+            // 该 pid 最终是否静音 = 它的所有相关窗口都不在前台
+            if (want.TryGetValue(pid, out bool prevMute))
+                want[pid] = prevMute && !isForeground;
+            else
+                want[pid] = !isForeground;
+        }
+
+        lock (_gate)
+        {
+            if (!_running) { UnmuteAllLocked(); return; }
+
+            foreach (var (pid, shouldMute) in want)
+            {
+                bool currentlyMuted = _mutedPids.Contains(pid);
+                if (shouldMute && !currentlyMuted)
+                {
+                    AudioMute.SetMuteByPid(pid, true);
+                    _mutedPids.Add(pid);
+                }
+                else if (!shouldMute && currentlyMuted)
+                {
+                    AudioMute.SetMuteByPid(pid, false);
+                    _mutedPids.Remove(pid);
+                }
+            }
+
+            // 已不再被任何 MuteInBackground profile 跟踪的 pid(窗口销毁/profile 释放):取消静音
+            foreach (var pid in _mutedPids.Where(p => !want.ContainsKey(p)).ToList())
+            {
+                AudioMute.SetMuteByPid(pid, false);
+                _mutedPids.Remove(pid);
+            }
+        }
+    }
+
+    /// <summary>取消所有我们施加的静音。须在 _gate 下调用。</summary>
+    private void UnmuteAllLocked()
+    {
+        foreach (var pid in _mutedPids)
+            AudioMute.SetMuteByPid(pid, false);
+        _mutedPids.Clear();
+    }
+
+    /// <summary>
+    /// 还原该 profile 接管的全部窗口并解除跟踪(UI 禁用 profile 时调)。
+    /// 逐窗口 Restore + 从各字典剔除;若被夹的窗口属于它,解除光标限制。
+    /// </summary>
+    public void ReleaseProfile(string profileId)
+    {
+        // 找出该 profile 名下的窗口
+        var hwnds = _takeover.Where(kv => kv.Value == profileId).Select(kv => kv.Key).ToList();
+
+        foreach (var h in hwnds)
+        {
+            WindowOps.Restore(h);
+            _takeover.TryRemove(h, out _);
+            _thrash.TryRemove(h, out _);
+
+            // _firstSeen 以 (hwnd, profileId) 为键,精确剔除这一对
+            _firstSeen.TryRemove((h, profileId), out _);
+
+            lock (_gate)
+            {
+                if (_clippedHwnd == h) ReleaseClipLocked();
+            }
+        }
+
+        if (hwnds.Count > 0) Log?.Invoke($"已释放 profile({profileId}) 的 {hwnds.Count} 个窗口");
+
+        // 这些窗口已不再被跟踪:刷新静音状态,把不再属于任何 MuteInBackground 窗口的 pid 取消静音
+        UpdateMute(NativeMethods.GetForegroundWindow());
     }
 
     public void Dispose() => Stop();

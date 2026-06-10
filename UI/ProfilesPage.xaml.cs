@@ -81,6 +81,11 @@ public sealed partial class ProfilesPage : Page
         if (profile is null || profile.Enabled == ts.IsOn) return;
 
         profile.Enabled = ts.IsOn;
+
+        // 禁用即还原:解除该 profile 接管的全部窗口(引擎契约 API),再落盘。
+        if (!ts.IsOn)
+            Reframe.App.Engine.ReleaseProfile(profile.Id);
+
         _suppressReload = true;
         ConfigService.Instance.Save();
         _suppressReload = false;

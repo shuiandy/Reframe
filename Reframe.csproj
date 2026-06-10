@@ -18,6 +18,13 @@
     <AssemblyName>Reframe</AssemblyName>
   </PropertyGroup>
 
+  <!-- 测试是独立工程(Tests\Reframe.Core.Tests.csproj),不能被主 App 的隐式 glob 吸进来编译 -->
+  <ItemGroup>
+    <Compile Remove="Tests\**" />
+    <Page Remove="Tests\**" />
+    <None Remove="Tests\**" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.250916003" />

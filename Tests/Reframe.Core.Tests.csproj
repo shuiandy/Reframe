@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    独立测试工程:不引用主 WinUI App(无法被引用),改为链接主工程的源文件。
+    TargetFramework 必须带 -windows:链入的源文件里有 Windows P/Invoke 声明
+    (NativeMethods.cs / WindowScanner.cs),声明可编译;测试只跑纯逻辑不调用,
+    故不需要 WinUI 运行时,也不需要 UseWinUI。
+    只动 Tests\ 目录,不改主 csproj。
+  -->
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>Reframe.Core.Tests</RootNamespace>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <IsPackable>false</IsPackable>
+    <UseWinUI>false</UseWinUI>
+    <!-- 避免链入源文件里的 XML doc 注释引用解析失败导致 warning-as-error 之类问题 -->
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <!-- 链接主工程纯逻辑源文件(非 ProjectReference)。LinkBase 让它们在 IDE 里归类清楚。 -->
+  <ItemGroup>
+    <Compile Include="..\Core\Models.cs" LinkBase="Linked" />
+    <Compile Include="..\Core\PlacementResolver.cs" LinkBase="Linked" />
+    <Compile Include="..\Core\WindowScanner.cs" LinkBase="Linked" />
+    <Compile Include="..\Interop\NativeMethods.cs" LinkBase="Linked" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>
