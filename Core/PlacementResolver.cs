@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using Reframe.Interop;
@@ -22,10 +23,49 @@ public static class MatchEngine
     private static string StripExe(string s)
         => s.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? s[..^4] : s;
 
+    /// <summary>
+    /// 每个 pattern 编译一次缓存的 <see cref="Regex"/>(<see cref="MatchKind.TitleRegex"/> 每 tick 高频调用,
+    /// Compiled 值得;非法 pattern 缓存 null 防反复抛构造异常)。
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, Regex?> _regexCache = new();
+
+    /// <summary>
+    /// 用户正则的匹配超时上限:灾难性回溯(如 <c>(a+)+$</c> 配长串 a)会在 .NET 正则引擎里指数爆炸,
+    /// 没有超时会把整个扫描 tick(乃至引擎)挂死。限 100ms,超时按"不匹配"处理。
+    /// </summary>
+    private static readonly TimeSpan RegexMatchTimeout = TimeSpan.FromMilliseconds(100);
+
     private static bool SafeRegex(string pattern, string input)
     {
-        try { return Regex.IsMatch(input, pattern, RegexOptions.IgnoreCase); }
-        catch { return false; }
+        // 取/建缓存的 Regex 实例:非法 pattern → 缓存 null,后续直接判不匹配,不再反复构造抛异常。
+        var re = _regexCache.GetOrAdd(pattern, static pat =>
+        {
+            try
+            {
+                return new Regex(pat, RegexOptions.IgnoreCase | RegexOptions.Compiled, RegexMatchTimeout);
+            }
+            catch
+            {
+                return null; // 非法表达式:缓存为 null
+            }
+        });
+
+        if (re is null) return false;
+
+        try
+        {
+            return re.IsMatch(input);
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            // 灾难性回溯超时:按不匹配处理,不让单个坏 pattern 拖垮扫描。
+            return false;
+        }
+        catch
+        {
+            // 兜底:任何其它运行期异常都按不匹配,绝不向上抛(MatchEngine 在每 tick 热路径)。
+            return false;
+        }
     }
 }
 

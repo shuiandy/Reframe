@@ -11,6 +11,34 @@ public static class ConfigStore
 
     public static string Path_ => Path.Combine(Dir, "config.json");
 
+    /// <summary>
+    /// 纯读取尝试:文件存在则读+反序列化,成功返回非 null 配置;
+    /// 文件不存在 / 读失败 / 解析失败 / 反序列化出 null,一律返回 <c>null</c>。
+    /// <para><b>无副作用</b>:不 quarantine、不落默认、不写盘。供热重载用——外部编辑器写到一半
+    /// 触发的文件事件会读到半截 JSON,此时返回 null 让调用方<b>保留当前内存配置</b>,
+    /// 绝不把运行中的好配置换成默认并写盘(见 <see cref="ConfigService"/>.Reload)。</para>
+    /// </summary>
+    public static AppConfig? TryLoad()
+    {
+        try
+        {
+            if (!File.Exists(Path_)) return null;
+            string json = File.ReadAllText(Path_);
+            return JsonSerializer.Deserialize(json, ConfigJsonContext.Default.AppConfig);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 首次启动加载(仅 <see cref="ConfigService"/> 初始化那一次走它):
+    /// 读到合法配置即用;损坏 / 缺文件 → quarantine 留底后回落默认并落盘。
+    /// <para>注意与 <see cref="TryLoad"/> 的语义区别:Load 会在损坏时<b>改名 + 写默认盘</b>
+    /// (首启时这是对的:把坏文件留底,给用户一个干净可用的默认);TryLoad 则<b>纯读不动盘</b>
+    /// (热重载时这是对的:写到一半的文件不该触发覆盖)。</para>
+    /// </summary>
     public static AppConfig Load()
     {
         try

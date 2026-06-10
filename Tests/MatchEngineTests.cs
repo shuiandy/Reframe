@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Reframe.Core;
 using Xunit;
 
@@ -112,6 +113,25 @@ public class MatchEngineTests
         var result = Record.Exception(() => MatchEngine.Matches(w, p));
         Assert.Null(result);
         Assert.False(MatchEngine.Matches(w, p));
+    }
+
+    [Fact(DisplayName = "正则:灾难性回溯被 100ms 超时兜住,限时返回 false 不挂死")]
+    public void Regex_CatastrophicBacktracking_TimesOut_ReturnsFalseFast()
+    {
+        // (a+)+$ 配「一长串 a + 一个非 a 收尾」是经典灾难性回溯:无超时会指数爆炸把扫描 tick 挂死。
+        // MatchEngine 给用户正则设了 100ms matchTimeout,超时按不匹配处理。
+        var input = new string('a', 40) + "!"; // 40 个 a 足以在无超时时跑到天荒地老,收尾 '!' 让 $ 失配触发回溯
+        var w = Win(title: input);
+        var p = Prof(MatchKind.TitleRegex, "(a+)+$");
+
+        var sw = Stopwatch.StartNew();
+        bool matched = MatchEngine.Matches(w, p);
+        sw.Stop();
+
+        Assert.False(matched); // 超时按不匹配
+        // 不该挂死:100ms 超时 + 首次编译开销,留足裕量断言 < 2s。
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(2),
+            $"正则匹配应被超时兜住快速返回,实际耗时 {sw.ElapsedMilliseconds}ms");
     }
 
     // ---- Enabled / 空值守卫 ----

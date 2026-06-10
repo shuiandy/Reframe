@@ -755,6 +755,11 @@ public sealed partial class ProfileEditorPage : Page
             // 规则整列替换为副本规则的再克隆(避免把副本对象漏给真实模型造成后续共享)。
             real.Rules = _work.Rules.Select(CloneRule).ToList();
             ConfigService.Instance.Save();
+
+            // 按新规则重新接管:先还原该 profile 名下全部窗口(去框/置顶/Clip/Mute 全复位),
+            // 引擎下个 tick 会用刚写回的新规则重新接管仍命中的窗口。否则旧矩形/旧 Clip 会一直留着,
+            // 直到窗口重建——保存即释放,语义干净(短暂闪一下可接受)。
+            Reframe.App.Engine.ReleaseProfile(real.Id);
         }
 
         if (Frame.CanGoBack) Frame.GoBack();

@@ -206,7 +206,10 @@ public sealed partial class DashboardPage : Page
         foreach (var t in taken)
         {
             var profile = cfg.Profiles.FirstOrDefault(p => p.Id == t.ProfileId);
-            string profileName = profile?.Name ?? "?";
+            // profile 查不到名字 = 该 profile 已被删除(外部改 config / 热重载丢了它),
+            // 但窗口仍登记在引擎 _takeover 里(孤儿)。显示「(已删除)」而非裸 "?",卡片的[还原]
+            // 按钮按 Handle 还原仍可用(WindowOps.Restore 不依赖 profile)。
+            string profileName = profile?.Name ?? "(已删除)";
             string title = WindowTitle(t.Handle);
             title = string.IsNullOrEmpty(title) ? "(无标题)" : title;
             string rectText = NativeMethods.GetWindowRect(t.Handle, out var rc)

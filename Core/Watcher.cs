@@ -138,11 +138,14 @@ public sealed class Watcher : IDisposable
     /// <summary>
     /// 配置变化时调用(App 订阅 ConfigService.Changed):把所有启用的 Unity 分辨率预设写一次。
     /// 与启动同口径,不分 MatchKind——用户刚改完配置,通常游戏未运行,写了即生效。
+    /// <para>另外排一次 Tick:让引擎开关的 true↔false 边沿被 <see cref="SafeTick"/> 及时检测
+    /// (~300ms 防抖,而非等下一轮 5s 兜底轮询)——关引擎即时还原、开引擎即时重新接管。</para>
     /// </summary>
     public void OnConfigChanged()
     {
         if (!_running) return;
         ApplyResolutionPresets(forceAllKinds: true);
+        ScheduleTick(); // 及时检测 EngineEnabled 边沿(暂停→还原 / 恢复→重新接管)
     }
 
     /// <param name="restoreWindows">停止时是否把接管过的窗口还原。</param>
@@ -223,6 +226,21 @@ public sealed class Watcher : IDisposable
     private void ForegroundRefreshTick()
     {
         if (!_running) return;
+
+        // 引擎暂停(EngineEnabled=false)时,前台事件不得再施加 Clip/Mute——只解除已有的。
+        // (SafeTick 的边沿检测已在翻 false 时 ReleaseAll 过一次;此处兜住暂停期间到来的前台事件。)
+        if (!_getConfig().EngineEnabled)
+        {
+            List<uint> toUnmute;
+            lock (_gate)
+            {
+                ReleaseClipLocked();
+                toUnmute = DrainMutedLocked();
+            }
+            UnmuteOutsideLock(toUnmute);
+            return;
+        }
+
         var fg = NativeMethods.GetForegroundWindow();
         UpdateClip(fg);
         UpdateMute(fg);
@@ -241,6 +259,13 @@ public sealed class Watcher : IDisposable
         }
     }
 
+    /// <summary>
+    /// 上一次 SafeTick 观察到的 EngineEnabled。用于检测 true→false 边沿:翻 false 那一刻调
+    /// <see cref="ReleaseAll"/> 还原全部接管窗口。只在 _ticking 闸内读写(SafeTick 串行化),无需 volatile。
+    /// 初值 true:引擎启动默认 EngineEnabled=true,若用户启动前就关了,首 tick 即视为一次 true→false 并还原(无副作用)。
+    /// </summary>
+    private bool _lastEngineEnabled = true;
+
     private void SafeTick()
     {
         if (!_running) return;
@@ -250,7 +275,21 @@ public sealed class Watcher : IDisposable
         {
             if (!_running) return;
             var cfg = _getConfig();
-            if (!cfg.EngineEnabled) return;
+
+            // 引擎开关边沿检测:true→false 那一刻释放全部接管(去框/置顶/Clip/Mute 全还原),
+            // 之后照常早退。引擎只是暂停,钩子/轮询仍在,再开 EngineEnabled 时下个 tick 会重新接管。
+            bool enabled = cfg.EngineEnabled;
+            if (_lastEngineEnabled && !enabled)
+            {
+                _lastEngineEnabled = false;
+                try { ReleaseAll(); }
+                catch (Exception ex) { Emit("暂停还原异常: " + ex.Message); }
+                Emit("引擎已暂停,已还原全部接管窗口");
+                return;
+            }
+            _lastEngineEnabled = enabled;
+
+            if (!enabled) return;
             try { Tick(cfg); }
             catch (Exception ex) { Emit("扫描异常: " + ex.Message); }
         }
@@ -592,6 +631,37 @@ public sealed class Watcher : IDisposable
 
         // 这些窗口已不再被跟踪:刷新静音状态,把不再属于任何 MuteInBackground 窗口的 pid 取消静音
         UpdateMute(NativeMethods.GetForegroundWindow());
+    }
+
+    /// <summary>
+    /// 释放全部接管状态:还原所有被接管的窗口(去框/置顶恢复)、解除 ClipCursor、取消全部静音,
+    /// 并清空 _takeover/_firstSeen/_thrash/_noPermLogged。
+    /// <para><b>不停</b>钩子线程 / 轮询线程——这是"引擎暂停"语义(EngineEnabled=false),
+    /// 与 <see cref="Stop"/>(真正停服、拆钩子)不同。再次启用(EngineEnabled=true)后,
+    /// 下一个 tick 会按规则重新接管仍命中的窗口。供 SafeTick 检测到引擎被关时调用。</para>
+    /// </summary>
+    public void ReleaseAll()
+    {
+        // 还原所有引擎接管的窗口(只动 _takeover 名下的;手动 quick-borderless 不在此列)。
+        var hwnds = _takeover.Keys.ToList();
+        foreach (var h in hwnds)
+            WindowOps.Restore(h);
+
+        _takeover.Clear();
+        _firstSeen.Clear();
+        _thrash.Clear();
+        _noPermLogged.Clear();
+
+        // 解除光标限制 + 取出待取消静音的 pid(COM 出锁后做)。
+        List<uint> toUnmute;
+        lock (_gate)
+        {
+            ReleaseClipLocked();
+            toUnmute = DrainMutedLocked();
+        }
+        UnmuteOutsideLock(toUnmute);
+
+        // 注意:不动 _hook / _pollLoop / _running —— 引擎暂停不是停服。
     }
 
     public void Dispose() => Stop();

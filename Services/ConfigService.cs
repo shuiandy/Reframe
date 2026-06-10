@@ -37,6 +37,10 @@ public sealed class ConfigService
     /// <summary>最近一次 Save 的失败原因;成功后清空。null = 上次写盘正常。</summary>
     public string? LastSaveError => _lastSaveError;
 
+    // 热重载读到半截/损坏文件时,只向仪表盘日志报一次"暂不可读、保留当前配置",避免编辑器多次保存刷屏。
+    // 一旦某次重载成功(文件恢复正常),复位为可再报。仅 _gate 下读写。
+    private bool _reloadUnreadableLogged;
+
     private ConfigService()
     {
         _config = ConfigStore.Load(); // 首次访问即加载(Load 会在缺文件时落默认盘)
@@ -101,9 +105,21 @@ public sealed class ConfigService
         }
     }
 
+    /// <summary>
+    /// 热重载(防抖到点触发)。语义与首次启动的 ConfigStore.Load <b>刻意不同</b>:
+    /// 用 <see cref="ConfigStore.TryLoad"/> 纯读——
+    /// <list type="bullet">
+    /// <item>读到合法配置:原子替换 _config(_gate 内,与 Save 序列化互斥),触发 Changed。</item>
+    /// <item>读到 null(外部编辑器写到一半 / 文件损坏 / 暂时被占):<b>保留旧 _config 不动、不触发 Changed</b>,
+    /// 仅首遇时报一条仪表盘日志(防刷屏)。文件恢复正常后,下一个文件事件自然把它重载进来。</item>
+    /// </list>
+    /// 旧实现走 ConfigStore.Load:它会在解析失败时 quarantine + 落默认盘,等于"外部半截写"把
+    /// 运行中的好配置覆盖成默认——本次修复即消除此路径。
+    /// </summary>
     private void Reload()
     {
-        AppConfig fresh;
+        bool replaced = false;       // 本次是否真的换了配置(决定是否触发 Changed)
+        bool needLogUnreadable = false;
         lock (_gate)
         {
             _debounce?.Dispose();
@@ -113,12 +129,33 @@ public sealed class ConfigService
             // 防抖窗口结束时再核一次自写标记(防抖期间发生的 Save)
             if (DateTime.UtcNow - _selfWriteUtc < SelfWriteWindow) return;
 
-            try { fresh = ConfigStore.Load(); }
-            catch { return; } // 读失败(写到一半)就放过,下一次事件再来
-
-            _config = fresh; // 原子替换引用——在 _gate 内,与 Save 的序列化互斥
+            var fresh = ConfigStore.TryLoad();
+            if (fresh is null)
+            {
+                // 读/解析失败:保留当前内存配置不动,不触发 Changed。只在首遇此态时安排一条日志。
+                if (!_reloadUnreadableLogged)
+                {
+                    _reloadUnreadableLogged = true;
+                    needLogUnreadable = true;
+                }
+                System.Diagnostics.Debug.WriteLine("ConfigService.Reload: config.json 暂不可读,保留当前配置");
+            }
+            else
+            {
+                _config = fresh;                 // 原子替换引用——在 _gate 内,与 Save 的序列化互斥
+                _reloadUnreadableLogged = false; // 恢复正常后允许下次再报
+                replaced = true;
+            }
         }
-        Changed?.Invoke();
+
+        // 锁外发日志 / 通知,避免在 _gate 内调外部回调。
+        if (needLogUnreadable)
+        {
+            try { App.Engine?.LogExternal("配置文件暂不可读(可能正被编辑器写入),保留当前配置。"); }
+            catch { /* 引擎未就绪:已写过 Debug,放过 */ }
+        }
+        if (replaced)
+            Changed?.Invoke();
     }
 
     /// <summary>

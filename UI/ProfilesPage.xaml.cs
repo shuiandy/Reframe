@@ -435,6 +435,10 @@ public sealed partial class ProfilesPage : Page
 
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
 
+        // 删除前先还原该 profile 名下全部接管窗口:否则 Remove 后引擎再也找不到这条规则,
+        // 已去框/置顶/Clip/Mute 的窗口将永久保持接管态(成为孤儿)。
+        Reframe.App.Engine.ReleaseProfile(profile.Id);
+
         cfg.Profiles.Remove(profile);
         _suppressReload = true;
         ConfigService.Instance.Save();
