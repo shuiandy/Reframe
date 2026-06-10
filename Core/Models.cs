@@ -11,6 +11,9 @@ public enum BorderlessMethod { Win32, GpuScaling }
 /// <summary>主窗口背景材质。Mica/MicaAlt = 云母及其变体,Acrylic = 桌面亚克力(毛玻璃)。</summary>
 public enum BackdropKind { Mica, MicaAlt, Acrylic }
 
+/// <summary>应用主题。System = 跟随系统设置。</summary>
+public enum AppTheme { System, Light, Dark }
+
 /// <summary>规则命中后对窗口几何做什么。</summary>
 public enum PlacementKind
 {
@@ -161,6 +164,9 @@ public sealed class AppConfig
 
     /// <summary>主窗口背景材质。改即生效(经 ConfigService.Changed → MainWindow.ApplyBackdrop)。</summary>
     public BackdropKind Backdrop { get; set; } = BackdropKind.Mica;
+
+    /// <summary>应用主题(夜间模式)。改即生效(经 ConfigService.Changed → MainWindow.ApplyTheme)。</summary>
+    public AppTheme Theme { get; set; } = AppTheme.System;
 
     /// <summary>
     /// SteamGridDB API key(可空)。配了才启用"在线图标"兜底:本地全失败时按游戏名联网取图标。

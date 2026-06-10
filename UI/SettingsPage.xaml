@@ -11,7 +11,15 @@
             <!-- 外观 -->
             <StackPanel Spacing="6">
                 <TextBlock Text="外观" FontWeight="SemiBold"/>
-                <TextBlock Text="主窗口的背景材质,改即生效。亚克力在窗口失焦时会回退为纯色(系统行为)。" Opacity="0.7" FontSize="12" TextWrapping="Wrap"/>
+                <TextBlock Text="主题与主窗口的背景材质,改即生效。亚克力在窗口失焦时会回退为纯色(系统行为)。" Opacity="0.7" FontSize="12" TextWrapping="Wrap"/>
+                <ComboBox x:Name="ThemeCombo"
+                          Header="主题"
+                          SelectionChanged="ThemeCombo_SelectionChanged"
+                          Width="240" HorizontalAlignment="Left">
+                    <ComboBoxItem Content="跟随系统"/>
+                    <ComboBoxItem Content="浅色"/>
+                    <ComboBoxItem Content="深色"/>
+                </ComboBox>
                 <ComboBox x:Name="BackdropCombo"
                           Header="窗口背景材质"
                           SelectionChanged="BackdropCombo_SelectionChanged"

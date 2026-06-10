@@ -28,6 +28,9 @@ public sealed partial class MainWindow : Window
         // NavigationView 的 Pane/内容背景刷在 App.xaml 已设透明,材质得以透出;标题栏延伸后也透云母。
         ApplyBackdrop();
 
+        // 主题(夜间模式):由配置决定(跟随系统 / 浅色 / 深色),实时跟随系统明暗。
+        ApplyTheme();
+
         // 配置变化(设置页改材质 / 外部热重载 config.json)→ 切回 UI 线程重新应用。
         // MainWindow 生命周期 = 应用全程,不退订。
         ConfigService.Instance.Changed += OnConfigChanged;
@@ -57,9 +60,62 @@ public sealed partial class MainWindow : Window
         };
     }
 
-    /// <summary>配置变更回调(任意线程)。切回 UI 线程重新应用材质。</summary>
+    /// <summary>
+    /// 按当前配置设置应用主题(夜间模式)。改即生效;须在 UI 线程调用。
+    /// System → ElementTheme.Default:自动跟随系统明暗,并实时响应系统切换。
+    /// ExtendsContentIntoTitleBar 下,右上系统按钮(最小化/最大化/关闭)的前景色不会随 ElementTheme
+    /// 自动适配,这里据最终生效主题显式给 TitleBar 配一组按钮颜色,保证深浅两态都看得清。
+    /// </summary>
+    public void ApplyTheme()
+    {
+        if (Content is not FrameworkElement root) return;
+
+        root.RequestedTheme = ConfigService.Instance.Config.Theme switch
+        {
+            AppTheme.Light => ElementTheme.Light,
+            AppTheme.Dark  => ElementTheme.Dark,
+            _              => ElementTheme.Default, // System:跟随系统,实时响应切换
+        };
+
+        ApplyTitleBarButtonColors(root);
+    }
+
+    /// <summary>
+    /// 据当前实际主题给标题栏系统按钮上色。System(Default)时按 root.ActualTheme 读出系统实际明暗。
+    /// 浅色主题用深字、深色主题用浅字;hover/pressed 背景用半透明灰阶,与 Win11 观感一致。
+    /// </summary>
+    private void ApplyTitleBarButtonColors(FrameworkElement root)
+    {
+        var titleBar = AppWindow.TitleBar;
+
+        // RequestedTheme=Default 时 ActualTheme 反映系统实际明暗;Light/Dark 时即所选值。
+        bool dark = root.ActualTheme == ElementTheme.Dark;
+
+        var fg     = dark ? Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF)
+                          : Windows.UI.Color.FromArgb(0xFF, 0x00, 0x00, 0x00);
+        var disabled = dark ? Windows.UI.Color.FromArgb(0xFF, 0x6E, 0x6E, 0x6E)
+                            : Windows.UI.Color.FromArgb(0xFF, 0x9E, 0x9E, 0x9E);
+        // hover/pressed 用主题字色的低透明度叠色(深色态浅灰、浅色态深灰)。
+        var hoverBg   = dark ? Windows.UI.Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF)
+                             : Windows.UI.Color.FromArgb(0x14, 0x00, 0x00, 0x00);
+        var pressedBg = dark ? Windows.UI.Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF)
+                             : Windows.UI.Color.FromArgb(0x0A, 0x00, 0x00, 0x00);
+        var transparent = Windows.UI.Color.FromArgb(0x00, 0x00, 0x00, 0x00);
+
+        titleBar.ButtonForegroundColor         = fg;
+        titleBar.ButtonHoverForegroundColor    = fg;
+        titleBar.ButtonPressedForegroundColor  = fg;
+        titleBar.ButtonInactiveForegroundColor = disabled;
+
+        titleBar.ButtonBackgroundColor         = transparent;
+        titleBar.ButtonInactiveBackgroundColor = transparent;
+        titleBar.ButtonHoverBackgroundColor    = hoverBg;
+        titleBar.ButtonPressedBackgroundColor  = pressedBg;
+    }
+
+    /// <summary>配置变更回调(任意线程)。切回 UI 线程重新应用材质与主题。</summary>
     private void OnConfigChanged()
-        => DispatcherQueue.TryEnqueue(ApplyBackdrop);
+        => DispatcherQueue.TryEnqueue(() => { ApplyBackdrop(); ApplyTheme(); });
 
     /// <summary>把 Assets\reframe.ico 加载进标题栏左侧 16px 图标;缺文件时静默留空。</summary>
     private void InitTitleBarIcon()

@@ -31,6 +31,7 @@ public sealed partial class SettingsPage : Page
         try
         {
             var cfg = ConfigService.Instance.Config;
+            ThemeCombo.SelectedIndex = (int)cfg.Theme;        // 枚举顺序与 ComboBoxItem 顺序一致
             BackdropCombo.SelectedIndex = (int)cfg.Backdrop;  // 枚举顺序与 ComboBoxItem 顺序一致
             SgdbKeyBox.Text = cfg.SteamGridDbApiKey ?? "";
             PollBox.Value = cfg.PollIntervalMs;
@@ -202,6 +203,20 @@ public sealed partial class SettingsPage : Page
         BackupStatusText.Text = text;
         BackupStatusText.Foreground = new SolidColorBrush(error ? Colors.OrangeRed : Colors.SeaGreen);
         BackupStatusText.Visibility = Visibility.Visible;
+    }
+
+    private void ThemeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading) return;
+
+        int idx = ThemeCombo.SelectedIndex;
+        if (idx < 0) return;
+
+        var svc = ConfigService.Instance;
+        var theme = (AppTheme)idx;  // 枚举顺序与 ComboBoxItem 顺序一致
+        if (svc.Config.Theme == theme) return;
+        svc.Config.Theme = theme;
+        svc.Save();  // Save → Changed → MainWindow.ApplyTheme,无需直接调
     }
 
     private void BackdropCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)

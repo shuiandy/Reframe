@@ -236,6 +236,33 @@ public class ConfigRoundTripTests
         Assert.Equal(kind, back.Backdrop);
     }
 
+    // ---- 主题(夜间模式) ----
+
+    [Fact(DisplayName = "Theme 默认 System,且以字符串形式存盘")]
+    public void Theme_DefaultSystem_SerializedAsString()
+    {
+        var cfg = AppConfig.CreateDefault();
+        Assert.Equal(AppTheme.System, cfg.Theme);
+
+        var json = Serialize(cfg);
+        Assert.Contains("\"System\"", json);
+
+        var back = Deserialize(json);
+        Assert.Equal(AppTheme.System, back.Theme);
+    }
+
+    [Theory(DisplayName = "Theme 三种取值往返保真")]
+    [InlineData(AppTheme.System)]
+    [InlineData(AppTheme.Light)]
+    [InlineData(AppTheme.Dark)]
+    public void Theme_AllValues_RoundTrip(AppTheme theme)
+    {
+        var cfg = AppConfig.CreateDefault();
+        cfg.Theme = theme;
+        var back = Deserialize(Serialize(cfg));
+        Assert.Equal(theme, back.Theme);
+    }
+
     // ---- ExePath(图标来源) ----
 
     [Fact(DisplayName = "Profile.ExePath 默认 null,且往返仍为 null")]
