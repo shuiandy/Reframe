@@ -84,7 +84,7 @@
                                             <StackPanel Grid.Column="1" Spacing="2">
                                                 <TextBlock Text="{Binding ProfileName, Mode=OneWay}"
                                                            FontWeight="SemiBold"/>
-                                                <TextBlock Text="{Binding Title, Mode=OneWay}" Opacity="0.85"
+                                                <TextBlock Text="{Binding SubInfo, Mode=OneWay}" Opacity="0.85"
                                                            TextTrimming="CharacterEllipsis"/>
                                                 <TextBlock Text="{Binding RectText, Mode=OneWay}" Opacity="0.6"
                                                            FontSize="12"

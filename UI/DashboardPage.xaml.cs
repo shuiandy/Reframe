@@ -42,6 +42,19 @@ public sealed partial class TakenCard : System.ComponentModel.INotifyPropertyCha
         set { if (_title != value) { _title = value; Raise(nameof(Title)); } }
     }
 
+    // 卡片副信息行(第二行)。规则见 DashboardPage.ComputeSubInfo:
+    // 进程名取到且标题==配置名(或空)→ 只显示进程名;不同 → "标题 · 进程名";进程名取不到 → 退回标题。
+    private string _subInfo = "";
+    public string SubInfo
+    {
+        get => _subInfo;
+        set { if (_subInfo != value) { _subInfo = value; Raise(nameof(SubInfo)); } }
+    }
+
+    // 进程名(含 .exe)查一次缓存在卡上,RefreshLive 每 tick 直接复用,不重复查进程表。
+    // null = 尚未查;""  = 查过但失败(进程已退/无权限),不再重试。
+    public string? ProcessExeName { get; set; }
+
     private string _rectText = "";
     public string RectText
     {
@@ -211,7 +224,9 @@ public sealed partial class DashboardPage : Page
                     ProfileName = profileName,
                     Title = title,
                     RectText = rectText,
+                    ProcessExeName = ProcessExeNameOf(pid), // 进程名查一次,缓存在卡上
                 };
+                card.SubInfo = ComputeSubInfo(profileName, title, card.ProcessExeName);
                 _cards.Add(card);
                 EnsureCardIcon(card, profile); // 新卡才需要拉图标
             }
@@ -221,6 +236,8 @@ public sealed partial class DashboardPage : Page
                 card.ProfileName = profileName;
                 card.Title = title;
                 card.RectText = rectText;
+                // 进程名已缓存(首帧查过);副信息行随标题/配置名变化重算,不再查进程表。
+                card.SubInfo = ComputeSubInfo(profileName, title, card.ProcessExeName ?? "");
                 // 图标仍为空(此前未命中)时,补一次同步快取;仍不中则不在每 tick 重复异步(已在新卡时安排过)。
                 if (card.Icon is null && IconCache.TryGetCached(ProcNameForProfile(profile), out var hit) && hit is not null)
                     card.Icon = hit;
@@ -287,6 +304,29 @@ public sealed partial class DashboardPage : Page
             return p.ProcessName;
         }
         catch { return null; }
+    }
+
+    /// <summary>进程名 + ".exe"(供副信息行展示)。取不到(进程已退/无权限)返回 ""(空,不再重试)。</summary>
+    private static string ProcessExeNameOf(uint pid)
+    {
+        var name = ProcessNameOf(pid);
+        return string.IsNullOrEmpty(name) ? "" : name + ".exe";
+    }
+
+    /// <summary>
+    /// 计算卡片副信息行(第二行)。规则:
+    /// 进程名取得到且(标题与配置名相同 或 标题为空)→ 只显示进程名,如 "StarRail.exe";
+    /// 进程名取得到且标题不同 → "窗口标题 · StarRail.exe";
+    /// 进程名取不到 → 退回显示标题(老行为)。
+    /// </summary>
+    private static string ComputeSubInfo(string profileName, string title, string exeName)
+    {
+        bool hasTitle = !string.IsNullOrEmpty(title) && title != "(无标题)";
+        if (string.IsNullOrEmpty(exeName))
+            return hasTitle ? title : "";
+        if (!hasTitle || title == profileName)
+            return exeName;
+        return $"{title} · {exeName}";
     }
 
     /// <summary>按句柄取窗口标题(用现有 P/Invoke,不依赖全量枚举)。</summary>
