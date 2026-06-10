@@ -81,11 +81,11 @@
                                             </Grid>
 
                                             <StackPanel Grid.Column="1" Spacing="2">
-                                                <TextBlock Text="{x:Bind ProfileName}"
+                                                <TextBlock Text="{x:Bind ProfileName, Mode=OneWay}"
                                                            FontWeight="SemiBold"/>
-                                                <TextBlock Text="{x:Bind Title}" Opacity="0.85"
+                                                <TextBlock Text="{x:Bind Title, Mode=OneWay}" Opacity="0.85"
                                                            TextTrimming="CharacterEllipsis"/>
-                                                <TextBlock Text="{x:Bind RectText}" Opacity="0.6"
+                                                <TextBlock Text="{x:Bind RectText, Mode=OneWay}" Opacity="0.6"
                                                            FontSize="12"
                                                            FontFamily="Consolas"/>
                                             </StackPanel>

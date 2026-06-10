@@ -25,6 +25,7 @@ public sealed partial class SettingsPage : Page
         {
             var cfg = ConfigService.Instance.Config;
             BackdropCombo.SelectedIndex = (int)cfg.Backdrop;  // 枚举顺序与 ComboBoxItem 顺序一致
+            SgdbKeyBox.Text = cfg.SteamGridDbApiKey ?? "";
             PollBox.Value = cfg.PollIntervalMs;
             DragSnapToggle.IsOn = cfg.DragSnapEnabled;
             StartupToggle.IsOn = StartupTaskService.IsEnabled();
@@ -48,6 +49,18 @@ public sealed partial class SettingsPage : Page
         if (svc.Config.Backdrop == kind) return;
         svc.Config.Backdrop = kind;
         svc.Save();  // Save → Changed → MainWindow.ApplyBackdrop,无需直接调
+    }
+
+    private void SgdbKeyBox_LostFocus(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+
+        var svc = ConfigService.Instance;
+        string v = SgdbKeyBox.Text?.Trim() ?? "";
+        string? key = string.IsNullOrEmpty(v) ? null : v;  // 空串归一为 null = 关闭
+        if (svc.Config.SteamGridDbApiKey == key) return;
+        svc.Config.SteamGridDbApiKey = key;
+        svc.Save();
     }
 
     private void PollBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)

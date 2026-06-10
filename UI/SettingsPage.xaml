@@ -22,6 +22,21 @@
                 </ComboBox>
             </StackPanel>
 
+            <!-- 在线图标(SteamGridDB) -->
+            <StackPanel Spacing="6">
+                <TextBlock Text="在线图标(SteamGridDB)" FontWeight="SemiBold"/>
+                <TextBlock TextWrapping="Wrap" Opacity="0.7" FontSize="12">
+                    <Run Text="本地取不到游戏图标(反作弊保护等)时,按游戏名联网取图标作为兜底。填入免费 API key 才启用,留空则静默关闭。"/>
+                    <LineBreak/>
+                    <Run Text="免费申请:"/>
+                    <Hyperlink NavigateUri="https://www.steamgriddb.com/profile/preferences/api">https://www.steamgriddb.com/profile/preferences/api</Hyperlink>
+                </TextBlock>
+                <TextBox x:Name="SgdbKeyBox" Header="API key"
+                         PlaceholderText="留空 = 关闭在线图标"
+                         LostFocus="SgdbKeyBox_LostFocus"
+                         Width="420" HorizontalAlignment="Left"/>
+            </StackPanel>
+
             <!-- 轮询间隔 -->
             <StackPanel Spacing="6">
                 <TextBlock Text="轮询间隔" FontWeight="SemiBold"/>

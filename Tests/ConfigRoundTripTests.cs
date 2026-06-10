@@ -236,6 +236,48 @@ public class ConfigRoundTripTests
         Assert.Equal(kind, back.Backdrop);
     }
 
+    // ---- ExePath(图标来源) ----
+
+    [Fact(DisplayName = "Profile.ExePath 默认 null,且往返仍为 null")]
+    public void ExePath_DefaultNull_RoundTrip()
+    {
+        var cfg = AppConfig.CreateDefault();
+        Assert.Null(cfg.Profiles[0].ExePath);
+        var back = Deserialize(Serialize(cfg));
+        Assert.Null(back.Profiles[0].ExePath);
+    }
+
+    [Fact(DisplayName = "Profile.ExePath 设值后往返保真(含空格与反斜杠路径)")]
+    public void ExePath_FullRoundTrip()
+    {
+        var cfg = AppConfig.CreateDefault();
+        cfg.Profiles[1].ExePath = @"D:\Games\Zenless Zone Zero\ZenlessZoneZero.exe";
+        var back = Deserialize(Serialize(cfg));
+        Assert.Equal(@"D:\Games\Zenless Zone Zero\ZenlessZoneZero.exe", back.Profiles[1].ExePath);
+        // 其它未设的仍为 null
+        Assert.Null(back.Profiles[0].ExePath);
+    }
+
+    // ---- SteamGridDB API key ----
+
+    [Fact(DisplayName = "AppConfig.SteamGridDbApiKey 默认 null,且往返仍为 null")]
+    public void SteamGridDbApiKey_DefaultNull_RoundTrip()
+    {
+        var cfg = AppConfig.CreateDefault();
+        Assert.Null(cfg.SteamGridDbApiKey);
+        var back = Deserialize(Serialize(cfg));
+        Assert.Null(back.SteamGridDbApiKey);
+    }
+
+    [Fact(DisplayName = "AppConfig.SteamGridDbApiKey 设值后往返保真")]
+    public void SteamGridDbApiKey_FullRoundTrip()
+    {
+        var cfg = AppConfig.CreateDefault();
+        cfg.SteamGridDbApiKey = "abc123DEF456";
+        var back = Deserialize(Serialize(cfg));
+        Assert.Equal("abc123DEF456", back.SteamGridDbApiKey);
+    }
+
     [Fact(DisplayName = "PlacementRule.MoveOnly 默认 false,置真后往返保真")]
     public void MoveOnly_RoundTrip()
     {

@@ -116,6 +116,12 @@ public sealed class Profile
     public MatchKind MatchKind { get; set; } = MatchKind.Process;
     public string MatchValue { get; set; } = "";
 
+    /// <summary>
+    /// 可执行文件完整路径(可空)。主要用作图标来源:反作弊保护的游戏(绝区零/原神等)
+    /// 读不到 MainModule,手动指定此路径后 IconCache 可直接从 exe 提取图标。将来也可用于启动。
+    /// </summary>
+    public string? ExePath { get; set; }
+
     public bool Borderless { get; set; } = true;
     public BorderlessMethod Method { get; set; } = BorderlessMethod.Win32;
 
@@ -152,6 +158,12 @@ public sealed class AppConfig
 
     /// <summary>主窗口背景材质。改即生效(经 ConfigService.Changed → MainWindow.ApplyBackdrop)。</summary>
     public BackdropKind Backdrop { get; set; } = BackdropKind.Mica;
+
+    /// <summary>
+    /// SteamGridDB API key(可空)。配了才启用"在线图标"兜底:本地全失败时按游戏名联网取图标。
+    /// 免费申请:https://www.steamgriddb.com/profile/preferences/api 。空 = 该功能静默关闭。
+    /// </summary>
+    public string? SteamGridDbApiKey { get; set; }
 
     public List<Layout> Layouts { get; set; } = new();
     public List<Profile> Profiles { get; set; } = new();

@@ -52,6 +52,7 @@ public sealed partial class ProfileEditorPage : Page
         Enabled = src.Enabled,
         MatchKind = src.MatchKind,
         MatchValue = src.MatchValue,
+        ExePath = src.ExePath,
         Borderless = src.Borderless,
         Method = src.Method,
         DelayMs = src.DelayMs,
@@ -110,6 +111,7 @@ public sealed partial class ProfileEditorPage : Page
         };
         ApplyMatchPlaceholder();
         MatchValueBox.Text = p.MatchValue;
+        ExePathBox.Text = p.ExePath ?? "";
 
         BorderlessToggle.IsOn = p.Borderless;
         DelayBox.Value = p.DelayMs;
@@ -206,6 +208,40 @@ public sealed partial class ProfileEditorPage : Page
     {
         if (_loading || _work is null) return;
         _work.MatchValue = MatchValueBox.Text;
+    }
+
+    private void ExePathBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_loading || _work is null) return;
+        // 空串归一为 null(避免存盘出现空字符串与"未设置"两种态)。
+        string v = ExePathBox.Text?.Trim() ?? "";
+        _work.ExePath = string.IsNullOrEmpty(v) ? null : v;
+    }
+
+    // 浏览 .exe:WinUI3 桌面下 FileOpenPicker 必须 InitializeWithWindow 绑主窗口句柄(否则抛 COM 异常)。
+    private async void BrowseExe_Click(object sender, RoutedEventArgs e)
+    {
+        if (_work is null) return;
+        try
+        {
+            var picker = new Windows.Storage.Pickers.FileOpenPicker
+            {
+                SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.ComputerFolder,
+            };
+            picker.FileTypeFilter.Add(".exe");
+
+            IntPtr hwnd = Reframe.App.Main is { } w
+                ? WinRT.Interop.WindowNative.GetWindowHandle(w)
+                : IntPtr.Zero;
+            if (hwnd != IntPtr.Zero)
+                WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+
+            var file = await picker.PickSingleFileAsync();
+            if (file is null) return;
+
+            ExePathBox.Text = file.Path; // 触发 ExePathBox_TextChanged → 写入 _work.ExePath
+        }
+        catch { /* 选取失败/取消:忽略 */ }
     }
 
     private void BorderlessToggle_Toggled(object sender, RoutedEventArgs e)
@@ -685,6 +721,7 @@ public sealed partial class ProfileEditorPage : Page
             real.Enabled = _work.Enabled;
             real.MatchKind = _work.MatchKind;
             real.MatchValue = _work.MatchValue;
+            real.ExePath = _work.ExePath;
             real.Borderless = _work.Borderless;
             real.Method = _work.Method;
             real.DelayMs = _work.DelayMs;

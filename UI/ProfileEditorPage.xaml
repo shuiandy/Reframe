@@ -42,6 +42,17 @@
                         <TextBox x:Name="MatchValueBox" Header="匹配文本" Width="360"
                                  TextChanged="MatchValueBox_TextChanged"/>
                     </StackPanel>
+
+                    <!-- 可执行文件(图标来源):反作弊游戏读不到 MainModule 时手动指定,IconCache 直接从此 exe 提取图标 -->
+                    <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Bottom">
+                        <TextBox x:Name="ExePathBox" Header="可执行文件(图标来源)" Width="480"
+                                 PlaceholderText="例如 D:\Games\Zenless Zone Zero\ZenlessZoneZero.exe"
+                                 TextChanged="ExePathBox_TextChanged"/>
+                        <Button x:Name="BrowseExeButton" Content="浏览…" Click="BrowseExe_Click"
+                                VerticalAlignment="Bottom"/>
+                    </StackPanel>
+                    <TextBlock Text="反作弊保护的游戏(绝区零/原神等)可能取不到图标,可在此手动指定 exe 作为图标来源。"
+                               Opacity="0.6" Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"/>
                 </StackPanel>
 
                 <!-- 启动分辨率预设(Unity) -->

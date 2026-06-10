@@ -80,18 +80,41 @@ public sealed partial class ProfilesPage : Page
         LoadIconsAsync(rows);
     }
 
-    // 图标异步提取,不阻塞列表构建:后台线程做可能慢的路径解析(预热),再切回 UI 线程构建/回填位图
-    // (WriteableBitmap 必须在 UI 线程创建;预热后这一跳几乎只剩内存命中 + 一次 GetDIBits,很快)。
+    // 图标加载(与仪表盘一致的优先级:ExePath → 内存快取 → 本地链路 → SteamGridDB 兜底)。
+    // 列表非定时重建(仅 Reload 时),无闪烁问题;但仍走"同步快取先取、未命中再异步"以即时显示已缓存图标。
     private void LoadIconsAsync(List<ProfileRow> rows)
     {
+        var cfg = ConfigService.Instance.Config;
+        string? apiKey = cfg.SteamGridDbApiKey;
+
         foreach (var row in rows)
         {
+            var profile = cfg.Profiles.FirstOrDefault(p => p.Id == row.ProfileId);
+            if (profile is null) continue;
+
+            // 同步快取:已配 ExePath / 内存已命中 → 立即显示,不走异步。
+            if (!string.IsNullOrWhiteSpace(profile.ExePath))
+            {
+                var icon = IconCache.ByProfile(profile);
+                if (icon is not null) { row.Icon = icon; continue; }
+            }
+            if (!string.IsNullOrEmpty(row.ProcessNameForIcon)
+                && IconCache.TryGetCached(row.ProcessNameForIcon, out var hit) && hit is not null)
+            {
+                row.Icon = hit;
+                continue;
+            }
             if (string.IsNullOrEmpty(row.ProcessNameForIcon)) continue;
+
             string proc = row.ProcessNameForIcon;
-            _ = Task.Run(() =>
+            var target = row;
+            _ = Task.Run(async () =>
             {
                 IconCache.PrewarmByProcessName(proc);
-                DispatcherQueue.TryEnqueue(() => row.Icon = IconCache.ByProcessName(proc));
+                DispatcherQueue.TryEnqueue(() => target.Icon ??= IconCache.ByProfile(profile));
+                // 本地全失败 → SteamGridDB 在线兜底(配了 key 才走),成功后回填。
+                if (await IconCache.PrewarmFromSteamGridDbAsync(apiKey, profile).ConfigureAwait(false))
+                    DispatcherQueue.TryEnqueue(() => target.Icon ??= IconCache.ByProfile(profile));
             });
         }
     }
