@@ -18,8 +18,45 @@ public sealed class Watcher : IDisposable
     private Timer? _debounce;
     private readonly object _gate = new();
 
-    /// <summary>给 UI 的日志回调(后台线程触发,UI 侧自行切线程)。</summary>
+    /// <summary>
+    /// 给 UI 的日志回调(后台线程触发,UI 侧自行切线程)。
+    /// 传入的字符串已带 <c>[HH:mm:ss]</c> 时间戳前缀(由 <see cref="Emit"/> 统一加),
+    /// UI 直接显示即可,不要再加时间戳。
+    /// </summary>
     public event Action<string>? Log;
+
+    // ---- 日志环形缓冲:最近 N 条(带时间戳),线程安全 ----
+    // 引擎在 App.OnLaunched 即启动并接管已运行的游戏,"引擎已启动/接管「×××」"都发生在
+    // DashboardPage 订阅 Log 之前,事件错过即丢。缓冲让页面订阅时能回放最近历史。
+    private const int LogBufferCapacity = 100;
+    private readonly object _logGate = new();
+    private readonly LinkedList<string> _logBuffer = new();
+
+    /// <summary>
+    /// 统一日志出口:加 <c>[HH:mm:ss]</c> 时间戳、压入环形缓冲(最多 <see cref="LogBufferCapacity"/> 条)、
+    /// 再触发 <see cref="Log"/> 事件。任意线程可调,缓冲读写在 <see cref="_logGate"/> 下串行化。
+    /// </summary>
+    private void Emit(string message)
+    {
+        string line = $"[{DateTime.Now:HH:mm:ss}] {message}";
+        lock (_logGate)
+        {
+            _logBuffer.AddLast(line);
+            while (_logBuffer.Count > LogBufferCapacity)
+                _logBuffer.RemoveFirst();
+        }
+        Log?.Invoke(line);
+    }
+
+    /// <summary>
+    /// 最近日志快照(旧→新,已含时间戳)。UI 订阅 <see cref="Log"/> 前先调此回放历史,
+    /// 弥补订阅前已发生的事件(如启动期接管)。返回独立拷贝,调用方可安全持有。
+    /// </summary>
+    public IReadOnlyList<string> GetRecentLog()
+    {
+        lock (_logGate)
+            return _logBuffer.ToArray();
+    }
 
     private volatile bool _running;
     public bool Running => _running;
@@ -67,7 +104,7 @@ public sealed class Watcher : IDisposable
         _cts = new CancellationTokenSource();
         _pollLoop = Task.Run(() => PollLoopAsync(_cts.Token));
 
-        Log?.Invoke("引擎已启动");
+        Emit("引擎已启动");
 
         // 启动即把所有启用的 Unity 分辨率预设写一次(不分 MatchKind):游戏多半还没起,写了立即生效。
         ApplyResolutionPresets(forceAllKinds: true);
@@ -118,9 +155,9 @@ public sealed class Watcher : IDisposable
         {
             WindowOps.RestoreAll();
             _takeover.Clear();
-            Log?.Invoke("已还原全部接管窗口");
+            Emit("已还原全部接管窗口");
         }
-        Log?.Invoke("引擎已停止");
+        Emit("引擎已停止");
     }
 
     // 钩子回调里只做防抖,真正扫描留给计时器,避免在系统回调里干重活。
@@ -164,7 +201,7 @@ public sealed class Watcher : IDisposable
         var cfg = _getConfig();
         if (!cfg.EngineEnabled) return;
         try { Tick(cfg); }
-        catch (Exception ex) { Log?.Invoke("扫描异常: " + ex.Message); }
+        catch (Exception ex) { Emit("扫描异常: " + ex.Message); }
     }
 
     /// <summary>首次见到 (窗口,profile) 的时间,用于 DelayMs(游戏启动期窗口会重建)。</summary>
@@ -220,7 +257,7 @@ public sealed class Watcher : IDisposable
                 // 记录接管映射(供 ReleaseProfile / ClipCursor);首次记录时宣告一次
                 if (_takeover.TryAdd(w.Handle, p.Id))
                 {
-                    if (changed) Log?.Invoke($"接管「{p.Name}」: {w.Title}");
+                    if (changed) Emit($"接管「{p.Name}」: {w.Title}");
                 }
 
                 break; // 一个窗口只吃第一个命中的 profile
@@ -258,7 +295,7 @@ public sealed class Watcher : IDisposable
                     string tail = g.TotalWarns >= ThrashMaxWarns
                         ? "(后续相同冲突不再提示,直到窗口重建或引擎重启)"
                         : "";
-                    Log?.Invoke($"「{p.Name}」反复被改回,本轮放过(疑似与游戏窗口管理冲突){tail}");
+                    Emit($"「{p.Name}」反复被改回,本轮放过(疑似与游戏窗口管理冲突){tail}");
                 }
                 return false;
             }
@@ -296,13 +333,13 @@ public sealed class Watcher : IDisposable
             {
                 bool wrote = UnityPreset.Write(preset.RegistryPath, preset.Width, preset.Height, preset.Windowed);
                 if (wrote)
-                    Log?.Invoke($"已写入分辨率预设 {preset.Width}×{preset.Height} → {preset.RegistryPath}");
+                    Emit($"已写入分辨率预设 {preset.Width}×{preset.Height} → {preset.RegistryPath}");
                 else
-                    Log?.Invoke($"分辨率预设未写入:注册表路径或键值不存在 → HKCU\\{preset.RegistryPath}(未安装该游戏或路径填错?)");
+                    Emit($"分辨率预设未写入:注册表路径或键值不存在 → HKCU\\{preset.RegistryPath}(未安装该游戏或路径填错?)");
             }
             catch (Exception ex)
             {
-                Log?.Invoke("写入分辨率预设异常: " + ex.Message);
+                Emit("写入分辨率预设异常: " + ex.Message);
             }
         }
     }
@@ -488,7 +525,7 @@ public sealed class Watcher : IDisposable
             }
         }
 
-        if (hwnds.Count > 0) Log?.Invoke($"已释放 profile({profileId}) 的 {hwnds.Count} 个窗口");
+        if (hwnds.Count > 0) Emit($"已释放 profile({profileId}) 的 {hwnds.Count} 个窗口");
 
         // 这些窗口已不再被跟踪:刷新静音状态,把不再属于任何 MuteInBackground 窗口的 pid 取消静音
         UpdateMute(NativeMethods.GetForegroundWindow());

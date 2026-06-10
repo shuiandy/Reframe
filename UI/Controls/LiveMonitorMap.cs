@@ -14,8 +14,13 @@ namespace Reframe.UI.Controls;
 /// 实时屏幕小地图:把所有显示器按虚拟桌面相对位置/比例画成圆角矩形,叠加
 /// (1) 相关分区(启用 profile 的 Zone 规则命中该屏分辨率)半透明虚线框,
 /// (2) 被接管窗口的实时矩形实心色块。纯代码绘制,页面定时调 <see cref="Refresh"/> 驱动。
-/// 坐标:显示器/窗口均为虚拟桌面物理像素;先求所有屏的并集包围盒,等比缩放铺满控件宽,
+/// 坐标:显示器/窗口均为虚拟桌面物理像素;先求所有屏的并集包围盒,等比缩放<b>铺满控件宽</b>,
 /// 同一 WorldToCanvas 变换同时作用于屏、分区、窗口,保证三者对齐。
+/// <para>
+/// 尺寸自适应(学 LayoutEditorPage.RecomputeCanvasSize):控件占满可用宽,<b>高度跟随内容</b>
+/// = 宽 / 包围盒宽高比(再夹 <see cref="MaxHeight"/>),消除 32:9 等超宽桌面 letterbox 后两侧/上下的大片空白
+/// ——否则用户会把控件边缘当成屏幕边缘,觉得贴最左的游戏"悬在中间"。
+/// </para>
 /// </summary>
 public sealed class LiveMonitorMap : ContentControl
 {
@@ -28,11 +33,17 @@ public sealed class LiveMonitorMap : ContentControl
         Array.Empty<(IntPtr, string)>();
     private AppConfig? _cfg;
 
+    // 控件高度自适应:内边距 + 当前据包围盒算出的高度(避免反复 set Height 触发布局抖动)。
+    private const double Pad = 6;          // 画布四周留白(DIP),防边框贴边裁切
+    private double _appliedHeight = -1;    // 最近一次写入的 Height,去抖用
+
     public LiveMonitorMap()
     {
         _frame = new Border
         {
-            Background = new SolidColorBrush(Microsoft.UI.Colors.Black) { Opacity = 0.18 },
+            // 控件背景(虚拟桌面之外的"非桌面"区域):比显示器面更暗、更"空",
+            // 配合显示器矩形的明显边框+圆角,让用户一眼分清控件边缘 vs. 屏幕边缘。
+            Background = new SolidColorBrush(Color.FromArgb(0x66, 0x0A, 0x0C, 0x10)),
             BorderBrush = new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(6),
@@ -43,7 +54,9 @@ public sealed class LiveMonitorMap : ContentControl
         Content = _frame;
         HorizontalContentAlignment = HorizontalAlignment.Stretch;
         VerticalContentAlignment = VerticalAlignment.Stretch;
-        MinHeight = 160;
+        // 高度由内容(包围盒宽高比)决定,但夹在合理区间:超宽桌面别太扁,竖排桌面别太高。
+        MinHeight = 90;
+        MaxHeight = 320;
 
         _canvas.SizeChanged += (_, _) => Render();
     }
@@ -58,13 +71,29 @@ public sealed class LiveMonitorMap : ContentControl
         Render();
     }
 
+    /// <summary>
+    /// 据包围盒宽高比和给定内容宽,算控件目标高(= 内容高 + 上下留白 + 边框),夹到 [MinHeight, MaxHeight],
+    /// 仅当与上次写入值差异显著时才 set Height(去抖,防 set→relayout→Render→set 的死循环/抖动)。
+    /// </summary>
+    private void ApplyHeightFor(double worldW, double worldH, double contentWidth)
+    {
+        if (contentWidth <= 0) return;
+
+        double availW = Math.Max(1, contentWidth - Pad * 2);
+        double drawH = availW * worldH / worldW;        // 宽撑满后内容高
+        double border = _frame.BorderThickness.Top + _frame.BorderThickness.Bottom;
+        double target = drawH + Pad * 2 + border;        // 加上下留白与边框
+        target = Math.Clamp(target, MinHeight, MaxHeight);
+
+        if (Math.Abs(target - _appliedHeight) < 0.5) return; // 已是该高度,别重复 set
+        _appliedHeight = target;
+        Height = target;
+    }
+
     private void Render()
     {
-        _canvas.Children.Clear();
-
-        double cw = _canvas.ActualWidth, ch = _canvas.ActualHeight;
         var mons = _monitors;
-        if (cw <= 0 || ch <= 0 || mons.Count == 0) return;
+        if (mons.Count == 0) return;
 
         // 1) 虚拟桌面并集包围盒(物理像素,可含负坐标)。
         int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
@@ -78,12 +107,32 @@ public sealed class LiveMonitorMap : ContentControl
         double worldW = Math.Max(1, maxX - minX);
         double worldH = Math.Max(1, maxY - minY);
 
-        // 2) 等比 letterbox 进画布(留 6px 内边距防边框贴边裁切)。
-        const double pad = 6;
-        double availW = Math.Max(1, cw - pad * 2);
-        double availH = Math.Max(1, ch - pad * 2);
-        double scale = Math.Min(availW / worldW, availH / worldH);
+        // 2) 高度跟随内容:用满可用宽,高 = 内容高 + 上下留白,再夹到 [MinHeight, MaxHeight]。
+        //    可用宽取自画布实测宽(控件宽随父容器 Stretch);画布尚无宽时这一轮先跳过,
+        //    设 Height 会触发重新布局,canvas SizeChanged 会再次 Render(此时已有宽)。
+        double cw = _canvas.ActualWidth;
+        if (cw <= 0)
+        {
+            // 控件宽度还没量出来:先按整体控件宽估一个高度,促成一次布局,稍后精确重绘。
+            ApplyHeightFor(worldW, worldH, ActualWidth);
+            return;
+        }
+
+        double availW = Math.Max(1, cw - Pad * 2);
+        ApplyHeightFor(worldW, worldH, cw);
+
+        _canvas.Children.Clear();
+
+        double ch = _canvas.ActualHeight;
+        if (ch <= 0) return; // 高度尚未生效,等下一轮(set Height 触发的 SizeChanged)
+        double availH = Math.Max(1, ch - Pad * 2);
+
+        // 宽度优先铺满;高度超出可用高(被 MaxHeight 夹住的超高桌面)时回退按高约束,避免溢出。
+        double scale = availW / worldW;
+        if (worldH * scale > availH) scale = availH / worldH;
+
         double drawW = worldW * scale, drawH = worldH * scale;
+        // 水平:铺满宽时 ox≈Pad;被高约束时居中。垂直:据实际高居中(正常贴满则≈Pad)。
         double ox = (cw - drawW) / 2, oy = (ch - drawH) / 2;
 
         // 世界(虚拟桌面物理像素)→ 画布 DIP。
@@ -101,11 +150,12 @@ public sealed class LiveMonitorMap : ContentControl
             {
                 Width = w,
                 Height = h,
-                Fill = new SolidColorBrush(Color.FromArgb(0x33, 0x20, 0x20, 0x20)),
+                // 显示器面比"非桌面"背景明显更亮,加清晰边框+圆角,让桌面区域一眼可辨。
+                Fill = new SolidColorBrush(Color.FromArgb(0x40, 0x5A, 0x66, 0x78)),
                 Stroke = new SolidColorBrush(m.IsPrimary
                     ? Color.FromArgb(0xFF, 0x9E, 0xC8, 0xFF)
-                    : Color.FromArgb(0x80, 0xFF, 0xFF, 0xFF)),
-                StrokeThickness = m.IsPrimary ? 1.5 : 1,
+                    : Color.FromArgb(0xB0, 0xC8, 0xD0, 0xDC)),
+                StrokeThickness = m.IsPrimary ? 1.8 : 1.2,
                 RadiusX = 4,
                 RadiusY = 4,
             };

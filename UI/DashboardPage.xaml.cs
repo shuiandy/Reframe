@@ -12,10 +12,16 @@ using Reframe.Services;
 namespace Reframe.UI;
 
 /// <summary>
-/// 仪表盘上"接管中的窗口"一张卡片的数据(x:Bind 用)。
+/// 仪表盘上"接管中的窗口"一张卡片的数据。
 /// 卡片按 Handle 复用(见 DashboardPage.RefreshLive 的 diff):Handle/ProcessId 身份不变,
 /// 文本字段(ProfileName/Title/RectText)与 Icon 经 INotifyPropertyChanged 原地更新,
-/// 既不重建集合也不闪图标。x:Bind 文本字段须 Mode=OneWay 才能看到更新。
+/// 既不重建集合也不闪图标。
+/// <para>
+/// 绑定用经典 <c>{Binding ..., Mode=OneWay}</c> 而非 <c>x:Bind</c>:宿主是裸 ItemsControl
+/// (非 ListViewBase),不触发 ContainerContentChanging,x:Bind 的相位/DataContext 驱动在此场景下
+/// 初次渲染不可靠(曾导致文字全空);经典 Binding 走运行时 DataContext + INotifyPropertyChanged,
+/// 初次显示与原地更新都可靠。改动详见 DashboardPage.xaml 的 DataTemplate。
+/// </para>
 /// </summary>
 public sealed partial class TakenCard : System.ComponentModel.INotifyPropertyChanged
 {
@@ -71,6 +77,8 @@ public sealed partial class DashboardPage : Page
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(1500) };
     private Action<string>? _logHandler;
     private Action? _changedHandler;
+    // 回放完成前 handler 不追加(增量全由缓冲快照覆盖),完成后才接增量,杜绝回放/增量重复。
+    private bool _logReplayed;
 
     // 接管卡片:持久集合,按 Handle 复用。每 tick 做 diff(增/删/原地更新),不再清空重建,
     // 故已有卡的图标不会因重建回到 null 占位而闪烁。ItemsSource 只在 OnLoaded 设一次。
@@ -94,14 +102,20 @@ public sealed partial class DashboardPage : Page
         _changedHandler = () => DispatcherQueue.TryEnqueue(RefreshSummary);
         ConfigService.Instance.Changed += _changedHandler;
 
-        // 日志流:最新在上,最多 200 条。
+        // 日志流:最新在上,最多 200 条。msg 已由 Watcher.Emit 带 [HH:mm:ss] 时间戳,直接显示。
+        // 回放完成前(_logReplayed=false)丢弃增量:这些条目都在缓冲里,会被回放快照一并补上,
+        // 避免与回放重复;回放完成后才追加纯增量。
         _logHandler = msg => DispatcherQueue.TryEnqueue(() =>
         {
-            LogList.Items.Insert(0, $"[{DateTime.Now:HH:mm:ss}] {msg}");
+            if (!_logReplayed) return;
+            LogList.Items.Insert(0, msg);
             while (LogList.Items.Count > 200)
                 LogList.Items.RemoveAt(LogList.Items.Count - 1);
         });
+        // 先订阅再回放:引擎在 App.OnLaunched 即启动并接管已运行的游戏,这些日志发生在订阅之前,
+        // 事件已错过。先挂上 handler(此后增量不漏),再从环形缓冲回放最近历史整体重建列表。
         App.Engine.Log += _logHandler;
+        ReplayLogBuffer();
 
         TakenList.ItemsSource = _cards; // 持久集合,只设一次
 
@@ -116,6 +130,27 @@ public sealed partial class DashboardPage : Page
         _timer.Tick -= Timer_Tick;
         if (_logHandler is not null) App.Engine.Log -= _logHandler;
         if (_changedHandler is not null) ConfigService.Instance.Changed -= _changedHandler;
+    }
+
+    /// <summary>
+    /// 用引擎环形缓冲回放最近日志并整体重建列表(去重)。
+    /// 排到 UI 队列尾部执行:此时订阅瞬间~现在之间已入队的 handler 回调都已跑完,
+    /// 我们再取一次缓冲快照(含这期间所有条目)整体替换列表,既补回订阅前丢失的历史,
+    /// 又避免与 handler 增量重复。此后只有新增量经 handler 追加。
+    /// </summary>
+    private void ReplayLogBuffer()
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            var recent = App.Engine.GetRecentLog(); // 旧→新,已带时间戳
+            LogList.Items.Clear();
+            // 最新在上:倒序插入(最多 200 条,与增量上限一致)。
+            int start = Math.Max(0, recent.Count - 200);
+            for (int i = recent.Count - 1; i >= start; i--)
+                LogList.Items.Add(recent[i]);
+            // 快照之后的增量改由 handler 追加(此 lambda 与 handler 同在 UI 线程,无并发)。
+            _logReplayed = true;
+        });
     }
 
     private void RefreshSummary()

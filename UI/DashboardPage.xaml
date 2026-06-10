@@ -35,8 +35,9 @@
         <!-- 概览行 -->
         <TextBlock x:Name="SummaryText" Grid.Row="1" Opacity="0.7"/>
 
-        <!-- 实时屏幕小地图(主视觉) -->
-        <controls:LiveMonitorMap x:Name="MonitorMap" Grid.Row="2" Height="260"/>
+        <!-- 实时屏幕小地图(主视觉)。高度由控件按桌面包围盒宽高比自适应(夹 90~320),不再固定 260。 -->
+        <controls:LiveMonitorMap x:Name="MonitorMap" Grid.Row="2"
+                                 HorizontalAlignment="Stretch" VerticalAlignment="Top"/>
 
         <!-- 下方左右两栏:左=接管中的窗口卡片,右=日志(收窄) -->
         <Grid Grid.Row="3" ColumnSpacing="16">
@@ -74,24 +75,24 @@
                                                 <FontIcon Glyph="&#xE737;"
                                                           FontFamily="{ThemeResource SymbolThemeFontFamily}"
                                                           FontSize="22" Opacity="0.6"
-                                                          Visibility="{x:Bind FallbackIconVisibility, Mode=OneWay}"/>
-                                                <Image Source="{x:Bind Icon, Mode=OneWay}"
+                                                          Visibility="{Binding FallbackIconVisibility, Mode=OneWay}"/>
+                                                <Image Source="{Binding Icon, Mode=OneWay}"
                                                        Width="32" Height="32"
-                                                       Visibility="{x:Bind RealIconVisibility, Mode=OneWay}"/>
+                                                       Visibility="{Binding RealIconVisibility, Mode=OneWay}"/>
                                             </Grid>
 
                                             <StackPanel Grid.Column="1" Spacing="2">
-                                                <TextBlock Text="{x:Bind ProfileName, Mode=OneWay}"
+                                                <TextBlock Text="{Binding ProfileName, Mode=OneWay}"
                                                            FontWeight="SemiBold"/>
-                                                <TextBlock Text="{x:Bind Title, Mode=OneWay}" Opacity="0.85"
+                                                <TextBlock Text="{Binding Title, Mode=OneWay}" Opacity="0.85"
                                                            TextTrimming="CharacterEllipsis"/>
-                                                <TextBlock Text="{x:Bind RectText, Mode=OneWay}" Opacity="0.6"
+                                                <TextBlock Text="{Binding RectText, Mode=OneWay}" Opacity="0.6"
                                                            FontSize="12"
                                                            FontFamily="Consolas"/>
                                             </StackPanel>
                                             <StackPanel Grid.Column="2" Orientation="Horizontal"
                                                         Spacing="8" VerticalAlignment="Center">
-                                                <Button Content="还原" Tag="{x:Bind Handle}"
+                                                <Button Content="还原" Tag="{Binding Handle}"
                                                         Click="RestoreWindow_Click"/>
                                                 <Button Content="重新应用"
                                                         Click="Reapply_Click"/>
