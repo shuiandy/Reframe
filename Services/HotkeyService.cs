@@ -14,8 +14,8 @@ namespace Reframe.Services;
 /// <para>动作表(Id → 默认手势 → 执行体):</para>
 /// <list type="bullet">
 /// <item><b>ToggleBorderless</b> = Ctrl+Alt+B:前台窗口 IsTracked ? Restore : Apply 去边框(从 TrayIcon 迁来)。</item>
-/// <item><b>ToggleCurtain</b> = Ctrl+Alt+F:经 UI 线程调 CurtainService.Toggle()。</item>
-/// <item><b>SendToZone1/2/3</b> = Win+Alt+1/2/3:前台窗口 → Layouts[0] 第 N 个 zone 在"窗口当前所在屏"
+/// <item><b>ToggleCurtain</b> = Ctrl+Alt+D:经 UI 线程调 CurtainService.Toggle()。</item>
+/// <item><b>SendToZone1/2/3</b> = Ctrl+Alt+1/2/3:前台窗口 → Layouts[0] 第 N 个 zone 在"窗口当前所在屏"
 ///       工作区的矩形(zone 比例 × rcWork,同 DragSnap/PlacementResolver 数学)→ SetWindowPos 普通移动。</item>
 /// </list>
 ///
@@ -37,13 +37,17 @@ public sealed class HotkeyService : IDisposable
     /// <summary>动作元数据:Id、中文名、默认手势、执行体。顺序即 SettingsPage 显示顺序。</summary>
     public sealed record ActionInfo(string Id, string DisplayName, string DefaultGesture);
 
+    // 默认手势经本机实测 RegisterHotKey 验证可注册(2026-06,见 hotkey.log/诊断):
+    //   旧 Ctrl+Alt+F 被系统/IME 占用(err 1409,会穿透到"在目录中查找"AD 对话框);
+    //   旧 Win+Alt+1/2/3 被 Windows 任务栏跳转列表保留(恒 1409,且 Win+Ctrl/Shift+数字 同样被占)。
+    // 改为同一 Ctrl+Alt 家族(与可用的 Ctrl+Alt+B 同族):B / D / 1 / 2 / 3,全部实测注册成功。
     private static readonly ActionInfo[] _actions =
     {
         new(ActToggleBorderless, "无边框开关(前台窗口)", "Ctrl+Alt+B"),
-        new(ActToggleCurtain,    "专注模式开关",          "Ctrl+Alt+F"),
-        new(ActSendToZone1,      "送入分区 1",            "Win+Alt+1"),
-        new(ActSendToZone2,      "送入分区 2",            "Win+Alt+2"),
-        new(ActSendToZone3,      "送入分区 3",            "Win+Alt+3"),
+        new(ActToggleCurtain,    "专注模式开关",          "Ctrl+Alt+D"),
+        new(ActSendToZone1,      "送入分区 1",            "Ctrl+Alt+1"),
+        new(ActSendToZone2,      "送入分区 2",            "Ctrl+Alt+2"),
+        new(ActSendToZone3,      "送入分区 3",            "Ctrl+Alt+3"),
     };
 
     /// <summary>对外只读动作表(SettingsPage 据此渲染每一行)。</summary>
@@ -242,18 +246,63 @@ public sealed class HotkeyService : IDisposable
             int id = nextId++;
             // 全局热键统一附加 NOREPEAT,避免长按连发。
             bool ok = RegisterHotKey(_hwnd, id, mods | MOD_NOREPEAT, vk);
+            int err = ok ? 0 : Marshal.GetLastWin32Error();
             if (ok)
             {
                 _registered[id] = new RegEntry(act.Id, BuildExecutor(act.Id));
                 statuses.Add(new HotkeyStatus(act.Id, gesture, true, null));
+                Log($"OK    {act.Id,-18} {gesture,-16} mods=0x{mods:X4} vk=0x{vk:X2}");
             }
             else
             {
-                statuses.Add(new HotkeyStatus(act.Id, gesture, false, "热键被占用"));
+                statuses.Add(new HotkeyStatus(act.Id, gesture, false, DescribeError(err)));
+                Log($"FAIL  {act.Id,-18} {gesture,-16} mods=0x{mods:X4} vk=0x{vk:X2} err={err} ({DescribeError(err)})");
             }
         }
 
+        // 任何注册失败:在仪表盘日志打一条可见提示(用户不必进设置页才知道)。
+        var failed = statuses.Where(s => !s.Registered).ToList();
+        if (failed.Count > 0)
+        {
+            try
+            {
+                var detail = string.Join("、", failed.Select(s => $"{s.Gesture}({s.Error})"));
+                App.Engine?.LogExternal($"热键注册失败:{detail}。可在 设置 → 热键 改绑。");
+            }
+            catch { /* 引擎未就绪等:不让提示路径影响注册 */ }
+        }
+
         lock (_statusGate) _statuses = statuses;
+    }
+
+    /// <summary>把 RegisterHotKey 的 Win32 错误码翻成人话(供状态表与 hotkey.log)。</summary>
+    private static string DescribeError(int err) => err switch
+    {
+        0    => "未知",
+        1409 => "已被占用",            // ERROR_HOTKEY_ALREADY_REGISTERED:被本进程或别的进程抢先注册
+        1419 => "热键不可用",          // ERROR_HOTKEY_NOT_REGISTERED(注销路径)
+        87   => "参数无效",            // ERROR_INVALID_PARAMETER
+        _    => $"错误码 {err}",
+    };
+
+    // ---- 诊断日志:%LOCALAPPDATA%\Reframe\hotkey.log(每次注册一行,排查热键占用用) ----
+    private static readonly object _logFileGate = new();
+
+    private static void Log(string line)
+    {
+        try
+        {
+            string dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Reframe");
+            Directory.CreateDirectory(dir);
+            string path = Path.Combine(dir, "hotkey.log");
+            lock (_logFileGate)
+            {
+                string stamp = DateTime.Now.ToString("HH:mm:ss");
+                File.AppendAllText(path, $"[{stamp}] {line}{Environment.NewLine}");
+            }
+        }
+        catch { /* 日志失败不能影响注册 */ }
     }
 
     // 把动作 Id 映射到执行体。zone 动作捕获其 0 基索引。

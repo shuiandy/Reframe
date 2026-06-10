@@ -79,7 +79,7 @@
             <StackPanel Spacing="6">
                 <TextBlock Text="热键" FontWeight="SemiBold"/>
                 <TextBlock TextWrapping="Wrap" Opacity="0.7" FontSize="12"
-                           Text="全局热键。手势形如 Ctrl+Alt+F、Win+Alt+1(修饰符 Ctrl/Alt/Shift/Win + 字母/数字/F1-F12,大小写不限)。改完按「应用热键」生效。"/>
+                           Text="全局热键。手势形如 Ctrl+Alt+D、Ctrl+Shift+1(修饰符 Ctrl/Alt/Shift/Win + 字母/数字/F1-F12,大小写不限)。改完按「应用热键」生效;若某组合被别的程序或系统占用,会在下方与仪表盘日志提示,换一个即可。"/>
                 <!-- 每个动作一行:中文名 + 手势 TextBox,运行时按动作表填充 -->
                 <StackPanel x:Name="HotkeyRows" Spacing="8"/>
                 <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">

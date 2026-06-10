@@ -49,6 +49,13 @@ public sealed class Watcher : IDisposable
     }
 
     /// <summary>
+    /// 外部组件(如 <see cref="Services.HotkeyService"/>)向仪表盘日志推一条消息。
+    /// 走与引擎内部同一出口(带时间戳 + 入环形缓冲 + 触发 <see cref="Log"/>),
+    /// 使订阅前发生的消息(启动期热键注册失败)也能被 DashboardPage 回放看到。任意线程可调。
+    /// </summary>
+    public void LogExternal(string message) => Emit(message);
+
+    /// <summary>
     /// 最近日志快照(旧→新,已含时间戳)。UI 订阅 <see cref="Log"/> 前先调此回放历史,
     /// 弥补订阅前已发生的事件(如启动期接管)。返回独立拷贝,调用方可安全持有。
     /// </summary>

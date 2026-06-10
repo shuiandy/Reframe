@@ -1,5 +1,5 @@
-START 12:00:41
-[kill] stopped PID 67224
+START 12:49:03
+[kill] not running
 [build] exit=0
-[launch] alive=True pid=21168
+[launch] alive=True pid=65260
 DONE
