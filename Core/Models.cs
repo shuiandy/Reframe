@@ -177,6 +177,13 @@ public sealed class AppConfig
     public List<Layout> Layouts { get; set; } = new();
     public List<Profile> Profiles { get; set; } = new();
 
+    /// <summary>
+    /// 用户自定义忽略的进程名(小写、不含 .exe)。命中者从左栏「运行中的窗口」正常列表里隐去
+    /// (可逆,在 UI 里取消忽略)。区别于写死的系统外壳黑名单(<see cref="WindowScanner.IsBlacklistedProcess"/>,不可逆)。
+    /// 对标 Borderless Gaming 的 winignore。
+    /// </summary>
+    public List<string> IgnoredProcesses { get; set; } = new();
+
     /// <summary>首次运行的默认配置:57″ 左游戏右副屏布局 + 三个米哈游游戏(本地套布局、其它屏铺满)。</summary>
     public static AppConfig CreateDefault()
     {

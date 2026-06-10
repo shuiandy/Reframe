@@ -16,6 +16,24 @@ public sealed class WindowInfo
     public int Height { get; init; }                // 窗口外框高(像素);未取到为 0
 }
 
+/// <summary>一个顶层窗口为什么会(不会)出现在"可建配置"列表里。None = 正常候选,会出现。</summary>
+public enum FilterReason
+{
+    None,           // 正常候选,默认列出
+    SystemShell,    // 命中系统外壳黑名单(写死、不可逆):textinputhost 等
+    UserIgnored,    // 用户自定义忽略名单命中(可逆)
+    Cloaked,        // DWM 隐藏(挂起 UWP / 别的虚拟桌面)
+    TooSmall,       // 任一边 < MinCandidateSize
+}
+
+/// <summary>顶层窗口 + 其过滤判定(供"显示已过滤"的 UI 用,被滤的也能列出兜底)。</summary>
+public sealed class ScannedWindow
+{
+    public WindowInfo Window { get; init; } = null!;
+    public FilterReason Reason { get; init; }
+    public bool IsCandidate => Reason == FilterReason.None;
+}
+
 /// <summary>枚举"像应用主窗口"的顶层窗口。</summary>
 public static class WindowScanner
 {
@@ -107,20 +125,68 @@ public static class WindowScanner
     }
 
     /// <summary>
-    /// 面向"可建配置"UI 的候选窗口:在 <see cref="EnumerateTopLevel"/> 基础上再剔除——
-    /// (a) DWM cloaked(挂起 UWP / 别的虚拟桌面留下的窗);
-    /// (b) 尺寸任一边 &lt; <see cref="MinCandidateSize"/>;
-    /// (c) 进程名命中系统外壳黑名单(<see cref="IsBlacklistedProcess"/>)。
+    /// 纯过滤判定(单测靶点):给定进程名/尺寸/是否 cloaked/用户忽略名单,定一个 <see cref="FilterReason"/>。
+    /// 优先级:系统黑名单(不可逆) &gt; 用户忽略(可逆) &gt; cloaked &gt; 过小。命中靠前者即返回。
+    /// 用户忽略名单:进程名(小写、不含 .exe)逐项比较,自身带 .exe / 大小写差异都容忍。
     /// </summary>
-    public static List<WindowInfo> EnumerateCandidates()
+    public static FilterReason Classify(
+        string? processName, int width, int height, bool isCloaked,
+        IEnumerable<string>? userIgnores = null)
+    {
+        if (IsBlacklistedProcess(processName)) return FilterReason.SystemShell;
+        if (IsUserIgnored(processName, userIgnores)) return FilterReason.UserIgnored;
+        if (isCloaked) return FilterReason.Cloaked;
+        if (width < MinCandidateSize || height < MinCandidateSize) return FilterReason.TooSmall;
+        return FilterReason.None;
+    }
+
+    /// <summary>进程名(小写、不含 .exe)是否在用户忽略名单里。纯函数,单测靶点。空名/空单 → false。</summary>
+    public static bool IsUserIgnored(string? processName, IEnumerable<string>? userIgnores)
+    {
+        if (userIgnores is null || string.IsNullOrWhiteSpace(processName)) return false;
+        string name = StripExe(processName.Trim());
+        foreach (var ig in userIgnores)
+        {
+            if (string.IsNullOrWhiteSpace(ig)) continue;
+            if (string.Equals(StripExe(ig.Trim()), name, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
+    }
+
+    private static string StripExe(string s)
+        => s.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? s[..^4] : s;
+
+    /// <summary>
+    /// 面向"可建配置"UI 的候选窗口:在 <see cref="EnumerateTopLevel"/> 基础上再剔除——
+    /// (a) 进程名命中系统外壳黑名单(<see cref="IsBlacklistedProcess"/>);
+    /// (b) 命中用户忽略名单(<paramref name="userIgnores"/>);
+    /// (c) DWM cloaked(挂起 UWP / 别的虚拟桌面留下的窗);
+    /// (d) 尺寸任一边 &lt; <see cref="MinCandidateSize"/>。
+    /// </summary>
+    public static List<WindowInfo> EnumerateCandidates(IEnumerable<string>? userIgnores = null)
     {
         var result = new List<WindowInfo>();
+        foreach (var s in EnumerateAllWithReason(userIgnores))
+            if (s.IsCandidate)
+                result.Add(s.Window);
+        return result;
+    }
+
+    /// <summary>
+    /// 枚举全部顶层窗口并对每个附上 <see cref="FilterReason"/>(被滤的也返回,供"显示已过滤"UI 兜底)。
+    /// cloaked / 尺寸等需 Win32 的部分在此就地探测,再交给纯函数 <see cref="Classify"/> 定原因。
+    /// </summary>
+    public static List<ScannedWindow> EnumerateAllWithReason(IEnumerable<string>? userIgnores = null)
+    {
+        // 物化一次,避免对 IEnumerable 反复枚举(每个窗口都要查)。
+        var ignores = userIgnores as ICollection<string> ?? userIgnores?.ToList();
+        var result = new List<ScannedWindow>();
         foreach (var w in EnumerateTopLevel())
         {
-            if (IsBlacklistedProcess(w.ProcessName)) continue;
-            if (w.Width < MinCandidateSize || w.Height < MinCandidateSize) continue;
-            if (IsCloaked(w.Handle)) continue;
-            result.Add(w);
+            bool cloaked = IsCloaked(w.Handle);
+            var reason = Classify(w.ProcessName, w.Width, w.Height, cloaked, ignores);
+            result.Add(new ScannedWindow { Window = w, Reason = reason });
         }
         return result;
     }

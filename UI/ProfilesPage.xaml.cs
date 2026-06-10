@@ -56,6 +56,58 @@ public sealed partial class WindowRow : System.ComponentModel.INotifyPropertyCha
     public uint ProcessId { get; init; }
     public string ProcessName { get; init; } = "";   // 不含 .exe,小写;建 profile / 黑名单用
 
+    // ---- 过滤状态(支持「显示已过滤」与忽略名单管理) ----
+    // Reason 由 WindowScanner.Classify 给出;原地更新(忽略/取消忽略后无需重扫)。
+    private FilterReason _reason = FilterReason.None;
+    public FilterReason Reason
+    {
+        get => _reason;
+        set
+        {
+            if (_reason == value) return;
+            _reason = value;
+            Raise(nameof(Reason));
+            Raise(nameof(IsFiltered));
+            Raise(nameof(IsUserIgnored));
+            Raise(nameof(CanIgnore));
+            Raise(nameof(RowOpacity));
+            Raise(nameof(ReasonLabel));
+            Raise(nameof(ReasonVisibility));
+            Raise(nameof(IgnoreItemVisibility));
+            Raise(nameof(UnignoreItemVisibility));
+        }
+    }
+
+    /// <summary>是否被过滤(非正常候选)。被过滤行置灰 + 显示原因小字。</summary>
+    public bool IsFiltered => Reason != FilterReason.None;
+
+    /// <summary>是否因"用户忽略名单"被过滤(可逆,显示「取消忽略」)。</summary>
+    public bool IsUserIgnored => Reason == FilterReason.UserIgnored;
+
+    /// <summary>能否被"忽略此进程"(系统外壳黑名单不可逆,已是用户忽略则给「取消忽略」)。有进程名才行。</summary>
+    public bool CanIgnore => Reason != FilterReason.SystemShell && !string.IsNullOrEmpty(ProcessName);
+
+    /// <summary>被过滤行置灰。</summary>
+    public double RowOpacity => IsFiltered ? 0.45 : 1.0;
+
+    /// <summary>过滤原因小字("系统窗口"/"已忽略"/"已隐藏"/"过小")。正常候选为空。</summary>
+    public string ReasonLabel => Reason switch
+    {
+        FilterReason.SystemShell => "系统窗口",
+        FilterReason.UserIgnored => "已忽略",
+        FilterReason.Cloaked     => "已隐藏",
+        FilterReason.TooSmall    => "过小",
+        _ => "",
+    };
+
+    public Visibility ReasonVisibility => IsFiltered ? Visibility.Visible : Visibility.Collapsed;
+
+    // 右键菜单两项显隐互斥:可忽略且尚未被用户忽略 → 显「忽略此进程」;已被用户忽略 → 显「取消忽略」。
+    public Visibility IgnoreItemVisibility
+        => CanIgnore && !IsUserIgnored ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility UnignoreItemVisibility
+        => IsUserIgnored ? Visibility.Visible : Visibility.Collapsed;
+
     private string _title = "";
     public string Title
     {
@@ -122,6 +174,9 @@ public sealed partial class ProfilesPage : Page
     private readonly List<WindowRow> _windows = new();
     private readonly System.Collections.ObjectModel.ObservableCollection<WindowRow> _windowsView = new();
     private readonly DispatcherTimer _windowTimer = new() { Interval = TimeSpan.FromSeconds(3) };
+
+    // 「显示已过滤」开关:关 = 只列正常候选(默认);开 = 被过滤的也列出(置灰 + 原因),兜底找回被误滤的游戏。
+    private bool _showFiltered;
 
     public ProfilesPage()
     {
@@ -396,22 +451,32 @@ public sealed partial class ProfilesPage : Page
 
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyWindowFilter();
 
+    // 「显示已过滤」开关切换:不重扫,只改可见集(被过滤行已在 _windows 里)。
+    private void ShowFilteredToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        _showFiltered = ShowFilteredToggle.IsChecked == true;
+        ApplyWindowFilter();
+    }
+
     /// <summary>
-    /// 刷新左栏窗口列表:扫描候选窗口(已剔除 cloaked / 小窗 / 系统外壳),按 Handle 对 _windows
-    /// 做增量 diff(消失的删、新增的加、仍在的原地更新),不整列重建避免闪烁。随后按搜索框过滤可见项。
+    /// 刷新左栏窗口列表:扫描全部顶层窗口并附过滤原因(系统外壳 / 用户忽略 / cloaked / 过小),按 Handle
+    /// 对 _windows 做增量 diff(消失的删、新增的加、仍在的原地更新),不整列重建避免闪烁。随后按搜索框 +
+    /// 「显示已过滤」开关过滤可见项。被过滤行也保留在 _windows 里,开关一开即可呈现(置灰 + 原因)。
     /// </summary>
     private void RefreshWindows()
     {
-        var scanned = WindowScanner.EnumerateCandidates();
-        var live = new HashSet<IntPtr>(scanned.Select(w => w.Handle));
+        var ignores = ConfigService.Instance.Config.IgnoredProcesses;
+        var scanned = WindowScanner.EnumerateAllWithReason(ignores);
+        var live = new HashSet<IntPtr>(scanned.Select(s => s.Window.Handle));
 
         // 删:已不在扫描结果中的句柄。
         for (int i = _windows.Count - 1; i >= 0; i--)
             if (!live.Contains(_windows[i].Handle))
                 _windows.RemoveAt(i);
 
-        foreach (var w in scanned)
+        foreach (var s in scanned)
         {
+            var w = s.Window;
             string sizeLabel = w.Width > 0 && w.Height > 0 ? $"{w.Width}×{w.Height}" : "";
             bool hasProfile = HasProfileForProcess(w.ProcessName);
 
@@ -427,16 +492,18 @@ public sealed partial class ProfilesPage : Page
                     PathLabel = PathLabelOf(w),
                     SizeLabel = sizeLabel,
                     HasProfile = hasProfile,
+                    Reason = s.Reason,
                     Icon = IconCache.ByProcessId(w.ProcessId), // 在跑的窗口优先用 pid 入口(精确且顺便学路径)
                 };
                 _windows.Add(row);
             }
             else
             {
-                // 原地更新会变的字段(标题/尺寸/已有配置标记);Icon 已有则保留不闪。
+                // 原地更新会变的字段(标题/尺寸/已有配置标记/过滤原因);Icon 已有则保留不闪。
                 existing.Title = w.Title;
                 existing.SizeLabel = sizeLabel;
                 existing.HasProfile = hasProfile;
+                existing.Reason = s.Reason;
                 if (existing.Icon is null)
                     existing.Icon = IconCache.ByProcessId(w.ProcessId);
             }
@@ -452,16 +519,28 @@ public sealed partial class ProfilesPage : Page
     private void ApplyWindowFilter()
     {
         string q = (SearchBox?.Text ?? "").Trim();
+        var ignores = ConfigService.Instance.Config.IgnoredProcesses;
 
-        // 同步「已有配置」标记(配置增删后调用,扫描间隔外也能即时反映)。
         foreach (var row in _windows)
+        {
+            // 同步「已有配置」标记(配置增删后调用,扫描间隔外也能即时反映)。
             row.HasProfile = HasProfileForProcess(row.ProcessName);
+
+            // 同步用户忽略状态(忽略/取消忽略或外部改名单后即时反映,无需等下次重扫)。
+            // 只在 None↔UserIgnored 间翻转;系统外壳 / cloaked / 过小由扫描决定,不在此动。
+            bool ignored = WindowScanner.IsUserIgnored(row.ProcessName, ignores);
+            if (ignored && row.Reason == FilterReason.None)
+                row.Reason = FilterReason.UserIgnored;
+            else if (!ignored && row.Reason == FilterReason.UserIgnored)
+                row.Reason = FilterReason.None;
+        }
 
         bool Match(WindowRow r) => q.Length == 0
             || r.Title.Contains(q, StringComparison.OrdinalIgnoreCase)
             || (r.ProcessName + ".exe").Contains(q, StringComparison.OrdinalIgnoreCase);
 
-        var desired = _windows.Where(Match).ToList();
+        // 关「显示已过滤」时,被过滤行不进可见集(留在 _windows 供开关后呈现)。
+        var desired = _windows.Where(r => (_showFiltered || !r.IsFiltered) && Match(r)).ToList();
 
         // 删:视图里已不该出现的。
         for (int i = _windowsView.Count - 1; i >= 0; i--)
@@ -557,6 +636,48 @@ public sealed partial class ProfilesPage : Page
         _suppressReload = false;
 
         Frame.Navigate(typeof(ProfileEditorPage), profile.Id);
+    }
+
+    // 右键「忽略此进程」:把进程名加进 Config.IgnoredProcesses(小写、不含 .exe)+ Save。
+    // 正常模式下该进程的窗口随即从可见集消失;「显示已过滤」开则置灰显示「已忽略」+「取消忽略」。
+    // 系统外壳窗(CanIgnore=false)的菜单项已隐藏,不会走到这。
+    private void IgnoreProcess_Click(object sender, RoutedEventArgs e)
+    {
+        if (WindowRowFromSender(sender) is not { } w) return;
+        if (string.IsNullOrEmpty(w.ProcessName)) return;
+
+        var cfg = ConfigService.Instance.Config;
+        string proc = w.ProcessName; // WindowScanner 给的已是小写、不含 .exe
+        if (!cfg.IgnoredProcesses.Any(x =>
+                string.Equals(StripExe(x.Trim()), proc, StringComparison.OrdinalIgnoreCase)))
+        {
+            cfg.IgnoredProcesses.Add(proc);
+            _suppressReload = true;
+            ConfigService.Instance.Save();
+            _suppressReload = false;
+        }
+
+        // 即时反映(不等下次重扫):同进程的所有行翻成「已忽略」。
+        ApplyWindowFilter();
+    }
+
+    // 右键「取消忽略」:把进程名移出 Config.IgnoredProcesses + Save,该进程窗口回到正常列表。
+    private void UnignoreProcess_Click(object sender, RoutedEventArgs e)
+    {
+        if (WindowRowFromSender(sender) is not { } w) return;
+        if (string.IsNullOrEmpty(w.ProcessName)) return;
+
+        var cfg = ConfigService.Instance.Config;
+        int removed = cfg.IgnoredProcesses.RemoveAll(x =>
+            string.Equals(StripExe(x.Trim()), w.ProcessName, StringComparison.OrdinalIgnoreCase));
+        if (removed > 0)
+        {
+            _suppressReload = true;
+            ConfigService.Instance.Save();
+            _suppressReload = false;
+        }
+
+        ApplyWindowFilter();
     }
 
     // 右键「立即去边框」:对该窗口句柄临时去边框(不入配置)。已被跟踪则还原(切换语义)。

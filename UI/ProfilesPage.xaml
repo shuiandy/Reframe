@@ -34,16 +34,28 @@
 
                 <TextBlock Text="运行中的窗口" Style="{ThemeResource SubtitleTextBlockStyle}"/>
 
-                <!-- 搜索 + 刷新 -->
+                <!-- 搜索 + 显示已过滤 + 刷新 -->
                 <Grid Grid.Row="1" ColumnSpacing="8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <TextBox x:Name="SearchBox" Grid.Column="0"
                              PlaceholderText="按标题或进程名筛选…"
                              TextChanged="SearchBox_TextChanged"/>
-                    <Button x:Name="RefreshButton" Grid.Column="1"
+                    <!-- 显示已过滤:开了之后被过滤的窗口也列出(置灰 + 原因),兜底找回被误滤的游戏 -->
+                    <ToggleButton x:Name="ShowFilteredToggle" Grid.Column="1"
+                                  VerticalAlignment="Stretch"
+                                  Checked="ShowFilteredToggle_Toggled"
+                                  Unchecked="ShowFilteredToggle_Toggled"
+                                  ToolTipService.ToolTip="显示被过滤掉的窗口(系统/已忽略/已隐藏/过小)">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon Glyph="&#xE7B3;" FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="14"/>
+                            <TextBlock Text="显示已过滤"/>
+                        </StackPanel>
+                    </ToggleButton>
+                    <Button x:Name="RefreshButton" Grid.Column="2"
                             Click="RefreshButton_Click" ToolTipService.ToolTip="刷新窗口列表">
                         <FontIcon Glyph="&#xE72C;" FontFamily="{ThemeResource SymbolThemeFontFamily}"/>
                     </Button>
@@ -63,7 +75,9 @@
                     </ListView.ItemContainerStyle>
                     <ListView.ItemTemplate>
                         <DataTemplate x:DataType="local:WindowRow">
-                            <Grid ColumnSpacing="12" Background="Transparent">
+                            <!-- 被过滤行整行置灰(RowOpacity);「+ 建配置」按钮不受 IsFiltered 影响仍可用(兜底) -->
+                            <Grid ColumnSpacing="12" Background="Transparent"
+                                  Opacity="{x:Bind RowOpacity, Mode=OneWay}">
                                 <Grid.ContextFlyout>
                                     <MenuFlyout>
                                         <MenuFlyoutItem Text="创建配置" Click="CreateProfile_Click">
@@ -76,6 +90,21 @@
                                                 <FontIcon Glyph="&#xE740;"/>
                                             </MenuFlyoutItem.Icon>
                                         </MenuFlyoutItem>
+                                        <MenuFlyoutSeparator/>
+                                        <!-- 忽略此进程(加进用户忽略名单,正常模式下消失);系统外壳窗不可忽略,此项自动隐藏 -->
+                                        <MenuFlyoutItem Text="忽略此进程" Click="IgnoreProcess_Click"
+                                                        Visibility="{x:Bind IgnoreItemVisibility, Mode=OneWay}">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xED1A;"/>
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <!-- 取消忽略(移出名单);仅对已被用户忽略的行显示 -->
+                                        <MenuFlyoutItem Text="取消忽略" Click="UnignoreProcess_Click"
+                                                        Visibility="{x:Bind UnignoreItemVisibility, Mode=OneWay}">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE7B3;"/>
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
                                     </MenuFlyout>
                                 </Grid.ContextFlyout>
                                 <Grid.ColumnDefinitions>
@@ -85,12 +114,12 @@
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
 
-                                <Grid Grid.Column="0" Width="24" Height="24" VerticalAlignment="Center">
+                                <Grid Grid.Column="0" Width="32" Height="32" VerticalAlignment="Center">
                                     <FontIcon Glyph="&#xECAA;"
                                               FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                                              FontSize="18" Opacity="0.6"
+                                              FontSize="24" Opacity="0.6"
                                               Visibility="{x:Bind FallbackIconVisibility, Mode=OneWay}"/>
-                                    <Image Source="{x:Bind Icon, Mode=OneWay}" Width="24" Height="24"
+                                    <Image Source="{x:Bind Icon, Mode=OneWay}" Width="32" Height="32"
                                            Visibility="{x:Bind RealIconVisibility, Mode=OneWay}"/>
                                 </Grid>
 
@@ -107,6 +136,13 @@
                                         <TextBlock Text="已有配置" Opacity="0.55"
                                                    Style="{ThemeResource CaptionTextBlockStyle}"
                                                    Visibility="{x:Bind HasProfileVisibility, Mode=OneWay}"/>
+                                        <!-- 过滤原因小字:系统窗口/已忽略/已隐藏/过小 -->
+                                        <Border Background="{ThemeResource CardStrokeColorDefaultBrush}"
+                                                CornerRadius="4" Padding="6,1"
+                                                Visibility="{x:Bind ReasonVisibility, Mode=OneWay}">
+                                            <TextBlock Text="{x:Bind ReasonLabel, Mode=OneWay}" Opacity="0.85"
+                                                       Style="{ThemeResource CaptionTextBlockStyle}"/>
+                                        </Border>
                                     </StackPanel>
                                 </StackPanel>
 
@@ -196,12 +232,12 @@
                                               Tag="{x:Bind ProfileId}"/>
 
                                 <!-- 行首图标:进程匹配显示其图标,取不到/非进程匹配回落默认字形(显隐互斥) -->
-                                <Grid Grid.Column="1" Width="24" Height="24" VerticalAlignment="Center">
+                                <Grid Grid.Column="1" Width="32" Height="32" VerticalAlignment="Center">
                                     <FontIcon Glyph="&#xE7FC;"
                                               FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                                              FontSize="18" Opacity="0.6"
+                                              FontSize="24" Opacity="0.6"
                                               Visibility="{x:Bind FallbackIconVisibility, Mode=OneWay}"/>
-                                    <Image Source="{x:Bind Icon, Mode=OneWay}" Width="24" Height="24"
+                                    <Image Source="{x:Bind Icon, Mode=OneWay}" Width="32" Height="32"
                                            Visibility="{x:Bind RealIconVisibility, Mode=OneWay}"/>
                                 </Grid>
 
