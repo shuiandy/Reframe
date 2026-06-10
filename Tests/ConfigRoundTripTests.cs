@@ -387,4 +387,43 @@ public class ConfigRoundTripTests
         Assert.Single(back.Hotkeys);
         Assert.Equal("Ctrl+Shift+B", back.Hotkeys["ToggleBorderless"]);
     }
+
+    // ---- IgnoredProcesses(用户忽略名单) ----
+
+    [Fact(DisplayName = "AppConfig.IgnoredProcesses 默认空列表,往返仍为空且非 null")]
+    public void IgnoredProcesses_DefaultEmpty_RoundTrip()
+    {
+        var cfg = AppConfig.CreateDefault();
+        Assert.NotNull(cfg.IgnoredProcesses);
+        Assert.Empty(cfg.IgnoredProcesses);
+        var back = Deserialize(Serialize(cfg));
+        Assert.NotNull(back.IgnoredProcesses);
+        Assert.Empty(back.IgnoredProcesses);
+    }
+
+    [Fact(DisplayName = "AppConfig.IgnoredProcesses 多条往返保真(顺序与值全保留)")]
+    public void IgnoredProcesses_Entries_RoundTrip()
+    {
+        var cfg = AppConfig.CreateDefault();
+        cfg.IgnoredProcesses.Add("explorer");
+        cfg.IgnoredProcesses.Add("steamwebhelper");
+        cfg.IgnoredProcesses.Add("discord");
+
+        var back = Deserialize(Serialize(cfg));
+
+        Assert.Equal(3, back.IgnoredProcesses.Count);
+        Assert.Equal(new[] { "explorer", "steamwebhelper", "discord" }, back.IgnoredProcesses);
+    }
+
+    [Fact(DisplayName = "AppConfig.IgnoredProcesses 含中文/空格进程名往返保真")]
+    public void IgnoredProcesses_UnicodeAndSpaces_RoundTrip()
+    {
+        var cfg = AppConfig.CreateDefault();
+        cfg.IgnoredProcesses.Add("某中文进程");
+        cfg.IgnoredProcesses.Add("Epic Games Launcher");
+        var back = Deserialize(Serialize(cfg));
+        Assert.Equal(2, back.IgnoredProcesses.Count);
+        Assert.Contains("某中文进程", back.IgnoredProcesses);
+        Assert.Contains("Epic Games Launcher", back.IgnoredProcesses);
+    }
 }

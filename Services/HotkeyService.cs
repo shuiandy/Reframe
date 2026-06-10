@@ -15,7 +15,7 @@ namespace Reframe.Services;
 /// <list type="bullet">
 /// <item><b>ToggleBorderless</b> = Ctrl+Alt+B:前台窗口 IsTracked ? Restore : Apply 去边框(从 TrayIcon 迁来)。</item>
 /// <item><b>SendToZone1/2/3</b> = Ctrl+Alt+1/2/3:前台窗口 → Layouts[0] 第 N 个 zone 在"窗口当前所在屏"
-///       工作区的矩形(zone 比例 × rcWork,同 DragSnap/PlacementResolver 数学)→ SetWindowPos 普通移动。</item>
+///       工作区的矩形(经 <see cref="PlacementResolver.ZoneToRect"/>,与 DragSnap/ResolveRect 同源)→ SetWindowPos 普通移动。</item>
 /// </list>
 ///
 /// <para>绑定来源 <see cref="AppConfig.Hotkeys"/>(缺项补默认);<see cref="ConfigService.Changed"/> 时防抖重注册;
@@ -346,15 +346,12 @@ public sealed class HotkeyService : IDisposable
         IntPtr hMon = NativeMethods.MonitorFromWindow(h, NativeMethods.MONITOR_DEFAULTTONEAREST);
         var mi = new NativeMethods.MONITORINFOEX { cbSize = Marshal.SizeOf<NativeMethods.MONITORINFOEX>() };
         if (!NativeMethods.GetMonitorInfo(hMon, ref mi)) return;
-        var w = mi.rcWork;
-        int bw = w.Right - w.Left, bh = w.Bottom - w.Top;
 
-        // zone 比例 × 工作区(同 PlacementResolver.ResolveRect 的 Zone 分支)。
-        int left = w.Left + (int)Math.Round(z.X * bw);
-        int top = w.Top + (int)Math.Round(z.Y * bh);
-        int right = w.Left + (int)Math.Round((z.X + z.W) * bw);
-        int bottom = w.Top + (int)Math.Round((z.Y + z.H) * bh);
-        int cw = right - left, ch = bottom - top;
+        // zone 比例 × 工作区:统一走合同函数 PlacementResolver.ZoneToRect(消除手抄的第三份公式,
+        // 与 DragSnap/ResolveRect 同源)。basis 取 rcWork(送窗口入分区避开任务栏)。
+        var r = PlacementResolver.ZoneToRect(z, mi.rcWork);
+        int left = r.Left, top = r.Top;
+        int cw = r.Right - r.Left, ch = r.Bottom - r.Top;
         if (cw <= 0 || ch <= 0) return;
 
         // 先从最小化还原,再移动(不动 Z 序、不抢焦点)。

@@ -24,9 +24,6 @@ public static class NativeMethods
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
 
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
-
     [DllImport("user32.dll")]
     public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
@@ -49,11 +46,6 @@ public static class NativeMethods
     public const long WS_THICKFRAME = 0x00040000L;
     public const long WS_BORDER = 0x00800000L;
     public const long WS_DLGFRAME = 0x00400000L;
-    public const long WS_SYSMENU = 0x00080000L;
-    public const long WS_MINIMIZEBOX = 0x00020000L;
-    public const long WS_MAXIMIZEBOX = 0x00010000L;
-    public const long WS_POPUP = unchecked((long)0x80000000L);
-    public const long WS_VISIBLE = 0x10000000L;
     public const long WS_CHILD = 0x40000000L;
 
     public const long WS_EX_DLGMODALFRAME = 0x00000001L;
@@ -61,7 +53,6 @@ public static class NativeMethods
     public const long WS_EX_CLIENTEDGE = 0x00000200L;
     public const long WS_EX_STATICEDGE = 0x00020000L;
     public const long WS_EX_TOOLWINDOW = 0x00000080L;
-    public const long WS_EX_APPWINDOW = 0x00040000L;
     public const long WS_EX_TOPMOST = 0x00000008L; // 由 SetWindowPos(HWND_TOPMOST/NOTOPMOST) 控制,还原时按快照判定
 
     // ---- 位置 / 尺寸 ----
@@ -188,6 +179,11 @@ public static class NativeMethods
 
     [DllImport("kernel32.dll")]
     public static extern uint GetCurrentThreadId();
+
+    // 调 SetWindowLongPtr 这类"返回 0 既可能是合法旧值也可能是失败"的 API 前先清零线程 last-error,
+    // 调用后据 return==0 && GetLastWin32Error()!=0 判失败(受保护/UWP 窗口动不了)。
+    [DllImport("kernel32.dll")]
+    public static extern void SetLastError(uint dwErrCode);
 
     public const uint WM_QUIT = 0x0012;
 

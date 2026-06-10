@@ -39,14 +39,21 @@ public static class GameLauncher
             return false;
         }
 
-        bool isUri = LooksLikeUri(target);
+        // 安全白名单(本进程为 requireAdministrator,绝不对任意串 ShellExecute):
+        //   放行① 现存的 .exe 文件路径;放行② 白名单协议前缀(steam:// 等);其余一律拒。
+        bool isExe = IsExistingExe(target);
+        bool isAllowedUri = !isExe && IsAllowedProtocol(target);
 
-        // 本地文件路径必须存在;URI / 启动器命令不做存在性校验(交给 shell)。
-        if (!isUri && !File.Exists(target))
+        if (!isExe && !isAllowedUri)
         {
-            error = $"找不到文件:{target}";
+            // 既不是现存 exe、也不是白名单协议:可能是写错的路径,或不被允许的命令。
+            error = LooksLikeUri(target)
+                ? "不支持的启动命令:仅允许 steam:// hoyoplay:// http(s):// 等已知启动器协议。"
+                : $"找不到文件:{target}";
             return false;
         }
+
+        bool isUri = isAllowedUri;
 
         // 时序闭环:先写分辨率预设(进程未在跑时才写),后启动。
         // 注:能走到这里说明上面"已在运行"判定未命中(进程不在跑),故此处直接写。
@@ -77,11 +84,43 @@ public static class GameLauncher
     }
 
     /// <summary>
-    /// 目标是否应交给 shell 当作 URI / 协议处理:显式含 "://"(如 hoyoplay://、steam://),
-    /// 或它不是一个现存的文件路径(剩下的当协议/PATH 命令交给 shell)。
+    /// 允许的启动协议前缀白名单(admin 进程下只放行已知游戏启动器/网页协议)。
+    /// 命中按 URI 交给 shell;命中之外的协议(file:// shell: cmd 管道等)一律拒。
     /// </summary>
+    private static readonly string[] AllowedSchemes =
+    {
+        "steam://",        // Steam
+        "hoyoplay://",     // 米哈游 HoYoPlay
+        "com.epicgames.launcher://", // Epic
+        "uplay://", "ubisoft://",    // Ubisoft Connect
+        "origin://", "ea://", "link2ea://", // EA / Origin
+        "battlenet://", "blizzard://",      // Battle.net
+        "goggalaxy://",    // GOG Galaxy
+        "http://", "https://", // 网页启动页
+    };
+
+    /// <summary>target 是否为一个现存的 .exe 文件(放行①)。</summary>
+    private static bool IsExistingExe(string target)
+    {
+        try
+        {
+            return target.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && File.Exists(target);
+        }
+        catch { return false; } // 非法路径字符等
+    }
+
+    /// <summary>target 是否以白名单协议前缀打头(放行②,大小写不敏感)。</summary>
+    private static bool IsAllowedProtocol(string target)
+    {
+        foreach (var s in AllowedSchemes)
+            if (target.StartsWith(s, StringComparison.OrdinalIgnoreCase))
+                return true;
+        return false;
+    }
+
+    /// <summary>仅用于报错措辞:看起来像个协议 URI(含 "://"),用来区分"路径写错"与"协议不被允许"。</summary>
     private static bool LooksLikeUri(string target)
-        => target.Contains("://", StringComparison.Ordinal) || !File.Exists(target);
+        => target.Contains("://", StringComparison.Ordinal);
 
     /// <summary>按进程名(忽略 .exe、大小写)判断是否有该进程在运行。与 Watcher 的判定一致。</summary>
     private static bool IsProcessRunning(string matchValue)

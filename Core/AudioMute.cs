@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace Reframe.Core;
@@ -42,25 +43,40 @@ internal static class AudioMute
             for (int i = 0; i < count; i++)
             {
                 IAudioSessionControl? ctl = null;
+                IAudioSessionControl2? ctl2 = null;
+                ISimpleAudioVolume? vol = null;
                 try
                 {
                     if (sessions.GetSession(i, out ctl) != 0 || ctl is null) continue;
-                    if (ctl is not IAudioSessionControl2 ctl2) continue;
+                    // QI 出 IAudioSessionControl2 / ISimpleAudioVolume 各产生独立 RCW,均需在 finally 释放。
+                    ctl2 = ctl as IAudioSessionControl2;
+                    if (ctl2 is null) continue;
                     if (ctl2.GetProcessId(out uint sessionPid) != 0) continue;
                     if (sessionPid != pid) continue;
 
-                    if (ctl is ISimpleAudioVolume vol)
+                    vol = ctl as ISimpleAudioVolume;
+                    if (vol != null)
                     {
                         Guid noEvent = Guid.Empty;
-                        vol.SetMute(mute, ref noEvent);
+                        int hr = vol.SetMute(mute, ref noEvent);
+                        if (hr != 0)
+                            Debug.WriteLine($"[AudioMute] SetMute(pid={pid}, mute={mute}) hr=0x{hr:X8}");
                     }
                     // 不 break:同一进程可能有多个会话,全设一遍
                 }
-                catch { /* 单个会话失败不影响其它 */ }
-                finally { if (ctl != null) Marshal.ReleaseComObject(ctl); }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[AudioMute] session[{i}] pid={pid} 异常: {ex.Message}");
+                }
+                finally
+                {
+                    if (vol != null) Marshal.ReleaseComObject(vol);
+                    if (ctl2 != null) Marshal.ReleaseComObject(ctl2);
+                    if (ctl != null) Marshal.ReleaseComObject(ctl);
+                }
             }
         }
-        catch { /* COM 不可用 / 设备无端点等:静音是体验项,失败即放弃 */ }
+        catch (Exception ex) { Debug.WriteLine($"[AudioMute] pid={pid} COM 链路失败: {ex.Message}"); }
         finally
         {
             if (sessions != null) Marshal.ReleaseComObject(sessions);

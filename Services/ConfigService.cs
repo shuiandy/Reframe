@@ -30,6 +30,12 @@ public sealed class ConfigService
     // 防抖:外部连写(编辑器保存往往多次触发 Changed/Created)合并成一次重载。
     private const int DebounceMs = 300;
     private Timer? _debounce;
+    private bool _shutdown;
+
+    // 最近一次 Save 是否失败(写盘异常)。UI / 诊断可查;失败也会经 Watcher 日志通道对用户可见。
+    private volatile string? _lastSaveError;
+    /// <summary>最近一次 Save 的失败原因;成功后清空。null = 上次写盘正常。</summary>
+    public string? LastSaveError => _lastSaveError;
 
     private ConfigService()
     {
@@ -46,28 +52,50 @@ public sealed class ConfigService
         _fsw.Renamed += OnFileEvent;
     }
 
-    /// <summary>写盘 + 触发 Changed。</summary>
+    /// <summary>
+    /// 写盘 + 触发 Changed。整个"读 _config + 序列化 + 写盘"在 _gate 内完成,与 Reload 的引用替换互斥,
+    /// 消除"UI 改旧对象、Save 写新对象"或"序列化途中引用被热重载换掉"的窗口。
+    /// 写盘失败不抛(避免 UI 调用点崩),改为记录 LastSaveError 并经 Watcher 日志让用户看见。
+    /// </summary>
     public void Save()
     {
+        bool ok = true;
+        string? err = null;
         lock (_gate)
         {
             _selfWriteUtc = DateTime.UtcNow; // 先标记,挡掉随之而来的文件事件
-            ConfigStore.Save(_config);
+            try
+            {
+                ConfigStore.Save(_config); // 序列化在锁内:与 Reload 替换引用互斥
+                _lastSaveError = null;
+            }
+            catch (Exception ex)
+            {
+                ok = false;
+                err = ex.Message;
+                _lastSaveError = ex.Message;
+            }
         }
-        Changed?.Invoke();
+
+        if (!ok)
+        {
+            // 让失败可见:走引擎日志通道(仪表盘可见),引擎未就绪时退化为 Debug。
+            try { App.Engine?.LogExternal($"配置保存失败:{err}。改动可能未写入磁盘。"); }
+            catch { System.Diagnostics.Debug.WriteLine($"ConfigService.Save 失败:{err}"); }
+        }
+
+        Changed?.Invoke(); // 内存 _config 已是最新,仍通知消费者(即便落盘失败,本会话内存值有效)
     }
 
     private void OnFileEvent(object sender, FileSystemEventArgs e)
     {
-        // 自己刚写过的,忽略(文件事件可能滞后,留一个时间窗)
         lock (_gate)
         {
+            if (_shutdown) return;
+            // 自己刚写过的,忽略(文件事件可能滞后,留一个时间窗)
             if (DateTime.UtcNow - _selfWriteUtc < SelfWriteWindow) return;
-        }
 
-        // 防抖:重置计时器,静默 300ms 后才真正重载
-        lock (_gate)
-        {
+            // 防抖:重置计时器,静默 300ms 后才真正重载
             _debounce?.Dispose();
             _debounce = new Timer(_ => Reload(), null, DebounceMs, Timeout.Infinite);
         }
@@ -75,20 +103,38 @@ public sealed class ConfigService
 
     private void Reload()
     {
+        AppConfig fresh;
         lock (_gate)
         {
             _debounce?.Dispose();
             _debounce = null;
 
+            if (_shutdown) return;
             // 防抖窗口结束时再核一次自写标记(防抖期间发生的 Save)
             if (DateTime.UtcNow - _selfWriteUtc < SelfWriteWindow) return;
+
+            try { fresh = ConfigStore.Load(); }
+            catch { return; } // 读失败(写到一半)就放过,下一次事件再来
+
+            _config = fresh; // 原子替换引用——在 _gate 内,与 Save 的序列化互斥
         }
-
-        AppConfig fresh;
-        try { fresh = ConfigStore.Load(); }
-        catch { return; } // 读失败(写到一半)就放过,下一次事件再来
-
-        _config = fresh;     // 原子替换引用
         Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// 有序关闭:停文件监听与防抖计时器,之后不再触发 Reload/Changed。退出链(App.ExitApp)调用,
+    /// 避免退出途中迟来的文件事件回调。幂等。
+    /// </summary>
+    public void Shutdown()
+    {
+        lock (_gate)
+        {
+            if (_shutdown) return;
+            _shutdown = true;
+            try { _fsw.EnableRaisingEvents = false; } catch { /* ignore */ }
+            try { _fsw.Dispose(); } catch { /* ignore */ }
+            _debounce?.Dispose();
+            _debounce = null;
+        }
     }
 }

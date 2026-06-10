@@ -1,7 +1,9 @@
 # Reframe dev relaunch: kill -> build -> start, all in one elevated session (single UAC).
 # ASCII only: elevated runs under Windows PowerShell 5.1 which reads BOM-less files as ANSI.
 $ErrorActionPreference = 'Continue'
-$proj = 'C:\Users\shuia\Projects\Reframe'
+# Locate project root (this script lives in <root>\tools\); no hardcoded path.
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+$proj = Split-Path -Parent $ScriptDir
 $exe  = Join-Path $proj 'bin\x64\Debug\net9.0-windows10.0.19041.0\Reframe.exe'
 $log  = Join-Path $proj 'tools\relaunch_log.txt'
 

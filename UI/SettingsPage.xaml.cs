@@ -23,6 +23,7 @@ public sealed partial class SettingsPage : Page
     {
         InitializeComponent();
         Loaded += OnLoaded;
+        Unloaded += OnUnloaded;
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
@@ -31,11 +32,7 @@ public sealed partial class SettingsPage : Page
         try
         {
             var cfg = ConfigService.Instance.Config;
-            ThemeCombo.SelectedIndex = (int)cfg.Theme;        // 枚举顺序与 ComboBoxItem 顺序一致
-            BackdropCombo.SelectedIndex = (int)cfg.Backdrop;  // 枚举顺序与 ComboBoxItem 顺序一致
-            SgdbKeyBox.Text = cfg.SteamGridDbApiKey ?? "";
-            PollBox.Value = cfg.PollIntervalMs;
-            DragSnapToggle.IsOn = cfg.DragSnapEnabled;
+            LoadConfigControls(cfg);
             StartupToggle.IsOn = StartupTaskService.IsEnabled();
             ConfigPathText.Text = ConfigStore.Path_;
 
@@ -45,6 +42,48 @@ public sealed partial class SettingsPage : Page
             VersionText.Text = $"版本 {ver?.ToString() ?? "—"}";
         }
         finally { _loading = false; }
+
+        // 外部热重载:config.json 被本程序之外(手改/同步/导入)改动时,ConfigService 会换 Config 引用并触发 Changed。
+        // 订阅以把最新值读回控件。事件可能在任意线程触发,切回 UI 线程再动控件。Unloaded 退订防泄漏。
+        ConfigService.Instance.Changed += OnConfigChanged;
+    }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        ConfigService.Instance.Changed -= OnConfigChanged;
+    }
+
+    // ConfigService.Changed 回调(任意线程)。切到 UI 线程,把外部改动后的最新配置读回控件。
+    private void OnConfigChanged()
+    {
+        var queue = DispatcherQueue;
+        if (queue is null) return;
+        queue.TryEnqueue(() =>
+        {
+            // 复用 _loading 抑制:回写期间各控件的 *_Changed/Toggled 处理器会因 _loading 直接返回,
+            // 不会把刚读回的值又 Save 一遍(否则形成 Changed → 读回 → Save → Changed 回写环)。
+            _loading = true;
+            try
+            {
+                var cfg = ConfigService.Instance.Config;
+                LoadConfigControls(cfg);
+                // 外部编辑也可能改了热键映射,一并刷新(BuildHotkeyRows 只设控件状态,无回写处理器,_loading 安全)。
+                BuildHotkeyRows(cfg);
+            }
+            finally { _loading = false; }
+        });
+    }
+
+    // 把配置中的"可热重载"控件值读回 UI。初始加载与外部热重载共用;调用方负责 _loading 抑制。
+    // 仅覆盖随配置变化的控件:主题/材质/API key/轮询/拖拽吸附。开机自启(读 OS 任务态)、
+    // 版本与路径(静态)不在此列。
+    private void LoadConfigControls(AppConfig cfg)
+    {
+        ThemeCombo.SelectedIndex = (int)cfg.Theme;        // 枚举顺序与 ComboBoxItem 顺序一致
+        BackdropCombo.SelectedIndex = (int)cfg.Backdrop;  // 枚举顺序与 ComboBoxItem 顺序一致
+        SgdbKeyBox.Text = cfg.SteamGridDbApiKey ?? "";
+        PollBox.Value = cfg.PollIntervalMs;
+        DragSnapToggle.IsOn = cfg.DragSnapEnabled;
     }
 
     // ====================== 热键 ======================

@@ -21,8 +21,14 @@ public static class SteamGridDb
 {
     private const string Base = "https://www.steamgriddb.com/api/v2/";
 
-    // 单例 HttpClient(避免 socket 耗尽)。超时统一 5s。
-    private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(5) };
+    // 单例 HttpClient(避免 socket 耗尽)。HttpClient.Timeout 不覆盖响应流的逐块读取,
+    // 故每次请求另用 CancellationTokenSource(5s) 兜住"连上后慢慢吐 body"的情形(见 RequestTimeout)。
+    // 这里把 HttpClient.Timeout 设为 InfiniteTimeSpan,完全交给 CTS 统一控时(避免两套超时打架)。
+    private static readonly HttpClient _http = new() { Timeout = Timeout.InfiniteTimeSpan };
+    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
+
+    // 图标体积上限 2MB:挡住异常巨大的响应(防 OOM / 写爆磁盘缓存)。
+    private const long MaxIconBytes = 2 * 1024 * 1024;
 
     public static string IconsDir => Path.Combine(ConfigStore.Dir, "icons");
 
@@ -78,11 +84,12 @@ public static class SteamGridDb
         try
         {
             string uri = Base + "search/autocomplete/" + Uri.EscapeDataString(term.Trim());
-            using var resp = await SendAsync(apiKey, uri).ConfigureAwait(false);
+            using var cts = new CancellationTokenSource(RequestTimeout);
+            using var resp = await SendAsync(apiKey, uri, cts.Token).ConfigureAwait(false);
             if (resp is null || !resp.IsSuccessStatusCode) return null;
 
-            await using var stream = await resp.Content.ReadAsStreamAsync().ConfigureAwait(false);
-            using var doc = await JsonDocument.ParseAsync(stream).ConfigureAwait(false);
+            await using var stream = await resp.Content.ReadAsStreamAsync(cts.Token).ConfigureAwait(false);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cts.Token).ConfigureAwait(false);
             var root = doc.RootElement;
             if (!root.TryGetProperty("success", out var ok) || !ok.GetBoolean()) return null;
             if (!root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array) return null;
@@ -91,7 +98,7 @@ public static class SteamGridDb
                 if (g.TryGetProperty("id", out var id) && id.TryGetInt32(out int v))
                     return v; // 首个即最相关(autocomplete 已按相关度排序)
         }
-        catch { /* 静默 */ }
+        catch { /* 静默(含超时取消) */ }
         return null;
     }
 
@@ -102,11 +109,12 @@ public static class SteamGridDb
         {
             // 限定 png(便于直接落 .png 并交给 WriteableBitmap/BitmapImage 解码)。
             string uri = $"{Base}icons/game/{gameId}?mimes=image/png";
-            using var resp = await SendAsync(apiKey, uri).ConfigureAwait(false);
+            using var cts = new CancellationTokenSource(RequestTimeout);
+            using var resp = await SendAsync(apiKey, uri, cts.Token).ConfigureAwait(false);
             if (resp is null || !resp.IsSuccessStatusCode) return null;
 
-            await using var stream = await resp.Content.ReadAsStreamAsync().ConfigureAwait(false);
-            using var doc = await JsonDocument.ParseAsync(stream).ConfigureAwait(false);
+            await using var stream = await resp.Content.ReadAsStreamAsync(cts.Token).ConfigureAwait(false);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cts.Token).ConfigureAwait(false);
             var root = doc.RootElement;
             if (!root.TryGetProperty("success", out var ok) || !ok.GetBoolean()) return null;
             if (!root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array) return null;
@@ -142,33 +150,57 @@ public static class SteamGridDb
 
     private static async Task<bool> DownloadAsync(string url, string outFile)
     {
+        // tmp 带 GUID:防同一进程内并发下载同名图标互相踩 tmp。
+        string tmp = outFile + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
             Directory.CreateDirectory(IconsDir);
+            using var cts = new CancellationTokenSource(RequestTimeout);
             using var req = new HttpRequestMessage(HttpMethod.Get, url); // 图标 CDN 无需 Bearer
-            using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+            // ResponseHeadersRead:先拿到头(可读 Content-Length 做上限预检),body 仍受 cts 控时。
+            using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token)
+                .ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode) return false;
 
-            byte[] bytes = await resp.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
-            if (bytes.Length == 0) return false;
+            // Content-Length 预检:声明超 2MB 直接拒(异常巨图)。无该头则靠下面读取时的硬上限兜底。
+            if (resp.Content.Headers.ContentLength is long len && len > MaxIconBytes) return false;
 
-            // 先写临时文件再原子改名,避免半截文件被当成有效缓存。
-            string tmp = outFile + ".tmp";
-            await File.WriteAllBytesAsync(tmp, bytes).ConfigureAwait(false);
-            if (File.Exists(outFile)) File.Delete(outFile);
-            File.Move(tmp, outFile);
+            // 流式读取并强制 2MB 上限(防服务器不报或谎报 Content-Length)。
+            await using (var src = await resp.Content.ReadAsStreamAsync(cts.Token).ConfigureAwait(false))
+            await using (var dst = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                var buf = new byte[64 * 1024];
+                long total = 0;
+                int n;
+                while ((n = await src.ReadAsync(buf.AsMemory(0, buf.Length), cts.Token).ConfigureAwait(false)) > 0)
+                {
+                    total += n;
+                    if (total > MaxIconBytes) return false; // 超限:放弃(finally 清 tmp)
+                    await dst.WriteAsync(buf.AsMemory(0, n), cts.Token).ConfigureAwait(false);
+                }
+                if (total == 0) return false; // 空 body:不当有效缓存
+            }
+
+            // 原子覆盖(同卷):File.Move(tmp, out, overwrite:true),避免半截文件被当成有效缓存。
+            File.Move(tmp, outFile, overwrite: true);
             return true;
         }
         catch { return false; }
+        finally
+        {
+            // 失败/超时残留的 tmp 清掉(成功路径 tmp 已被 Move 走,Exists 为 false)。
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { /* ignore */ }
+        }
     }
 
-    private static async Task<HttpResponseMessage?> SendAsync(string apiKey, string uri)
+    private static async Task<HttpResponseMessage?> SendAsync(string apiKey, string uri, CancellationToken ct)
     {
         try
         {
             using var req = new HttpRequestMessage(HttpMethod.Get, uri);
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-            return await _http.SendAsync(req).ConfigureAwait(false);
+            // ResponseHeadersRead:尽早返回(状态码即可判断),body 由调用方在同一 ct 下读取。
+            return await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         }
         catch { return null; }
     }

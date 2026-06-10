@@ -21,23 +21,44 @@ public sealed class WinEventHook : IDisposable
     private readonly NativeMethods.WinEventProc _proc;
 
     private Thread? _thread;
-    private uint _threadId;
+    // volatile:钩子线程写、Start/Dispose 读;超时清理时要读到刚被钩子线程设上的值。
+    private volatile uint _threadId;
     private IntPtr _hook;
     private readonly ManualResetEventSlim _ready = new(false);
     private volatile bool _disposed;
 
     public WinEventHook() => _proc = OnWinEvent;
 
-    public void Start()
+    /// <summary>
+    /// 启一个独占线程装钩子并跑消息泵。返回是否启动成功。
+    /// <para>等待钩子线程就绪最多 2s。超时视为启动失败:尽力让该线程退出(PostThreadMessage(WM_QUIT) +
+    /// Join),清理状态并返回 false——而非"假装成功"留下一个可能没装上钩子、Dispose 也 Post 不到位的僵线程。
+    /// 调用方据此走兜底轮询(降级运行)。</para>
+    /// </summary>
+    public bool Start()
     {
-        if (_thread != null) return;
-        _thread = new Thread(ThreadProc)
+        if (_disposed) return false;
+        if (_thread != null) return true;
+
+        var t = new Thread(ThreadProc)
         {
             IsBackground = true,
             Name = "Reframe.WinEventHook"
         };
-        _thread.Start();
-        _ready.Wait(2000); // 等钩子装好(拿到 threadId)再返回,保证 Dispose 能 Post 到位
+        _thread = t;
+        t.Start();
+
+        if (_ready.Wait(2000)) // 等钩子装好(拿到 threadId)再返回,保证 Dispose 能 Post 到位
+            return true;
+
+        // 超时:尽力收线程,别留僵线程。threadId 在 ThreadProc 首行即设,此处多半已可用。
+        uint tid = _threadId;
+        if (tid != 0)
+            NativeMethods.PostThreadMessage(tid, NativeMethods.WM_QUIT, IntPtr.Zero, IntPtr.Zero);
+        try { t.Join(1000); } catch { /* ignore */ }
+        _thread = null;
+        _threadId = 0;
+        return false;
     }
 
     private void ThreadProc()

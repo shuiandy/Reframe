@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 using Reframe.Interop;
@@ -9,7 +10,6 @@ public sealed class WindowInfo
 {
     public IntPtr Handle { get; init; }
     public string Title { get; init; } = "";
-    public string ClassName { get; init; } = "";
     public uint ProcessId { get; init; }
     public string ProcessName { get; init; } = ""; // 不含 .exe,小写
     public int Width { get; init; }                 // 窗口外框宽(像素);未取到为 0
@@ -75,6 +75,8 @@ public static class WindowScanner
     public static List<WindowInfo> EnumerateTopLevel()
     {
         var result = new List<WindowInfo>();
+        // 本次枚举内 pid→name 去重:同一进程的多个顶层窗口只解析一次进程名。
+        var perScan = new Dictionary<uint, string>();
 
         NativeMethods.EnumWindows((hWnd, _) =>
         {
@@ -95,11 +97,8 @@ public static class WindowScanner
             string title = sb.ToString();
             if (string.IsNullOrWhiteSpace(title)) return true;
 
-            var cls = new StringBuilder(256);
-            NativeMethods.GetClassName(hWnd, cls, cls.Capacity);
-
             NativeMethods.GetWindowThreadProcessId(hWnd, out uint pid);
-            string procName = SafeProcessName(pid);
+            string procName = ResolveProcessName(pid, perScan);
 
             int w = 0, h = 0;
             if (NativeMethods.GetWindowRect(hWnd, out var r))
@@ -112,7 +111,6 @@ public static class WindowScanner
             {
                 Handle = hWnd,
                 Title = title,
-                ClassName = cls.ToString(),
                 ProcessId = pid,
                 ProcessName = procName,
                 Width = w,
@@ -202,6 +200,42 @@ public static class WindowScanner
         }
         catch { /* dwmapi 不可用:按未隐藏处理 */ }
         return false;
+    }
+
+    // ---- 进程名解析缓存 ----
+    // pid→name 的跨 tick 短 TTL 缓存:每 tick 数十次 GetProcessById 很贵,游戏运行期 pid 基本不变。
+    // pid 会被系统复用,故设短 TTL(10s)兜底:复用后最多沿用 10s 旧名,下次刷新自然纠正。
+    private static readonly TimeSpan ProcNameTtl = TimeSpan.FromSeconds(10);
+    private static readonly ConcurrentDictionary<uint, (string Name, DateTime At)> _procNameCache = new();
+
+    /// <summary>
+    /// 解析进程名(小写、不含 .exe)。三级:本次枚举去重(<paramref name="perScan"/>)→ 跨 tick TTL 缓存 →
+    /// 实查 <see cref="SafeProcessName"/>。pid==0(取不到)直接空串,不入缓存。
+    /// </summary>
+    private static string ResolveProcessName(uint pid, Dictionary<uint, string> perScan)
+    {
+        if (pid == 0) return "";
+        if (perScan.TryGetValue(pid, out var hit)) return hit;
+
+        var now = DateTime.UtcNow;
+        string name;
+        if (_procNameCache.TryGetValue(pid, out var c) && now - c.At < ProcNameTtl)
+        {
+            name = c.Name;
+        }
+        else
+        {
+            name = SafeProcessName(pid);
+            _procNameCache[pid] = (name, now);
+            // 顺手清理过期项,防长时间运行后字典随死 pid 无限增长。
+            if (_procNameCache.Count > 256)
+                foreach (var kv in _procNameCache)
+                    if (now - kv.Value.At >= ProcNameTtl)
+                        _procNameCache.TryRemove(kv.Key, out _);
+        }
+
+        perScan[pid] = name;
+        return name;
     }
 
     private static string SafeProcessName(uint pid)

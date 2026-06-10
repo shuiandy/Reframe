@@ -48,7 +48,11 @@ public static class PlacementResolver
         if (!NativeMethods.GetMonitorInfo(hMon, ref mi))
             return new Target(p.Borderless, null, p.Topmost);
 
-        NativeMethods.GetWindowRect(w.Handle, out var cur);
+        // GetWindowRect 失败(句柄刚失效等):不要拿零矩形去算 MoveOnly/letterbox(会产出垃圾矩形,
+        // 进而被 ClipCursor 夹住)。失败时只保留去边框/置顶意图,几何返回 null(不动)。
+        if (!NativeMethods.GetWindowRect(w.Handle, out var cur))
+            return new Target(p.Borderless, null, p.Topmost);
+
         var rect = ResolveRect(mi.rcMonitor, mi.rcWork, cur, p, cfg);
         return new Target(p.Borderless, rect, p.Topmost);
     }
@@ -85,13 +89,7 @@ public static class PlacementResolver
         {
             PlacementKind.Fullscreen => basis,
 
-            PlacementKind.Zone when FindZone(cfg, rule) is { } z => new NativeMethods.RECT
-            {
-                Left   = basis.Left + (int)Math.Round(z.X * bw),
-                Top    = basis.Top  + (int)Math.Round(z.Y * bh),
-                Right  = basis.Left + (int)Math.Round((z.X + z.W) * bw),
-                Bottom = basis.Top  + (int)Math.Round((z.Y + z.H) * bh)
-            },
+            PlacementKind.Zone when FindZone(cfg, rule) is { } z => ZoneToRect(z, basis),
 
             PlacementKind.CustomRect when rule.CustomRect is { } c => new NativeMethods.RECT
             {
@@ -116,13 +114,19 @@ public static class PlacementResolver
             Bottom = t.Bottom + o.Bottom
         };
 
+        // 当前窗口矩形宽/高非法(GetWindowRect 失败给了零矩形、或合成的占位 WindowInfo):
+        // MoveOnly / letterbox 都依赖它,拿垃圾尺寸会算出垃圾矩形。此时退回纯目标矩形 t
+        // (该定位的照常定位,只是不按"当前尺寸/宽高比"二次加工)。
+        int cw = currentWindowRect.Right - currentWindowRect.Left;
+        int ch = currentWindowRect.Bottom - currentWindowRect.Top;
+        bool curValid = cw > 0 && ch > 0;
+
         // 只定位(MoveOnly):把窗口左上角放到目标矩形左上角,保持窗口当前尺寸不变。
         // 用于渲染分辨率钉死在注册表的 Unity 游戏——resize 只会整张拉伸。
         // MoveOnly 与 KeepAspectRatio 互斥时 MoveOnly 优先(letterbox 在固定渲染分辨率下没意义)。
         if (rule.MoveOnly)
         {
-            int cw = currentWindowRect.Right - currentWindowRect.Left;
-            int ch = currentWindowRect.Bottom - currentWindowRect.Top;
+            if (!curValid) return t;
             return new NativeMethods.RECT
             {
                 Left = t.Left,
@@ -133,10 +137,29 @@ public static class PlacementResolver
         }
 
         // 保持宽高比:以 currentWindowRect 的宽高比,在目标矩形内等比最大化并居中(letterbox)。
-        if (p.KeepAspectRatio)
+        if (p.KeepAspectRatio && curValid)
             t = Letterbox(t, currentWindowRect);
 
         return t;
+    }
+
+    /// <summary>
+    /// zone 比例(0..1,相对 <paramref name="basis"/>)→ 绝对矩形(virtual-desktop 物理像素)。
+    /// <c>basis.Left + Round(z.X·bw)</c> 等,语义与 <see cref="ResolveRect"/> 的 Zone 分支一致。
+    /// 纯函数,供 ResolveRect、<see cref="DragSnapService"/>、HotkeyService 共用,保证三处取整口径统一。
+    /// </summary>
+    /// <param name="z">分区(比例坐标)。</param>
+    /// <param name="basis">投射基准矩形:整屏(rcMonitor)或工作区(rcWork)。</param>
+    public static NativeMethods.RECT ZoneToRect(Zone z, NativeMethods.RECT basis)
+    {
+        int bw = basis.Right - basis.Left, bh = basis.Bottom - basis.Top;
+        return new NativeMethods.RECT
+        {
+            Left   = basis.Left + (int)Math.Round(z.X * bw),
+            Top    = basis.Top  + (int)Math.Round(z.Y * bh),
+            Right  = basis.Left + (int)Math.Round((z.X + z.W) * bw),
+            Bottom = basis.Top  + (int)Math.Round((z.Y + z.H) * bh)
+        };
     }
 
     /// <summary>

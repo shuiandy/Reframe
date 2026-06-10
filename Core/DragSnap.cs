@@ -30,8 +30,10 @@ public static class DragSnapService
     // 委托保存为字段:OUT_OF_CONTEXT 回调跨线程调用,局部会被 GC(同 WinEventHook 的坑)。
     private static NativeMethods.WinEventProc? _proc;
     private static Thread? _thread;
-    private static uint _threadId;
+    // volatile:钩子线程写、Start/Stop 读;超时清理与重入时都要读到最新值。
+    private static volatile uint _threadId;
     private static IntPtr _hook;
+    // 静态、跨 Start/Stop 复用:Stop() 必须 Reset,否则二次 Start 的 Wait 会立刻返回(看到上轮的 Set)。
     private static readonly ManualResetEventSlim _ready = new(false);
 
     private static System.Threading.Timer? _pollTimer;
@@ -53,9 +55,22 @@ public static class DragSnapService
 
         if (_thread != null) return;
         _proc = OnWinEvent;
-        _thread = new Thread(ThreadProc) { IsBackground = true, Name = "Reframe.DragSnap" };
-        _thread.Start();
-        _ready.Wait(2000);
+        _ready.Reset(); // 复用的静态事件:每次启动前清掉上轮的 Set,Wait 才真正等本轮就绪。
+        var t = new Thread(ThreadProc) { IsBackground = true, Name = "Reframe.DragSnap" };
+        _thread = t;
+        t.Start();
+
+        if (!_ready.Wait(2000))
+        {
+            // 超时:尽力收线程,清状态(等同 Stop 的线程清理路径),别留僵线程。
+            uint tid = _threadId;
+            if (tid != 0)
+                NativeMethods.PostThreadMessage(tid, NativeMethods.WM_QUIT, IntPtr.Zero, IntPtr.Zero);
+            try { t.Join(1000); } catch { /* ignore */ }
+            _thread = null;
+            _threadId = 0;
+            _hook = IntPtr.Zero;
+        }
     }
 
     public static void Stop()
@@ -69,6 +84,11 @@ public static class DragSnapService
             try { t.Join(2000); } catch { /* ignore */ }
             _thread = null;
         }
+
+        // 复用的静态状态全部归零,保证 Stop→Start 可重入(否则 _ready 残留 Set、_threadId/_hook 残留旧值)。
+        _ready.Reset();
+        _threadId = 0;
+        _hook = IntPtr.Zero;
 
         StopPoll();
         lock (_gate) { _snapping = false; _targetHwnd = IntPtr.Zero; _sessionZones = new(); }
@@ -226,27 +246,25 @@ public static class DragSnapService
 
         foreach (var mon in MonitorService.GetMonitors())
         {
-            int bw = mon.WorkW, bh = mon.WorkH;          // 吸附一律用工作区(rcWork)
-            int baseX = mon.WorkX, baseY = mon.WorkY;
+            // 吸附一律用工作区(rcWork);构造 basis 矩形交给 PlacementResolver.ZoneToRect,
+            // 保证与引擎接管(ResolveRect 的 Zone 分支)取整口径完全一致。
+            var basis = new NativeMethods.RECT
+            {
+                Left = mon.WorkX, Top = mon.WorkY,
+                Right = mon.WorkX + mon.WorkW, Bottom = mon.WorkY + mon.WorkH
+            };
 
             var localRects = new List<RectInt32>();
             var names = new List<string>();
 
             foreach (var z in layout.Zones)
             {
-                // 同 PlacementResolver:zone 比例 × 工作区。
-                int left = baseX + (int)Math.Round(z.X * bw);
-                int top = baseY + (int)Math.Round(z.Y * bh);
-                int right = baseX + (int)Math.Round((z.X + z.W) * bw);
-                int bottom = baseY + (int)Math.Round((z.Y + z.H) * bh);
+                var r = PlacementResolver.ZoneToRect(z, basis);
 
-                session.Add(new SessionZone(new NativeMethods.RECT
-                {
-                    Left = left, Top = top, Right = right, Bottom = bottom
-                }));
+                session.Add(new SessionZone(r));
 
                 // 覆盖层要的是"相对该屏左上角"(rcMonitor 原点)的物理像素。
-                localRects.Add(new RectInt32(left - mon.X, top - mon.Y, right - left, bottom - top));
+                localRects.Add(new RectInt32(r.Left - mon.X, r.Top - mon.Y, r.Right - r.Left, r.Bottom - r.Top));
                 names.Add(z.Name);
             }
 

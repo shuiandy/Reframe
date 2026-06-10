@@ -27,6 +27,7 @@
     <Compile Include="..\Core\Models.cs" LinkBase="Linked" />
     <Compile Include="..\Core\HotkeyGesture.cs" LinkBase="Linked" />
     <Compile Include="..\Core\PlacementResolver.cs" LinkBase="Linked" />
+    <Compile Include="..\Core\ThrashPolicy.cs" LinkBase="Linked" />
     <Compile Include="..\Core\UnityPreset.cs" LinkBase="Linked" />
     <Compile Include="..\Core\WindowScanner.cs" LinkBase="Linked" />
     <Compile Include="..\Interop\NativeMethods.cs" LinkBase="Linked" />

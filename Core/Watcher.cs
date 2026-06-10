@@ -15,8 +15,14 @@ public sealed class Watcher : IDisposable
     private WinEventHook? _hook;
     private CancellationTokenSource? _cts;
     private Task? _pollLoop;
+    // 防抖 Timer 建一次、用 Change() 重排,不每事件 new/Dispose(见 ScheduleTick)。
     private Timer? _debounce;
+    // 前台 Clip/Mute 的独立短防抖(50ms):钩子泵线程只重排它,COM/ClipCursor 不在钩子回调里同步做。
+    private Timer? _fgDebounce;
     private readonly object _gate = new();
+
+    // Tick 重入闸:轮询线程 / 防抖 Timer / Poke 可能并发,已在跑就直接跳过(不排队)。
+    private int _ticking;
 
     /// <summary>
     /// 给 UI 的日志回调(后台线程触发,UI 侧自行切线程)。
@@ -73,11 +79,7 @@ public sealed class Watcher : IDisposable
     // 兜底轮询下限:事件驱动已覆盖绝大多数,轮询只兜底漏网,降频到 5s 起。
     private const int MinPollMs = 5000;
 
-    // ---- 防拉锯:对已接管窗口,10s 内最多重新应用 3 次 ----
-    private const int ThrashWindowMs = 10000;
-    private const int ThrashMaxApplies = 3;
-    // 每个窗口的拉锯告警最多记 2 条,此后永久静默(窗口销毁清理时随字典项一起重置)。
-    private const int ThrashMaxWarns = 2;
+    // 防拉锯参数(10s 窗口 / 3 次上限 / 2 条告警 / 5min 衰减)集中在 Core/ThrashPolicy.cs。
 
     public Watcher(Func<AppConfig> getConfig) => _getConfig = getConfig;
 
@@ -106,10 +108,24 @@ public sealed class Watcher : IDisposable
 
         _hook = new WinEventHook();
         _hook.WindowEvent += OnWindowEvent;
-        _hook.Start();
+        if (!_hook.Start())
+        {
+            // 钩子没装上:事件驱动失效,但兜底轮询仍在,引擎降级运行(只是响应慢些)。
+            Emit("事件钩子启动失败,降级为定时轮询(响应可能变慢)");
+            _hook.WindowEvent -= OnWindowEvent;
+            _hook.Dispose();
+            _hook = null;
+        }
 
         _cts = new CancellationTokenSource();
         _pollLoop = Task.Run(() => PollLoopAsync(_cts.Token));
+
+        // 防抖 Timer 建一次,后续只用 Change() 重排(见 ScheduleTick / ScheduleForegroundRefresh)。
+        lock (_gate)
+        {
+            _debounce ??= new Timer(_ => SafeTick(), null, Timeout.Infinite, Timeout.Infinite);
+            _fgDebounce ??= new Timer(_ => ForegroundRefreshTick(), null, Timeout.Infinite, Timeout.Infinite);
+        }
 
         Emit("引擎已启动");
 
@@ -150,13 +166,17 @@ public sealed class Watcher : IDisposable
         _cts?.Dispose();
         _cts = null;
 
+        List<uint> toUnmute;
         lock (_gate)
         {
             _debounce?.Dispose();
             _debounce = null;
-            ReleaseClipLocked(); // 引擎停止必须解除光标限制
-            UnmuteAllLocked();   // 引擎停止必须取消所有静音
+            _fgDebounce?.Dispose();
+            _fgDebounce = null;
+            ReleaseClipLocked();            // 引擎停止必须解除光标限制
+            toUnmute = DrainMutedLocked();  // 锁内只取差集,COM 出锁后做
         }
+        UnmuteOutsideLock(toUnmute);        // 引擎停止必须取消所有静音(COM 不在锁内)
 
         if (restoreWindows)
         {
@@ -168,25 +188,44 @@ public sealed class Watcher : IDisposable
     }
 
     // 钩子回调里只做防抖,真正扫描留给计时器,避免在系统回调里干重活。
-    // 前台切换额外即时更新光标限制(ClipCursor 必须前台才夹、失焦即放)。
+    // 前台切换的 Clip/Mute(含 COM)不在钩子泵线程同步做,改排一个 50ms 短防抖,出回调再处理。
     private void OnWindowEvent(uint eventType, IntPtr hwnd)
     {
         if (eventType == NativeMethods.EVENT_SYSTEM_FOREGROUND)
-        {
-            UpdateClip(hwnd);
-            UpdateMute(hwnd);
-        }
+            ScheduleForegroundRefresh();
         ScheduleTick();
     }
+
+    // 前台 Clip/Mute 防抖间隔:前台切换会连发,短攒一下;又要够灵敏(夹光标/恢复声音)。
+    private const int ForegroundDebounceMs = 50;
 
     private void ScheduleTick()
     {
         lock (_gate)
         {
-            if (!_running) return;
-            _debounce?.Dispose();
-            _debounce = new Timer(_ => SafeTick(), null, DebounceMs, Timeout.Infinite);
+            if (!_running || _debounce is null) return;
+            // 复用同一 Timer,重排 due 时间(不每事件 new/Dispose)。
+            _debounce.Change(DebounceMs, Timeout.Infinite);
         }
+    }
+
+    /// <summary>排一次前台 Clip/Mute 刷新(50ms 防抖)。钩子泵线程只调这,COM/ClipCursor 留给 Timer 线程。</summary>
+    private void ScheduleForegroundRefresh()
+    {
+        lock (_gate)
+        {
+            if (!_running || _fgDebounce is null) return;
+            _fgDebounce.Change(ForegroundDebounceMs, Timeout.Infinite);
+        }
+    }
+
+    /// <summary>前台防抖到点:读当前前台窗口,刷新光标限制与后台静音(均在 Timer 线程,不在钩子回调)。</summary>
+    private void ForegroundRefreshTick()
+    {
+        if (!_running) return;
+        var fg = NativeMethods.GetForegroundWindow();
+        UpdateClip(fg);
+        UpdateMute(fg);
     }
 
     private async Task PollLoopAsync(CancellationToken ct)
@@ -205,10 +244,17 @@ public sealed class Watcher : IDisposable
     private void SafeTick()
     {
         if (!_running) return;
-        var cfg = _getConfig();
-        if (!cfg.EngineEnabled) return;
-        try { Tick(cfg); }
-        catch (Exception ex) { Emit("扫描异常: " + ex.Message); }
+        // 重入闸:轮询线程 / 防抖 Timer / Poke 可能同时触发,已有一次在跑就直接跳过(不排队、不堆积)。
+        if (Interlocked.CompareExchange(ref _ticking, 1, 0) != 0) return;
+        try
+        {
+            if (!_running) return;
+            var cfg = _getConfig();
+            if (!cfg.EngineEnabled) return;
+            try { Tick(cfg); }
+            catch (Exception ex) { Emit("扫描异常: " + ex.Message); }
+        }
+        finally { Interlocked.Exchange(ref _ticking, 0); }
     }
 
     /// <summary>首次见到 (窗口,profile) 的时间,用于 DelayMs(游戏启动期窗口会重建)。</summary>
@@ -220,22 +266,17 @@ public sealed class Watcher : IDisposable
     /// </summary>
     private readonly ConcurrentDictionary<IntPtr, string> _takeover = new();
 
+    /// <summary>已就(窗口,profile)报过一次"无权限"的去重集合(值占位),防每 tick 刷屏。死窗口清理时一并剔除。</summary>
+    private readonly ConcurrentDictionary<(IntPtr, string), byte> _noPermLogged = new();
+
     /// <summary>当前被夹住光标的窗口句柄;IntPtr.Zero = 未夹。仅 _gate 下读写。</summary>
     private IntPtr _clippedHwnd = IntPtr.Zero;
 
     /// <summary>当前被我们静音的进程 PID 集合(MuteInBackground)。仅 _gate 下读写。</summary>
     private readonly HashSet<uint> _mutedPids = new();
 
-    /// <summary>防拉锯:每个已接管窗口最近一段时间内的重新应用次数。</summary>
-    private readonly ConcurrentDictionary<IntPtr, ThrashGuard> _thrash = new();
-
-    private sealed class ThrashGuard
-    {
-        public DateTime WindowStart = DateTime.UtcNow;
-        public int Count;
-        public bool Warned;        // 本 10s 窗口内是否已告警(防同一窗口期重复)
-        public int TotalWarns;     // 该窗口累计告警条数,达上限后永久静默
-    }
+    /// <summary>防拉锯:每个已接管窗口的节流状态(判定逻辑见 <see cref="ThrashPolicy"/>)。</summary>
+    private readonly ConcurrentDictionary<IntPtr, ThrashState> _thrash = new();
 
     private void Tick(AppConfig cfg)
     {
@@ -259,12 +300,21 @@ public sealed class Watcher : IDisposable
                     break;
 
                 var target = PlacementResolver.Resolve(w, p, cfg);
-                bool changed = WindowOps.Apply(w.Handle, in target);
+                var outcome = WindowOps.Apply(w.Handle, in target);
+
+                if (outcome == ApplyOutcome.Failed)
+                {
+                    // 受保护/UWP 窗口动不了:不登记接管,按 DESIGN §8 承诺明确报"无权限"。
+                    // 每窗口每 profile 只报一次(借 _firstSeen 已存在的 key 去重——再报会刷屏)。
+                    if (_noPermLogged.TryAdd((w.Handle, p.Id), 0))
+                        Emit($"无权限,无法接管「{p.Name}」: {w.Title}");
+                    break;
+                }
 
                 // 记录接管映射(供 ReleaseProfile / ClipCursor);首次记录时宣告一次
                 if (_takeover.TryAdd(w.Handle, p.Id))
                 {
-                    if (changed) Emit($"接管「{p.Name}」: {w.Title}");
+                    if (outcome == ApplyOutcome.Changed) Emit($"接管「{p.Name}」: {w.Title}");
                 }
 
                 break; // 一个窗口只吃第一个命中的 profile
@@ -279,36 +329,26 @@ public sealed class Watcher : IDisposable
         UpdateMute(fg);
     }
 
-    /// <summary>已接管窗口的重应用节流:10s 窗口内超过 3 次则本轮放过并告警一次。</summary>
+    /// <summary>
+    /// 已接管窗口的重应用节流:薄壳,逻辑全在 <see cref="ThrashPolicy.Evaluate"/>
+    /// (10s 窗口 / 3 次上限 / 2 条告警 / 5min 衰减)。本处只把"该告警"翻译成一条日志。
+    /// </summary>
     private bool AllowReapply(IntPtr hWnd, Profile p)
     {
-        var g = _thrash.GetOrAdd(hWnd, _ => new ThrashGuard());
-        var now = DateTime.UtcNow;
-        lock (g)
+        var s = _thrash.GetOrAdd(hWnd, _ => new ThrashState { WindowStartUtc = DateTime.UtcNow });
+        bool allow, warn;
+        bool finalWarn;
+        lock (s)
         {
-            if ((now - g.WindowStart).TotalMilliseconds > ThrashWindowMs)
-            {
-                g.WindowStart = now;
-                g.Count = 0;
-                g.Warned = false;
-            }
-            if (g.Count >= ThrashMaxApplies)
-            {
-                // 每个 10s 窗口最多告警一次,且整个窗口生命周期累计最多 ThrashMaxWarns 条,之后永久静默。
-                if (!g.Warned && g.TotalWarns < ThrashMaxWarns)
-                {
-                    g.Warned = true;
-                    g.TotalWarns++;
-                    string tail = g.TotalWarns >= ThrashMaxWarns
-                        ? "(后续相同冲突不再提示,直到窗口重建或引擎重启)"
-                        : "";
-                    Emit($"「{p.Name}」反复被改回,本轮放过(疑似与游戏窗口管理冲突){tail}");
-                }
-                return false;
-            }
-            g.Count++;
-            return true;
+            allow = ThrashPolicy.Evaluate(s, DateTime.UtcNow, out warn);
+            finalWarn = s.TotalWarns >= ThrashPolicy.MaxWarns;
         }
+        if (warn)
+        {
+            string tail = finalWarn ? "(后续相同冲突不再提示,直到窗口重建或引擎重启)" : "";
+            Emit($"「{p.Name}」反复被改回,本轮放过(疑似与游戏窗口管理冲突){tail}");
+        }
+        return allow;
     }
 
     /// <summary>
@@ -367,7 +407,7 @@ public sealed class Watcher : IDisposable
         catch { return false; }
     }
 
-    /// <summary>句柄已失效的条目从字典剔除,防止无限增长。</summary>
+    /// <summary>句柄已失效的条目从各字典剔除,防止无限增长 + 防句柄复用时脏快照污染新窗口。</summary>
     private void CleanupDeadWindows()
     {
         foreach (var key in _firstSeen.Keys)
@@ -381,6 +421,14 @@ public sealed class Watcher : IDisposable
         foreach (var h in _thrash.Keys)
             if (!NativeMethods.IsWindow(h))
                 _thrash.TryRemove(h, out _);
+
+        foreach (var key in _noPermLogged.Keys)
+            if (!NativeMethods.IsWindow(key.Item1))
+                _noPermLogged.TryRemove(key, out _);
+
+        // WindowOps 的原始快照同步清理:句柄会被系统复用,旧窗口销毁后若快照不清,
+        // 新窗口拿到同一 HWND 时建快照会被旧值挡住,还原会写回上一个窗口的样式/位置。
+        WindowOps.ForgetDead(NativeMethods.IsWindow);
 
         // 被夹光标的窗口若已销毁,立即解除限制
         lock (_gate)
@@ -448,12 +496,15 @@ public sealed class Watcher : IDisposable
 
     /// <summary>
     /// 按当前前台窗口刷新"后台静音":遍历所有接管窗口,其 profile 开了 MuteInBackground 的——
-    /// 该窗口在前台 → 取消静音;不在前台 → 静音。状态缓存在 _mutedPids,避免重复 COM 调用。
+    /// 该窗口在前台 → 取消静音;不在前台 → 静音。
+    /// <para>线程模型(本次评审修复):COM(AudioMute)不能在 <see cref="_gate"/> 锁内、也不该跑在钩子泵线程。
+    /// 故锁内只算"要静音/取消静音的 pid 差集"并即时更新 <see cref="_mutedPids"/>(决策串行化、不会重复下发),
+    /// 出锁后才执行实际的 COM 调用。本方法的调用者(Tick / 50ms 前台防抖 / ReleaseProfile)均不在钩子回调里。</para>
     /// </summary>
     private void UpdateMute(IntPtr foreground)
     {
         var cfg = _getConfig();
-        // hwnd → (pid, 是否前台) 汇总;同一 pid 多窗口时,只要有一个窗口在前台就算前台。
+        // hwnd → 是否应静音 汇总;同一 pid 多窗口时,只要有一个窗口在前台就算前台(=不静音)。
         var want = new Dictionary<uint, bool>(); // pid → 应静音?
         foreach (var kv in _takeover)
         {
@@ -465,47 +516,51 @@ public sealed class Watcher : IDisposable
             if (pid == 0) continue;
 
             bool isForeground = kv.Key == foreground;
-            // 该 pid 最终是否静音 = 它的所有相关窗口都不在前台
             if (want.TryGetValue(pid, out bool prevMute))
                 want[pid] = prevMute && !isForeground;
             else
                 want[pid] = !isForeground;
         }
 
+        // 锁内:只算差集 + 更新 _mutedPids;COM 留到出锁后。
+        var toMute = new List<uint>();
+        var toUnmute = new List<uint>();
         lock (_gate)
         {
-            if (!_running) { UnmuteAllLocked(); return; }
-
-            foreach (var (pid, shouldMute) in want)
+            if (!_running) { toUnmute = DrainMutedLocked(); }
+            else
             {
-                bool currentlyMuted = _mutedPids.Contains(pid);
-                if (shouldMute && !currentlyMuted)
+                foreach (var (pid, shouldMute) in want)
                 {
-                    AudioMute.SetMuteByPid(pid, true);
-                    _mutedPids.Add(pid);
+                    bool currentlyMuted = _mutedPids.Contains(pid);
+                    if (shouldMute && !currentlyMuted) { toMute.Add(pid); _mutedPids.Add(pid); }
+                    else if (!shouldMute && currentlyMuted) { toUnmute.Add(pid); _mutedPids.Remove(pid); }
                 }
-                else if (!shouldMute && currentlyMuted)
+                // 已不再被任何 MuteInBackground 窗口跟踪的 pid(窗口销毁 / profile 释放):取消静音
+                foreach (var pid in _mutedPids.Where(p => !want.ContainsKey(p)).ToList())
                 {
-                    AudioMute.SetMuteByPid(pid, false);
+                    toUnmute.Add(pid);
                     _mutedPids.Remove(pid);
                 }
             }
-
-            // 已不再被任何 MuteInBackground profile 跟踪的 pid(窗口销毁/profile 释放):取消静音
-            foreach (var pid in _mutedPids.Where(p => !want.ContainsKey(p)).ToList())
-            {
-                AudioMute.SetMuteByPid(pid, false);
-                _mutedPids.Remove(pid);
-            }
         }
+
+        foreach (var pid in toMute) AudioMute.SetMuteByPid(pid, true);
+        foreach (var pid in toUnmute) AudioMute.SetMuteByPid(pid, false);
     }
 
-    /// <summary>取消所有我们施加的静音。须在 _gate 下调用。</summary>
-    private void UnmuteAllLocked()
+    /// <summary>取出当前所有被我们静音的 pid 并清空 _mutedPids(须在 _gate 下调用);COM 取消静音由调用方出锁后做。</summary>
+    private List<uint> DrainMutedLocked()
     {
-        foreach (var pid in _mutedPids)
-            AudioMute.SetMuteByPid(pid, false);
+        var list = _mutedPids.ToList();
         _mutedPids.Clear();
+        return list;
+    }
+
+    /// <summary>对一组 pid 取消静音(COM,不持锁)。</summary>
+    private static void UnmuteOutsideLock(List<uint> pids)
+    {
+        foreach (var pid in pids) AudioMute.SetMuteByPid(pid, false);
     }
 
     /// <summary>
@@ -523,8 +578,9 @@ public sealed class Watcher : IDisposable
             _takeover.TryRemove(h, out _);
             _thrash.TryRemove(h, out _);
 
-            // _firstSeen 以 (hwnd, profileId) 为键,精确剔除这一对
+            // _firstSeen / _noPermLogged 以 (hwnd, profileId) 为键,精确剔除这一对
             _firstSeen.TryRemove((h, profileId), out _);
+            _noPermLogged.TryRemove((h, profileId), out _);
 
             lock (_gate)
             {

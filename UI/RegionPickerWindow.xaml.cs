@@ -74,7 +74,7 @@ public sealed partial class RegionPickerWindow : Window
 
     // 当前 DPI 缩放(DIP → 物理像素)。窗口覆盖整屏,Root 与窗口同尺寸,
     // 所以 Root 内 DIP 偏移 × scale = 屏内物理像素偏移。
-    private double Scale => Root.XamlRoot?.RasterizationScale ?? 1.0;
+    private double Scale => Root.XamlRoot?.RasterizationScale is double s and > 0 ? s : 1.0;
 
     // ---------- 指针 ----------
     private void Root_PointerPressed(object sender, PointerRoutedEventArgs e)

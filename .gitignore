@@ -8,3 +8,4 @@ build_check*.xbf
 build_checkUI/
 dist/
 publish_out/
+tools/relaunch_log.txt

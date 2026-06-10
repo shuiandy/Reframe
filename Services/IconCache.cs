@@ -4,6 +4,7 @@ using System.Runtime.InteropServices.WindowsRuntime;
 using System.Text.Json;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.Storage.Streams;
 
 namespace Reframe.Services;
 
@@ -334,6 +335,12 @@ public static class IconCache
 
     // ---- 持久化(简单 JsonSerializer,无源生成) ----
 
+    /// <summary>
+    /// 返回 _paths 本体引用(非快照,为省一次拷贝)。
+    /// 约定:调用方对返回字典的任何读/写都必须在 <see cref="_gate"/> 锁内进行——本类现有三处调用
+    /// (ResolvePath / TryLearnPathFromProcessId / RememberPath)均已在锁内访问。新增调用务必遵守,
+    /// 否则与 RememberPath 的并发写、SavePaths 的快照拷贝竞态。需要锁外持有时请自行拷贝。
+    /// </summary>
     private static Dictionary<string, string> LoadPaths()
     {
         lock (_gate)
@@ -382,14 +389,41 @@ public static class IconCache
     // ---- 图标提取:exe 路径 → ExtractIconEx → HICON → WriteableBitmap ----
     // 全程 try/catch:任何失败一律回落 null → UI 显示默认字形。
 
-    /// <summary>png 文件 → BitmapImage(SteamGridDB 磁盘缓存用)。缺文件/解码失败一律 null。须在 UI 线程调用。</summary>
+    /// <summary>
+    /// png 文件 → BitmapImage(SteamGridDB 磁盘缓存用)。缺文件/解码失败一律 null。须在 UI 线程调用。
+    /// 同步把整文件字节读进内存流再 SetSource,切断"缓存对象 vs 磁盘文件"的时序耦合:
+    /// 旧实现 UriSource 是惰性解码(BitmapImage 之后才异步去读磁盘),期间文件被覆盖/删除就可能解码失败
+    /// 或拿到半截图。这里先 ReadAllBytes(此刻文件完整存在),后续位图再不依赖磁盘。
+    /// </summary>
     private static ImageSource? LoadPngFile(string path)
     {
         try
         {
-            if (!File.Exists(path) || new FileInfo(path).Length == 0) return null;
+            if (!File.Exists(path)) return null;
+            byte[] bytes;
+            // 显式 FileShare.Read 打开并一次性读完;0 字节(下载半截/占位)视为无效。
+            using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                long len = fs.Length;
+                if (len <= 0) return null;
+                bytes = new byte[len];
+                int read = 0;
+                while (read < bytes.Length)
+                {
+                    int n = fs.Read(bytes, read, bytes.Length - read);
+                    if (n <= 0) break;
+                    read += n;
+                }
+                if (read != bytes.Length) return null; // 读不全:不当有效图
+            }
+
+            var stream = new InMemoryRandomAccessStream();
+            stream.WriteAsync(bytes.AsBuffer()).AsTask().GetAwaiter().GetResult();
+            stream.Seek(0);
+
             var bmp = new BitmapImage { DecodePixelType = DecodePixelType.Logical };
-            bmp.UriSource = new Uri(path);
+            // 同步等待 SetSource 完成:返回时位图已从内存流解码,不再触碰磁盘。
+            bmp.SetSourceAsync(stream).AsTask().GetAwaiter().GetResult();
             return bmp;
         }
         catch { return null; }

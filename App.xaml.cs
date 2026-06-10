@@ -122,17 +122,38 @@ public partial class App : Application
         ConfigService.Instance.Save();
     }
 
-    /// <summary>真正退出:还原全部接管窗口 + 移除托盘 + 退出。只由托盘"退出"触发。</summary>
+    /// <summary>
+    /// 真正退出:还原全部接管窗口 + 移除托盘 + 退出。只由托盘"退出"触发。须在 UI 线程进入。
+    ///
+    /// 退出链不再于 UI 线程同步跑(旧实现里 Engine.Stop 内含 Wait(2000)+RestoreAll,最坏数秒假死):
+    ///   1) 先隐藏主窗口 → 视觉立即"退出了"。
+    ///   2) 停服链(DragSnap/Hotkey/Engine/ConfigService)放到后台线程跑完(可能阻塞数秒,不卡 UI)。
+    ///   3) 完成后切回 UI 线程做托盘 Dispose(保持其线程亲和)+ Application.Exit(必须回 UI 线程)。
+    /// </summary>
     private void ExitApp()
     {
         if (_exiting) return;
         _exiting = true;
 
-        try { DragSnapService.Stop(); } catch { /* 先停吸附钩子,再拆引擎 */ }
-        try { _hotkeys?.Stop(); } catch { /* 注销全部热键 */ }
-        try { Engine?.Stop(restoreWindows: true); } catch { /* 尽力还原 */ }
-        try { _tray?.Dispose(); } catch { /* ignore */ }   // 在 UI 线程 Dispose,不会自 join 托盘线程
+        // 1) 立即隐藏窗口,给用户即时反馈(此刻仍在 UI 线程)。
+        try { _window?.AppWindow.Hide(); } catch { /* ignore */ }
 
-        Exit(); // Application.Exit
+        // 2) 停服链放后台,避免 Engine.Stop 的 Wait+RestoreAll 阻塞 UI 线程。
+        var ui = _ui;
+        System.Threading.Tasks.Task.Run(() =>
+        {
+            try { ConfigService.Instance.Shutdown(); } catch { /* 停热重载监听/防抖,免退出期回调 */ }
+            try { DragSnapService.Stop(); } catch { /* 先停吸附钩子,再拆引擎 */ }
+            try { _hotkeys?.Stop(); } catch { /* 注销全部热键 */ }
+            try { Engine?.Stop(restoreWindows: true); } catch { /* 尽力还原 */ }
+
+            // 3) 托盘 Dispose 与 Application.Exit 都回 UI 线程(托盘的线程亲和、Exit 的线程要求)。
+            void Finish()
+            {
+                try { _tray?.Dispose(); } catch { /* ignore */ } // UI 线程 Dispose,不自 join 托盘线程
+                try { Exit(); } catch { /* ignore */ }           // Application.Exit
+            }
+            if (ui is null || !ui.TryEnqueue(Finish)) Finish(); // 取不到队列就地兜底(尽力退出)
+        });
     }
 }

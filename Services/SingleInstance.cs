@@ -24,7 +24,9 @@ public static class SingleInstance
         _mutex = new Mutex(initiallyOwned: true, MutexName, out bool createdNew);
         if (createdNew) return true;
 
-        // 已有实例:把它的主窗口唤到前台。
+        // 已有实例:按窗口标题找到它的主窗口并唤前台。
+        // 局限:FindWindow 按可见标题匹配——若用户改了标题、或恰有同名标题的别家窗口,可能找错/找不到;
+        // 但互斥量已保证不会重复启动,最坏情形只是"没把已有窗口顶到前台",可接受(不值得上 class-name/IPC 方案)。
         IntPtr hwnd = FindWindow(null, MainWindowTitle);
         if (hwnd != IntPtr.Zero)
         {

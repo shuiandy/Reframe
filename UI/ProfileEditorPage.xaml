@@ -148,18 +148,17 @@
                         </StackPanel>
 
                         <StackPanel Spacing="8">
-                            <TextBlock Text="附加行为 (即将支持)" Style="{ThemeResource BodyStrongTextBlockStyle}"/>
-                            <TextBlock Text="以下开关会如实保存,但当前引擎版本暂不消费。" Opacity="0.6"
-                                       Style="{ThemeResource CaptionTextBlockStyle}"/>
+                            <TextBlock Text="附加行为" Style="{ThemeResource BodyStrongTextBlockStyle}"/>
                             <ToggleSwitch x:Name="TopmostToggle" Header="始终置顶"
                                           OnContent="开" OffContent="关" Toggled="M3Toggle_Toggled"/>
                             <ToggleSwitch x:Name="AspectToggle" Header="保持宽高比"
                                           OnContent="开" OffContent="关" Toggled="M3Toggle_Toggled"/>
-                            <ToggleSwitch x:Name="ClientToggle" Header="保持客户区大小"
-                                          OnContent="开" OffContent="关" Toggled="M3Toggle_Toggled"/>
                             <ToggleSwitch x:Name="MuteToggle" Header="后台静音"
                                           OnContent="开" OffContent="关" Toggled="M3Toggle_Toggled"/>
                             <ToggleSwitch x:Name="ClipToggle" Header="光标限制在窗口内"
+                                          OnContent="开" OffContent="关" Toggled="M3Toggle_Toggled"/>
+                            <!-- 唯一尚未被引擎消费的开关:如实存盘,但当前不生效。 -->
+                            <ToggleSwitch x:Name="ClientToggle" Header="保持客户区大小 (暂未实装)"
                                           OnContent="开" OffContent="关" Toggled="M3Toggle_Toggled"/>
                         </StackPanel>
                     </StackPanel>

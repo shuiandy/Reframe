@@ -605,7 +605,11 @@ public sealed partial class ProfileEditorPage : Page
 
     private FrameworkElement BuildRectPanel(PlacementRule rule)
     {
-        rule.CustomRect ??= new RectPx();
+        // 不在此预分配 CustomRect:本面板对每条规则都会构建(仅按 Kind 显隐),
+        // 若无条件 ??= new RectPx() 会给非 CustomRect 规则也塞上空矩形,落盘留噪声。
+        // 显示值从既有 CustomRect 读(无则 0);仅在用户真正编辑时才按需补建。
+        // (切到「自定义矩形」动作时 BuildActionSection 已先行补建,这里的 Ensure 兜底覆盖可视化选择等路径。)
+        RectPx Ensure() => rule.CustomRect ??= new RectPx();
         var rect = rule.CustomRect;
 
         var outer = new StackPanel { Spacing = 8 };
@@ -627,10 +631,10 @@ public sealed partial class ProfileEditorPage : Page
             return nb;
         }
 
-        var xBox = Field("X", rect.X, v => rect.X = v);
-        var yBox = Field("Y", rect.Y, v => rect.Y = v);
-        var wBox = Field("宽", rect.W, v => rect.W = v);
-        var hBox = Field("高", rect.H, v => rect.H = v);
+        var xBox = Field("X", rect?.X ?? 0, v => Ensure().X = v);
+        var yBox = Field("Y", rect?.Y ?? 0, v => Ensure().Y = v);
+        var wBox = Field("宽", rect?.W ?? 0, v => Ensure().W = v);
+        var hBox = Field("高", rect?.H ?? 0, v => Ensure().H = v);
         row.Children.Add(xBox);
         row.Children.Add(yBox);
         row.Children.Add(wBox);
@@ -643,10 +647,11 @@ public sealed partial class ProfileEditorPage : Page
             if (monitor is null) return;
             var picked = await RegionPickerWindow.PickAsync(monitor);
             if (picked is null) return;
-            rect.X = picked.X;
-            rect.Y = picked.Y;
-            rect.W = picked.W;
-            rect.H = picked.H;
+            var r = Ensure();
+            r.X = picked.X;
+            r.Y = picked.Y;
+            r.W = picked.W;
+            r.H = picked.H;
             xBox.Value = picked.X;
             yBox.Value = picked.Y;
             wBox.Value = picked.W;

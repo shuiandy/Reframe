@@ -80,10 +80,13 @@
                     VerticalAlignment="Top"
                     SizeChanged="CanvasHost_SizeChanged">
                 <!-- 画布:背景框 + zone 层 + 对齐参考线层。尺寸由代码按可用宽度与宽高比设定。 -->
+                <!-- 有意为之:画布底色保持深色(#101418),它模拟的是物理屏幕,屏幕是黑的;
+                     浅色主题下也不随主题翻白,否则会误导用户对所摆区域的认知。
+                     描边属容器 chrome 而非屏幕内容,改用 ThemeResource 随主题适配。 -->
                 <Border x:Name="CanvasFrame"
                         HorizontalAlignment="Center"
                         Background="#101418"
-                        BorderBrush="#3A4048"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                         BorderThickness="1">
                     <Canvas x:Name="ZoneCanvas">
                         <Canvas x:Name="GuideCanvas" IsHitTestVisible="False"/>
@@ -138,7 +141,7 @@
                         <Button Content="删除此分区" Click="DeleteZone_Click">
                             <Button.Resources>
                                 <ResourceDictionary>
-                                    <SolidColorBrush x:Key="ButtonForeground" Color="#E04848"/>
+                                    <StaticResource x:Key="ButtonForeground" ResourceKey="SystemFillColorCriticalBrush"/>
                                 </ResourceDictionary>
                             </Button.Resources>
                         </Button>

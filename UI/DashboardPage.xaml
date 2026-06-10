@@ -94,8 +94,9 @@
                                                         Spacing="8" VerticalAlignment="Center">
                                                 <Button Content="还原" Tag="{Binding Handle}"
                                                         Click="RestoreWindow_Click"/>
-                                                <Button Content="重新应用"
-                                                        Click="Reapply_Click"/>
+                                                <Button Content="重新扫描"
+                                                        Click="Reapply_Click"
+                                                        ToolTipService.ToolTip="立即触发一次全量扫描与应用(对全部窗口生效,非仅此卡片)"/>
                                             </StackPanel>
                                         </Grid>
                                     </Border>

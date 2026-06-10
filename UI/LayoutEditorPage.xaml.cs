@@ -62,6 +62,14 @@ public sealed partial class LayoutEditorPage : Page
         KeyDown += OnPageKeyDown;
     }
 
+    protected override void OnNavigatedFrom(NavigationEventArgs e)
+    {
+        base.OnNavigatedFrom(e);
+        // 对称退订:OnNavigatedTo 里每次都 += OnPageKeyDown。若将来开启 NavigationCacheMode
+        // 复用本页实例,不退订会令同一处理器叠加注册,Delete 键一次删多个分区。
+        KeyDown -= OnPageKeyDown;
+    }
+
     // ---------- 克隆 ----------
     private static Layout Clone(Layout src) => new()
     {

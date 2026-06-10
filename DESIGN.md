@@ -54,40 +54,44 @@ WinEventHook         PlacementResolver   WindowOps
 
 ## 4. BG 功能逐项分析与对应
 
+> **状态图例(对齐当前代码现实):** ✅ 已实装 · ❌ 做了又删 · ⬜ 未做/未规划。
+> "计划"列是最初设想的里程碑归属;状态列才是实际落地情况。
+
 ### 无边框两种实现
-| BG 模式 | 原理 | Reframe |
-|---|---|---|
-| **Win32 (Classic)** | `SetWindowLongPtr` 砍样式 + `SetWindowPos` | **M1 实装**(同原理) |
-| **缩放 (GPU)** | Windows.Graphics.Capture 捕获游戏窗口 → D3D 渲染到全屏覆盖层(可挂 Anime4K/FSR 等 shader、控制 sync/direct flip、画光标) | **M4 预留**接口 `BorderlessMethod.GpuScaling`;本质是个小合成器,先不做 |
+| BG 模式 | 原理 | Reframe | 状态 |
+|---|---|---|---|
+| **Win32 (Classic)** | `SetWindowLongPtr` 砍样式 + `SetWindowPos` | 同原理 | ✅ 已实装 |
+| **缩放 (GPU)** | Windows.Graphics.Capture 捕获游戏窗口 → D3D 渲染到全屏覆盖层(可挂 Anime4K/FSR 等 shader、控制 sync/direct flip、画光标) | 本质是个小合成器 | ⬜ 远期可选,未规划(`BorderlessMethod.GpuScaling` 仅为枚举占位) |
 
 ### 配置项映射(截图逐项)
-| BG 选项 | 实现原理 | 计划 |
-|---|---|---|
-| 启用无边框 | 砍 caption/thickframe 样式 | M1 |
-| 窗口大小:全屏 / 自定义(X,Y,W,H) | rcMonitor / 绝对矩形 | M1(新增 **Zone** 模式) |
-| 可视化选择区域 | 截图式拖拽选区 | M2(全屏遮罩 overlay,拖拽出矩形,显示尺寸角标,吸附边缘/等分线/常见比例 16:9·21:9·32:9) |
-| 无边框延迟 | 检测后等 N 秒再处理 | M1 |
-| 窗口偏移 L/T/R/B | 最终矩形加偏移 | M1 |
-| 保持客户区大小 | 去框后用 `AdjustWindowRectExForDpi` 反算,使客户区尺寸不变 | M3 |
-| 保持宽高比 | 在目标区域内 letterbox 等比居中 | M3 |
-| 超级尺寸(跨所有屏) | 虚拟桌面矩形(SM_*VIRTUALSCREEN) | M3(PlacementKind.SpanAll) |
-| 移除菜单 | `SetMenu(hwnd, NULL)`(备份以还原) | M3 |
-| 始终置顶 | `HWND_TOPMOST` | M3 |
-| 隐藏任务栏 / 失焦恢复 | 操作 Shell_TrayWnd 显示状态 | M3 |
-| 将光标限制在窗口内 | 前台时 `ClipCursor(rect)`,失焦释放 | M3 |
-| 后台静音 | WASAPI `IAudioSessionManager2` 按 pid 静音 | M3 |
-| 发送最大化命令 | `ShowWindow(SW_MAXIMIZE)`(部分游戏要先最大化再去框) | M3 |
-| Force redraw | `RedrawWindow` | M3 |
-| 微调窗口(nudge) | ±1px 触发框架重算 | M3 |
-| 翻转处理顺序 | 先尺寸后样式 ↔ 先样式后尺寸(逐 profile) | M3 |
-| 隐藏鼠标光标 | 光标克隆/替换,脏活 | M4(随 GPU 模式) |
-| 背景容器(纯色/渐变/图片) | 在游戏矩形之外铺一层底色窗 | M3「幕布」:letterbox 时把 zone 外区域遮黑,本地 5120 时右侧不遮(可配) |
+| BG 选项 | 实现原理 | 计划 | 状态 |
+|---|---|---|---|
+| 启用无边框 | 砍 caption/thickframe 样式 | M1 | ✅ 已实装 |
+| 窗口大小:全屏 / 自定义(X,Y,W,H) | rcMonitor / 绝对矩形 | M1(新增 **Zone** 模式) | ✅ 已实装(Fullscreen/CustomRect/**Zone**) |
+| 可视化选择区域 | 截图式拖拽选区 | M2(全屏遮罩 overlay,拖拽出矩形,显示尺寸角标,吸附边缘/等分线/常见比例 16:9·21:9·32:9) | ✅ 已实装 |
+| 无边框延迟 | 检测后等 N 秒再处理 | M1 | ✅ 已实装 |
+| 窗口偏移 L/T/R/B | 最终矩形加偏移 | M1 | ✅ 已实装 |
+| 保持客户区大小 | 去框后用 `AdjustWindowRectExForDpi` 反算,使客户区尺寸不变 | M3 | ⬜ 未做 |
+| 保持宽高比 | 在目标区域内 letterbox 等比居中 | M3 | ✅ 已实装 |
+| 超级尺寸(跨所有屏) | 虚拟桌面矩形(SM_*VIRTUALSCREEN) | M3(PlacementKind.SpanAll) | ⬜ 未做 |
+| 移除菜单 | `SetMenu(hwnd, NULL)`(备份以还原) | M3 | ⬜ 未做 |
+| 始终置顶 | `HWND_TOPMOST` | M3 | ✅ 已实装 |
+| 隐藏任务栏 / 失焦恢复 | 操作 Shell_TrayWnd 显示状态 | M3 | ⬜ 未做 |
+| 将光标限制在窗口内 | 前台时 `ClipCursor(rect)`,失焦释放 | M3 | ✅ 已实装 |
+| 后台静音 | WASAPI `IAudioSessionManager2` 按 pid 静音 | M3 | ✅ 已实装 |
+| 发送最大化命令 | `ShowWindow(SW_MAXIMIZE)`(部分游戏要先最大化再去框) | M3 | ⬜ 未做 |
+| Force redraw | `RedrawWindow` | M3 | ⬜ 未做 |
+| 微调窗口(nudge) | ±1px 触发框架重算 | M3 | ⬜ 未做 |
+| 翻转处理顺序 | 先尺寸后样式 ↔ 先样式后尺寸(逐 profile) | M3 | ⬜ 未做 |
+| 隐藏鼠标光标 | 光标克隆/替换,脏活 | M4(随 GPU 模式) | ⬜ 未做 |
+| 背景容器(纯色/渐变/图片) | 在游戏矩形之外铺一层底色窗 | M3「幕布」:letterbox 时把 zone 外区域遮黑,本地 5120 时右侧不遮(可配) | ❌ 做了又删(实装后用户体验不佳已移除) |
 
 ### 新增(BG 没有的)
-- **FancyZones 式布局编辑器**(M2):画布上把"屏"分区;预设模板:二等分、三等分、左⅔+右⅓(你的场景)、16:9 居中、21:9 居左、自定义网格;拖动分隔线调整;存为命名布局。
-- **一键套用布局到多个 profile**(M2):选中 N 个游戏 → 套同一 zone。
-- **全局热键**(M3):对前台窗口手动触发/还原(对标 BG 的 Win+F6),`RegisterHotKey`。
-- **拖拽吸附**(backlog):按住修饰键拖窗口 → zone 高亮 → 松手入位(FancyZones 行为)。
+- ✅ **FancyZones 式布局编辑器**(M2):画布上把"屏"分区;预设模板:二等分、三等分、左⅔+右⅓(你的场景)、16:9 居中、21:9 居左、自定义网格;拖动分隔线调整;存为命名布局。
+- ✅ **一键套用布局到多个 profile**(M2):选中 N 个游戏 → 套同一 zone。
+- ✅ **全局热键**(M3):对前台窗口手动触发去边框/送入分区,`RegisterHotKey`(默认 Ctrl+Alt+B、Ctrl+Alt+1/2/3,设置页可改绑)。
+- ✅ **拖拽吸附**(backlog→已做):按住修饰键拖窗口 → zone 高亮 → 松手入位(FancyZones 行为)。
+- ✅ **一键启动 + Unity 分辨率预设**(M5,BG 没有):profile 可填启动命令(启动器 URI 或 exe);Unity 游戏先写注册表渲染分辨率再启动。
 
 ## 5. UI 结构(WinUI 3)
 
@@ -106,16 +110,19 @@ MainWindow = NavigationView
 - **unpackaged WinExe + `requireAdministrator` 清单**:必须管理员才能动反作弊游戏的窗口(UIPI);打包(MSIX)与 requireAdministrator 冲突,所以不打包。
 - **开机自启**:计划任务(最高权限、登录触发)→ 免 UAC 弹窗。设置页一键创建/删除。
 - **PerMonitorV2 DPI**:全引擎物理像素坐标,多屏混缩放不歪。
-- **MVVM**:CommunityToolkit.Mvvm 源生成;Core 层零 UI 依赖(可单测解析数学)。
+- **分层**:Core 层零 UI 依赖(可单测解析数学);UI 数据绑定按需手写 `INotifyPropertyChanged`(无 MVVM 框架/源生成依赖)。
 - **配置**:`%LOCALAPPDATA%\Reframe\config.json`,System.Text.Json 源生成(留 AOT 余地),`Version` 字段做迁移。
 - **单实例**:命名互斥量,二次启动唤起已有窗口。
 
 ## 7. 里程碑
 
-- **M1 能用**(当前):核心引擎(检测/匹配/解析/应用/还原)+ 默认配置(三个游戏、57″布局)+ 最小窗口(开关+日志)+ 托盘。→ 先解决串流问题。
-- **M2 好用**:布局编辑器、可视化选区、profile 编辑 UI、配置热重载、开机自启、WinEvent 钩子(替代纯轮询)。
-- **M3 平价+**:BG 高级选项全量(上表 M3 列)、全局热键、幕布。
-- **M4 炫技**(可选):GPU 缩放模式(WGC + 合成器 + shader)。
+> 状态对齐当前代码:✅ 完成 · ◐ 部分 · ❌ 做了又删 · ⬜ 未做。
+
+- ✅ **M1 能用**:核心引擎(检测/匹配/解析/应用/还原)+ 默认配置(三个游戏、57″布局)+ 最小窗口(开关+日志)+ 托盘。→ 先解决串流问题。
+- ✅ **M2 好用**:布局编辑器、可视化选区、profile 编辑 UI、配置热重载、开机自启、WinEvent 钩子(替代纯轮询)。
+- ◐ **M3 平价+**:全局热键 ✅、置顶/宽高比/光标限制/后台静音 ✅;**部分 BG 高级选项未做**(保持客户区/超级尺寸/隐藏任务栏/移除菜单/发送最大化/force-redraw/nudge/翻转顺序 ⬜,详见 §4 状态列);**幕布 ❌ 实装后体验不佳已移除**。
+- ✅ **M5 一键启动**(M3 之外补做):启动命令(启动器 URI / exe)+ Unity 注册表分辨率预设 + 配置导入导出 + 主题三选 + 忽略名单。
+- ⬜ **M4 炫技**(可选):GPU 缩放模式(WGC + 合成器 + shader)。远期可选,未规划。
 
 ## 8. 风险
 
