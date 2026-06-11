@@ -20,7 +20,13 @@
 
 </div>
 
-Reframe strips the title bar and border off a window and snaps it to a position you define — but the position is a *named layout* stored as ratios, resolved against whichever monitor the window currently lives on. Move the same game from a 57" ultrawide to a streamed virtual display and it re-fits automatically, no manual editing.
+Reframe strips the title bar and border off a window and snaps it to a position you define — but the position isn't a fixed pixel rectangle. It's a reusable *layout*, stored as ratios and resolved against whichever monitor the window currently lives on, so one layout re-fits itself across displays of different sizes.
+
+## Use cases
+
+- 🕹️ **Stretch old games to fill the screen.** Many retro titles only run at 4:3 or a fixed small resolution and sit in a tiny box in the middle. Drop the border and size them up to fill the space they should.
+- 🖥️ **Split an ultrawide.** Carve one big display into zones — a game in a left zone, browser and chat on the right. One layout, every game.
+- 📡 **Stream without reconfiguring.** Because zones are stored as ratios, the same layout recomputes itself when you stream to a different-resolution device (or a virtual display) — no separate setup just for streaming.
 
 ## Why Reframe
 
