@@ -153,7 +153,14 @@
     <value>开机自启</value>
   </data>
   <data name="StartupDesc.Text" xml:space="preserve">
-    <value>以管理员权限随登录启动(计划任务,免 UAC 弹窗)。随登录启动时静默缩到托盘。</value>
+    <value>以管理员权限随登录启动(计划任务,免 UAC 弹窗)。</value>
+  </data>
+  <!-- 「随登录启动时缩到托盘」开关 Header(代码后置 Loc.T 取;ToggleSwitch 上的 x:Uid 较脆,见 SettingsPage.xaml 注释) -->
+  <data name="StartMinimizedToggle" xml:space="preserve">
+    <value>随登录启动时缩到托盘</value>
+  </data>
+  <data name="StartMinimizedDesc.Text" xml:space="preserve">
+    <value>仅影响开机自启;手动启动总是显示窗口。</value>
   </data>
 
   <!-- 拖拽吸附 -->

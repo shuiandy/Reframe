@@ -426,4 +426,24 @@ public class ConfigRoundTripTests
         Assert.Contains("某中文进程", back.IgnoredProcesses);
         Assert.Contains("Epic Games Launcher", back.IgnoredProcesses);
     }
+
+    // ---- StartMinimizedOnLogin (logon autostart --minimized flag) ----
+
+    [Fact(DisplayName = "AppConfig.StartMinimizedOnLogin defaults to true, and round-trips as true")]
+    public void StartMinimizedOnLogin_DefaultTrue_RoundTrip()
+    {
+        var cfg = AppConfig.CreateDefault();
+        Assert.True(cfg.StartMinimizedOnLogin);
+        var back = Deserialize(Serialize(cfg));
+        Assert.True(back.StartMinimizedOnLogin);
+    }
+
+    [Fact(DisplayName = "AppConfig.StartMinimizedOnLogin set to false round-trips preserved")]
+    public void StartMinimizedOnLogin_False_RoundTrip()
+    {
+        var cfg = AppConfig.CreateDefault();
+        cfg.StartMinimizedOnLogin = false;
+        var back = Deserialize(Serialize(cfg));
+        Assert.False(back.StartMinimizedOnLogin);
+    }
 }

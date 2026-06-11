@@ -153,7 +153,14 @@
     <value>Run at startup</value>
   </data>
   <data name="StartupDesc.Text" xml:space="preserve">
-    <value>Start with administrator rights at logon (scheduled task, no UAC prompt). The logon launch starts minimized to the tray.</value>
+    <value>Start with administrator rights at logon (scheduled task, no UAC prompt).</value>
+  </data>
+  <!-- "Start minimized to the tray on login" toggle Header (fetched in code via Loc.T; an x:Uid on a ToggleSwitch is fragile — see the SettingsPage.xaml comment) -->
+  <data name="StartMinimizedToggle" xml:space="preserve">
+    <value>Start minimized to the tray on login</value>
+  </data>
+  <data name="StartMinimizedDesc.Text" xml:space="preserve">
+    <value>Only affects the logon autostart; manual launches always show the window.</value>
   </data>
 
   <!-- Drag-snap section -->

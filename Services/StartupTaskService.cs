@@ -27,19 +27,23 @@ public static class StartupTaskService
     }
 
     /// <summary>
-    /// Create/overwrite the scheduled task, pointing at the current exe and passing <c>--minimized</c> so
-    /// a logon launch starts silently to the tray. <c>/F</c> overwrites any existing task of the same
-    /// name, so toggling start-on-login off→on always rebuilds the action with the current arguments —
-    /// this is how an older task created before the <c>--minimized</c> flag existed gets migrated.
+    /// Create/overwrite the scheduled task, pointing at the current exe. When <paramref name="minimized"/>
+    /// is true the action carries <c>--minimized</c> so a logon launch starts silently to the tray; when
+    /// false the flag is omitted and the logon launch shows the main window. <c>/F</c> overwrites any
+    /// existing task of the same name, so toggling start-on-login off→on (or flipping the minimized
+    /// option) always rebuilds the action with the current arguments — this is also how an older task
+    /// created before the <c>--minimized</c> flag existed gets migrated.
     /// </summary>
-    public static bool Enable()
+    public static bool Enable(bool minimized)
     {
         string? exe = Environment.ProcessPath;
         if (string.IsNullOrEmpty(exe)) return false;
 
         // /F overwrites a task of the same name; /TR needs an extra layer of quotes when the path contains
-        // spaces. The trailing " --minimized" sits outside the path quotes so it's parsed as a separate arg.
-        string args = $"/Create /TN \"{TaskName}\" /SC ONLOGON /RL HIGHEST /TR \"\\\"{exe}\\\" {MinimizedArg}\" /F";
+        // spaces. When present, the trailing " --minimized" sits outside the path quotes so it's parsed as
+        // a separate arg.
+        string tail = minimized ? $" {MinimizedArg}" : "";
+        string args = $"/Create /TN \"{TaskName}\" /SC ONLOGON /RL HIGHEST /TR \"\\\"{exe}\\\"{tail}\" /F";
         return Run(args) == 0;
     }
 
@@ -50,17 +54,24 @@ public static class StartupTaskService
     }
 
     /// <summary>
-    /// Silently upgrade an existing start-on-login task that predates the <c>--minimized</c> flag, so a
-    /// user who already enabled autostart gets the silent behaviour without having to re-toggle it.
-    /// No-op when the task doesn't exist or already carries the flag. Best-effort and non-throwing; safe
-    /// to call on every startup. Returns true when a migration was actually performed.
+    /// Reconcile an existing start-on-login task's <c>--minimized</c> argument with the user's current
+    /// preference (<paramref name="minimized"/>), so a user who already enabled autostart gets the
+    /// behaviour their config asks for without having to re-toggle it. This is how an older task created
+    /// before the flag existed picks up the silent default, and how flipping the option later takes
+    /// effect on the next launch.
     ///
-    /// We query the task's XML and look for the flag in the action's <c>&lt;Arguments&gt;</c>. If the task
-    /// exists but the flag is absent, we recreate it via <see cref="Enable"/> (which carries the flag).
+    /// Target state: the task exists AND its action's <c>--minimized</c> presence equals
+    /// <paramref name="minimized"/>. We query the task XML and check whether the flag is present; if that
+    /// disagrees with the desired state we rebuild via <see cref="Enable"/> (which adds or omits the flag
+    /// accordingly). This covers both directions — adding the flag to a stale task and removing it when
+    /// the user turned the option off.
+    ///
+    /// No-op when the task doesn't exist (nothing to migrate) or already matches. Best-effort and
+    /// non-throwing; safe to call on every startup. Returns true when a rebuild was actually performed.
     /// Any failure is swallowed: a migration hiccup must never block startup, and the worst case is the
-    /// pre-existing (non-silent) behaviour the user already had.
+    /// pre-existing behaviour the user already had.
     /// </summary>
-    public static bool MigrateIfNeeded()
+    public static bool MigrateIfNeeded(bool minimized)
     {
         try
         {
@@ -68,11 +79,14 @@ public static class StartupTaskService
             string xml = RunCapture($"/Query /TN \"{TaskName}\" /XML", out int code);
             if (code != 0) return false; // no such task → nothing to migrate
 
-            // Already carries the flag → leave it alone (case-insensitive; XML is exe path + args text).
-            if (xml.Contains(MinimizedArg, StringComparison.OrdinalIgnoreCase)) return false;
+            // Does the current action carry the flag? (case-insensitive; XML is exe path + args text).
+            bool hasFlag = xml.Contains(MinimizedArg, StringComparison.OrdinalIgnoreCase);
 
-            // Stale task without the flag → rebuild with the current exe + --minimized.
-            return Enable();
+            // Already matches the desired state → leave it alone.
+            if (hasFlag == minimized) return false;
+
+            // Disagrees → rebuild with the current exe and the desired flag state.
+            return Enable(minimized);
         }
         catch
         {

@@ -34,12 +34,17 @@ public sealed partial class SettingsPage : Page
             // ToggleSwitch 的 On/OffContent 走代码本地化(附加式 resw x:Uid 较脆)。用 Common 通用词。
             string on = Loc.T("Common/On");
             string off = Loc.T("Common/Off");
-            StartupToggle.OnContent = on;   StartupToggle.OffContent = off;
-            DragSnapToggle.OnContent = on;  DragSnapToggle.OffContent = off;
+            StartupToggle.OnContent = on;          StartupToggle.OffContent = off;
+            StartMinimizedToggle.OnContent = on;   StartMinimizedToggle.OffContent = off;
+            StartMinimizedToggle.Header = Loc.T("SettingsPage/StartMinimizedToggle"); // Header 走代码本地化(ToggleSwitch 上的 x:Uid 较脆)
+            DragSnapToggle.OnContent = on;         DragSnapToggle.OffContent = off;
 
             var cfg = ConfigService.Instance.Config;
             LoadConfigControls(cfg);
-            StartupToggle.IsOn = StartupTaskService.IsEnabled();
+            bool autostart = StartupTaskService.IsEnabled();
+            StartupToggle.IsOn = autostart;
+            StartMinimizedToggle.IsOn = cfg.StartMinimizedOnLogin;
+            StartMinimizedToggle.IsEnabled = autostart; // 仅当开机自启=开时可用
             ConfigPathText.Text = ConfigStore.Path_;
 
             BuildHotkeyRows(cfg);
@@ -91,6 +96,9 @@ public sealed partial class SettingsPage : Page
         SgdbKeyBox.Text = cfg.SteamGridDbApiKey ?? "";
         PollBox.Value = cfg.PollIntervalMs;
         DragSnapToggle.IsOn = cfg.DragSnapEnabled;
+        // 「随登录启动时缩到托盘」是普通配置项,外部热重载也读回(IsEnabled 联动开机自启的 OS 任务态,
+        // 与版本/路径同属静态范畴,不在此处随配置刷新)。
+        StartMinimizedToggle.IsOn = cfg.StartMinimizedOnLogin;
     }
 
     // 语言 ComboBox 顺序 ↔ AppConfig.Language 值。项 0=跟随系统,1=简体中文,2=English。
@@ -406,24 +414,50 @@ public sealed partial class SettingsPage : Page
         if (_loading) return;
 
         bool want = StartupToggle.IsOn;
-        bool ok = want ? StartupTaskService.Enable() : StartupTaskService.Disable();
+        // 打开时按当前配置值建任务(决定是否带 --minimized);关闭时删除任务。
+        bool ok = want
+            ? StartupTaskService.Enable(ConfigService.Instance.Config.StartMinimizedOnLogin)
+            : StartupTaskService.Disable();
 
-        if (!ok)
+        if (ok)
         {
-            // 失败:回滚开关并提示(schtasks 需要管理员;本程序已 requireAdministrator,通常可用)。
-            _loading = true;
-            StartupToggle.IsOn = !want;
-            _loading = false;
-
-            var dlg = new ContentDialog
-            {
-                Title = Loc.T("SettingsPage/StartupFailedTitle"),
-                Content = Loc.T(want ? "SettingsPage/StartupEnableFailed" : "SettingsPage/StartupDisableFailed"),
-                CloseButtonText = Loc.T("Common/Ok"),
-                XamlRoot = this.XamlRoot
-            };
-            await dlg.ShowAsync();
+            // 从属开关仅在开机自启=开时可用。
+            StartMinimizedToggle.IsEnabled = want;
+            return;
         }
+
+        // 失败:回滚开关并提示(schtasks 需要管理员;本程序已 requireAdministrator,通常可用)。
+        _loading = true;
+        StartupToggle.IsOn = !want;
+        _loading = false;
+
+        var dlg = new ContentDialog
+        {
+            Title = Loc.T("SettingsPage/StartupFailedTitle"),
+            Content = Loc.T(want ? "SettingsPage/StartupEnableFailed" : "SettingsPage/StartupDisableFailed"),
+            CloseButtonText = Loc.T("Common/Ok"),
+            XamlRoot = this.XamlRoot
+        };
+        await dlg.ShowAsync();
+    }
+
+    /// <summary>
+    /// 从属开关「随登录启动时缩到托盘」:写 Config.StartMinimizedOnLogin + Save;若开机自启当前开着,
+    /// 立即按新值重建计划任务(改 --minimized 参数)。开机自启关着时只存配置,下次开自启或下次启动迁移时生效。
+    /// </summary>
+    private void StartMinimizedToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+
+        var svc = ConfigService.Instance;
+        bool on = StartMinimizedToggle.IsOn;
+        if (svc.Config.StartMinimizedOnLogin == on) return;
+        svc.Config.StartMinimizedOnLogin = on;
+        svc.Save();
+
+        // 自启开着才重建任务(把参数即时落到 OS 任务里);关着时无任务可改,留待开自启/下次迁移。
+        if (StartupTaskService.IsEnabled())
+            StartupTaskService.Enable(on);
     }
 
     private void RestoreAllButton_Click(object sender, RoutedEventArgs e)

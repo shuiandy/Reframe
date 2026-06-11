@@ -156,10 +156,13 @@ public partial class App : Application
         };
         _tray.Start(tooltip: "Reframe");
 
-        // Migrate an older start-on-login task (created before --minimized existed) so the user gets the
-        // silent-to-tray behaviour without re-toggling. Runs schtasks, so do it off the UI thread; it's a
-        // no-op when autostart is disabled or the task already carries the flag, and never throws.
-        System.Threading.Tasks.Task.Run(() => StartupTaskService.MigrateIfNeeded());
+        // Reconcile an existing start-on-login task's --minimized flag with the user's current preference
+        // (Config.StartMinimizedOnLogin), so autostart picks up the configured behaviour without re-toggling
+        // (e.g. an older task created before the flag existed, or after the user flips the option). Runs
+        // schtasks, so do it off the UI thread; it's a no-op when autostart is disabled or the task already
+        // matches, and never throws.
+        bool startMinimizedPref = ConfigService.Instance.Config.StartMinimizedOnLogin;
+        System.Threading.Tasks.Task.Run(() => StartupTaskService.MigrateIfNeeded(startMinimizedPref));
     }
 
     private void OnAppWindowClosing(Microsoft.UI.Windowing.AppWindow sender,

@@ -75,6 +75,12 @@
                 <!-- OnContent/OffContent 经 code-behind 用 Common/On|Off 设(ToggleSwitch 的 On/OffContent 用 x:Uid 同样走附加式较脆,改代码设)。 -->
                 <ToggleSwitch x:Name="StartupToggle"
                               Toggled="StartupToggle_Toggled"/>
+                <!-- 从属开关:仅在开机自启开启时可用(IsEnabled 联动);决定计划任务的启动参数是否带静默标志。
+                     Header 与 On/OffContent 同样经 code-behind 设(ToggleSwitch 上的 x:Uid 走附加式较脆)。 -->
+                <ToggleSwitch x:Name="StartMinimizedToggle"
+                              Toggled="StartMinimizedToggle_Toggled"
+                              Margin="0,4,0,0"/>
+                <TextBlock x:Uid="/SettingsPage/StartMinimizedDesc" Opacity="0.7" FontSize="12" TextWrapping="Wrap"/>
             </StackPanel>
 
             <!-- 拖拽吸附 -->

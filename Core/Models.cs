@@ -165,6 +165,15 @@ public sealed class AppConfig
     /// <summary>When dragging a window with the modifier (Shift) held, show the zone overlay and snap to a zone on release (FancyZones-style).</summary>
     public bool DragSnapEnabled { get; set; } = true;
 
+    /// <summary>
+    /// Whether the logon autostart should start silently minimized to the tray. Only affects the
+    /// <c>--minimized</c> argument baked into the start-on-login scheduled task: true (default) adds the
+    /// flag so a logon launch goes straight to the tray; false omits it so the logon launch shows the
+    /// main window. Has no effect on manual launches (a double-click passes no args and always shows the
+    /// window) and is ignored unless start-on-login is enabled.
+    /// </summary>
+    public bool StartMinimizedOnLogin { get; set; } = true;
+
     /// <summary>Main-window backdrop material. Takes effect immediately (via ConfigService.Changed → MainWindow.ApplyBackdrop).</summary>
     public BackdropKind Backdrop { get; set; } = BackdropKind.Mica;
 
