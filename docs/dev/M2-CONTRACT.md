@@ -5,7 +5,7 @@
 
 ## 公共约定
 
-- 项目根:`C:\Users\shuia\Projects\Reframe`。命名空间:页面=`Reframe.UI`,服务=`Reframe.Services`,核心=`Reframe.Core`,互操作=`Reframe.Interop`。
+- 项目根:仓库根目录(本文件位于 `docs/dev/` 下)。命名空间:页面=`Reframe.UI`,服务=`Reframe.Services`,核心=`Reframe.Core`,互操作=`Reframe.Interop`。
 - **禁止**:修改 `Reframe.csproj`、`app.manifest`、`DESIGN.md`、本文件、他人名下文件;**禁止运行 dotnet build/run**(集成阶段统一编译);禁止新增 NuGet 包。
 - 可用包:Microsoft.WindowsAppSDK 1.8、CommunityToolkit.Mvvm 8.4、H.NotifyIcon.WinUI 2.3。
 - UI 文案全部中文。代码注释跟随现有风格(克制,只写非显然约束)。

@@ -1,64 +1,125 @@
 # Reframe
 
-自用窗口管理器:无边框化 + 按显示器自适应布局。对标 Borderless Gaming(BG),解决它在多显示器与串流场景下的几个痛点。
+**English** · [简体中文](README.zh-CN.md)
 
-WinUI 3(Windows App SDK 1.8）、.NET 9、unpackaged、需管理员权限运行。
+A Windows borderless-window manager with per-monitor adaptive layouts.
 
-## 是什么
+Reframe strips the title bar and border off a window and snaps it to a position you define — but the position is a *named layout* stored as ratios, resolved against whichever monitor the window currently lives on. Move the same game from a 57" ultrawide to a streamed virtual display and it re-fits automatically, no manual editing.
 
-把游戏窗口去掉标题栏与边框,并按规则摆到屏幕上的指定位置。和 BG 的区别在三处:
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+![.NET 9](https://img.shields.io/badge/.NET-9.0-512BD4.svg)
+![Windows 11](https://img.shields.io/badge/Windows-11-0078D6.svg)
+![WinUI 3](https://img.shields.io/badge/WinUI-3-2D7D9A.svg)
 
-- **布局可复用**:位置不写死在每个游戏里,而是抽成命名布局,游戏只引用它。改一处布局,所有引用它的游戏跟着变。
-- **比例坐标,跨屏不歪**:分区用 0~1 的相对坐标,按窗口当前所在显示器解析。本地 57 寸是一套像素,串流到虚拟显示器自动换算成另一套,不用手改。
-- **按显示器分支**:同一个游戏在不同分辨率的屏上可以有不同行为(本地套布局、串流时铺满)。
+![Dashboard](docs/screenshots/dashboard.png)
 
-## 核心概念
+## Why Reframe
 
-- **布局(Layout)**:一组分区的集合,带一个参考分辨率(仅供编辑器换算显示)。一等公民,可被多个配置复用。
-- **分区(Zone)**:布局里的一块区域,用 `X / Y / W / H`(均为 0~1 比例)描述,相对窗口所在的显示器。
-- **配置(Profile)**:一个游戏/应用的完整设定。包含匹配方式(进程名 / 标题包含 / 标题正则)、是否去边框、检测延迟、四边偏移,以及一张**规则表**。
-- **规则(Rule)**:`显示器条件 → 动作`。自上而下,第一条命中的显示器过滤器生效。动作有四种:不动几何 / 铺满当前屏 / 套某布局的某分区 / 自定义矩形。
+[Borderless Gaming](https://github.com/Codeusa/Borderless-Gaming) (BG) is the reference point. Reframe was built to fix a handful of things that get painful once you run multiple monitors or stream to a virtual display:
 
-默认配置即一个完整示例:布局「57寸·左游戏右副屏」(游戏区占左 ⅔,副屏区占右 ⅓),三个米哈游游戏各有两条规则——`7680×2160` 时套游戏区、其它任意屏铺满。
+| Borderless Gaming | Reframe |
+|---|---|
+| Position is filled in per game. Change the layout and you edit every profile by hand. | **Layouts are first-class.** A named layout holds zones; a profile just references `layout + zone`. Edit the layout once and every game that uses it follows. |
+| Sizes are absolute pixels — swap the display (e.g. a VDD stream) and the window lands in the wrong place. | **Zones are stored as 0..1 ratios** and resolved against the window's *current* monitor. ⅔ of a 7680-wide screen is 5120 px; on a smaller streamed display it recomputes itself. |
+| No per-monitor branching: one game can't behave differently on different screens. | Each profile carries a **rule list** (first matching monitor wins): `7680×2160 → snap to the game zone`, `any other screen → fullscreen`. |
+| Config changes need a restart to take effect. | **Hot reload.** UI edits apply live, and external edits to `config.json` are watched and reloaded. |
+| 3-second polling, sluggish. | **Event-driven** via WinEvent hooks (window appears / title changes / game moves itself back), with a low-frequency safety-net poll. |
+| Borderless is a one-way trip. | Original style and position are **snapshotted** before any change and restored when you disable a profile or stop the engine. |
 
-## 功能
+## Features
 
-- 去边框(Win32:砍 `WS_CAPTION/WS_THICKFRAME` 等样式),改动前快照原始样式与位置,禁用配置 / 退出引擎时自动还原。
-- 事件驱动检测(WinEvent 钩子:窗口出现 / 标题变化 / 被游戏改回)+ 低频兜底轮询。
-- 窗口面板(配置页双栏):左栏实时列出当前窗口(带图标、搜索、「显示已过滤」开关),右栏配置列表;一键从某窗口建配置。
-- 忽略名单:对窗口右键「忽略此进程」加入用户忽略名单(系统外壳窗不可忽略);「取消忽略」移出;正常模式自动隐藏系统/已忽略/已隐藏/过小窗口。
-- 仪表盘:实时显示接管中的窗口卡片(图标/进程/标题/目标矩形)+ 日志流。
-- FancyZones 式布局编辑器:画布上分区、预设模板、像素/比例双显;可视化拖拽选区。
-- 一键套用同一布局到多个配置。
-- 配置热重载:UI 改即生效,外部手改 config.json 也会被监听并加载。
-- 拖拽吸附:按住修饰键拖窗口 → 分区高亮 → 松手入位。
-- 一键启动游戏:配置可填启动命令(支持启动器 URI 如 `hoyoplay://`)或可执行文件路径;Unity 游戏可先写启动分辨率预设再启动。
-- 全局热键:去边框开关(默认 `Ctrl+Alt+B`)、送前台窗口入布局分区 1/2/3(默认 `Ctrl+Alt+1` / `Ctrl+Alt+2` / `Ctrl+Alt+3`);全部可在设置页改绑。
-- 主题:跟随系统 / 浅色 / 深色三选(设置页)。
-- 托盘常驻:关闭至托盘,右键菜单开关引擎 / 退出。
-- 配置导入导出:设置页一键导出当前配置为 JSON,或从 JSON 导入(导入前校验,无效则提示)。
+- **Window panel** (two columns): the left column lists running windows live — with icons, search, and a "show filtered" toggle — and the right column is your profile list. Create a profile from any window in one click.
+- **Ignore list**: right-click a window to ignore its process (reversible, per-user); shell/system windows are filtered out automatically.
+- **FancyZones-style layout editor**: carve zones on a canvas, with preset templates (split halves, thirds, left-⅔ + right-⅓, 16:9 centered, 21:9 left), and both pixel and ratio readouts.
+- **Drag-snap**: hold Shift while dragging any window — zones highlight, release to snap into place.
+- **Screenshot-style region picker**: drag out a rectangle on a full-screen overlay with edge/ratio snapping.
+- **Game launch + Unity resolution presets**: a profile can carry a launch command (launcher URI such as `hoyoplay://`, or an executable path). For Unity games whose render resolution is pinned in the registry, Reframe writes the resolution preset before launch, then positions the window without resizing it.
+- **Configurable global hotkeys**: toggle borderless on the foreground window, or send it into layout zones 1/2/3. All rebindable.
+- **Tray-resident, single-instance, optional start-on-login** (via a scheduled task, so it runs elevated without a UAC prompt).
+- **Icon system** with an optional [SteamGridDB](https://www.steamgriddb.com/) fallback for games whose icon can't be read locally (anti-cheat-protected processes).
+- **Mica / Mica Alt / Acrylic backdrops** and a system / light / dark theme switch.
+- **Config import / export** (validated on import) and a **crash log** written to `%LOCALAPPDATA%\Reframe\crash.log`.
 
-## 构建
+## Install
 
-需要 .NET 9 SDK 与 Windows App SDK 工作负载。
+1. Download the latest `Reframe-v<version>-win-x64.zip` from [Releases](https://github.com/shuiandy/Reframe/releases).
+2. Unzip anywhere and run `Reframe.exe`.
+
+Requirements:
+
+- **Windows 10 1809+ / Windows 11**, x64.
+- **[.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9.0)** — the release is framework-dependent for .NET. The Windows App SDK is bundled, so you do *not* need to install it separately.
+- **Administrator** — Reframe self-elevates via its manifest.
+
+### Why administrator?
+
+Anti-cheat games run their windows under elevated/protected integrity. Windows' [UIPI](https://learn.microsoft.com/en-us/windows/win32/winmsg/about-messages-and-message-queues#message-integrity) blocks a lower-integrity process from manipulating a higher-integrity window, so Reframe has to run elevated to reposition those windows at all.
+
+To be explicit about what that elevation is used for: **Reframe does not inject code and does not read or write game memory.** It only calls the standard Win32 window APIs — `SetWindowLongPtr` to drop the caption/frame styles and `SetWindowPos` to move and size the window. This is the same conservative approach Borderless Gaming has used for years. (See the [FAQ](#faq) for more.)
+
+## Quick start
+
+1. **Create a profile** — open the *Profiles* page, find your game in the left column (run it once so it shows up), and click to create a profile. Or use *New* and fill in the process name.
+2. **Draw a layout** — on the *Layouts* page, pick a preset or carve your own zones on the canvas, then save it as a named layout.
+3. **Hand it over** — in the profile, add a rule: pick a monitor (by resolution, or "any") and point it at a layout zone (or fullscreen). Top rule that matches the window's current monitor wins. Make sure the engine is on (toggle on the *Dashboard*).
+
+### Default hotkeys
+
+| Action | Default |
+|---|---|
+| Toggle borderless on the foreground window | `Ctrl + Alt + B` |
+| Send foreground window to zone 1 / 2 / 3 | `Ctrl + Alt + 1` / `2` / `3` |
+
+All hotkeys are rebindable on the *Settings* page. Zone hotkeys use the zones of your first layout, resolved against the foreground window's current monitor.
+
+## Build from source
+
+Requires the **.NET 9 SDK** and the Windows App SDK workload.
 
 ```powershell
-# 调试构建
+# Debug build
 dotnet build -p:Platform=x64
 
-# 跑测试
-dotnet test
+# Run the test suite (independent project, links Core source files)
+dotnet test Tests\Reframe.Core.Tests.csproj
 
-# 打包成品(Release zip,产物在 dist\Reframe-v<版本>-win-x64.zip)
+# Produce a Release zip -> dist\Reframe-v<version>-win-x64.zip
 powershell -ExecutionPolicy Bypass -File tools\publish.ps1
 ```
 
-`publish.ps1` 产出的是**框架依赖**的发布包:.NET 运行时需目标机自备(.NET 9 桌面运行时),但 Windows App SDK 已自包含,目标机无需单独安装 WinAppSDK 运行时。发布输出落在独立目录 `publish_out\`,不影响 `bin\Debug` 与正在运行的实例。
+`publish.ps1` produces a build that is **framework-dependent for .NET** (target machine needs the .NET 9 Desktop Runtime) but **self-contained for the Windows App SDK** (target machine does not). It publishes into a dedicated `publish_out\` folder so it never disturbs `bin\Debug` or a running instance.
 
-## 配置文件位置
+## Architecture
+
+Reframe is split into a UI-free **Core** and a WinUI 3 shell on top of it:
+
+- **`Core/`** — the engine. Detection (`WinEventHook` + a safety-net poll), matching (process name / title / regex), resolution (`PlacementResolver`, a pure function: monitor rect → rule → pixel rect, fully unit-tested), application (`WindowOps`: style/position changes with snapshot-and-restore), and a thrash policy so the engine doesn't fight a game that keeps moving its own window. Zero UI dependencies, so the placement math is unit-testable in isolation.
+- **`Services/`** — config (`System.Text.Json` source-generated, hot-reloaded), monitors, hotkeys, tray, icon cache, game launcher, start-on-login.
+- **`UI/`** — the WinUI 3 pages (Dashboard, Profiles, Layouts, Settings) and custom canvas controls. Hand-written `INotifyPropertyChanged`, no MVVM framework.
+
+The full design — data model, engine pipeline, and a feature-by-feature comparison with Borderless Gaming — is in [DESIGN.md](DESIGN.md).
+
+## Configuration
 
 ```
 %LOCALAPPDATA%\Reframe\config.json
 ```
 
-首次运行若不存在会落一份默认配置。JSON 用 System.Text.Json 源生成读写,带 `Version` 字段备日后迁移。可直接手改该文件,程序会监听并热重载;也可经设置页的「配置备份」导入导出。
+Written on first run if it doesn't exist. JSON is read/written via `System.Text.Json` source generation and carries a `Version` field for future migration. You can edit the file by hand — the app watches it and hot-reloads (atomic writes and partial-write tolerance mean a half-written file won't clobber your running config). The *Settings* page also has import / export.
+
+## FAQ
+
+**Is this safe to use with anti-cheat games?**
+Reframe only changes window *styles* and *position* through documented Win32 APIs (`SetWindowLongPtr`, `SetWindowPos`). It never injects code, never reads or writes another process's memory, and never touches game files. This is the same technique Borderless Gaming has used for years. That said, no third-party tool can offer a guarantee about how a given anti-cheat will react — use your judgment.
+
+**Why is it unpackaged (not an MSIX from the Store)?**
+The app needs a `requireAdministrator` manifest to manipulate elevated game windows (see [Why administrator?](#why-administrator)). MSIX packaging is incompatible with `requireAdministrator`, so Reframe ships as a plain unpackaged executable instead.
+
+**Known limitations**
+- Games in *exclusive* fullscreen have no manipulable bordered window — launch them in windowed / borderless mode. (The miHoYo titles in the default config are already borderless/windowed.)
+- UWP and protected-process windows can't be modified; Reframe reports a lack of permission rather than failing silently.
+- Some BG advanced options are intentionally not implemented (preserve client area, span-all-monitors, hide taskbar, remove menu, etc.). See the status column in [DESIGN.md](DESIGN.md) §4.
+
+## License
+
+[MIT](LICENSE) © 2026 shuiandy
