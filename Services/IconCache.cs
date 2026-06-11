@@ -390,10 +390,18 @@ public static class IconCache
     // 全程 try/catch:任何失败一律回落 null → UI 显示默认字形。
 
     /// <summary>
-    /// png 文件 → BitmapImage(SteamGridDB 磁盘缓存用)。缺文件/解码失败一律 null。须在 UI 线程调用。
+    /// png 文件 → BitmapImage(SteamGridDB 磁盘缓存用)。缺文件/读失败一律 null。须在 UI 线程调用。
     /// 同步把整文件字节读进内存流再 SetSource,切断"缓存对象 vs 磁盘文件"的时序耦合:
     /// 旧实现 UriSource 是惰性解码(BitmapImage 之后才异步去读磁盘),期间文件被覆盖/删除就可能解码失败
     /// 或拿到半截图。这里先 ReadAllBytes(此刻文件完整存在),后续位图再不依赖磁盘。
+    ///
+    /// 死锁陷阱(已修):绝不能在 UI 线程上对 <see cref="BitmapImage.SetSourceAsync"/> 做
+    /// <c>.AsTask().GetAwaiter().GetResult()</c> 同步等待——SetSourceAsync 的解码完成续体要回投到
+    /// 同一个 UI DispatcherQueue,而 UI 线程此刻正阻塞在 Monitor.Wait 等这个 Task,永不返回去泵队列 →
+    /// 自死锁(本页左栏一加载就对所有运行中窗口同步取图标,只要磁盘缓存里有对应 png 就必触发,整 UI 冻死)。
+    /// 改用 <b>同步</b> 的 <see cref="BitmapSource.SetSource"/>:它就地把流喂给位图、无 await、无续体回投,
+    /// 实际像素解码由框架在随后的布局/渲染阶段驱动,不阻塞也不依赖本线程泵消息。MemoryStream 经
+    /// AsRandomAccessStream 包装(纯同步,不触碰磁盘),字节已全在内存,与磁盘文件再无耦合。
     /// </summary>
     private static ImageSource? LoadPngFile(string path)
     {
@@ -417,13 +425,13 @@ public static class IconCache
                 if (read != bytes.Length) return null; // 读不全:不当有效图
             }
 
-            var stream = new InMemoryRandomAccessStream();
-            stream.WriteAsync(bytes.AsBuffer()).AsTask().GetAwaiter().GetResult();
-            stream.Seek(0);
-
+            // 字节已全在内存:用 MemoryStream 同步包装成 IRandomAccessStream(不触碰磁盘),
+            // 交给 SetSource(同步)。注意:此 MemoryStream 的生命周期需覆盖 SetSource 调用本身即可——
+            // SetSource 内部会持有它直到解码完成,故这里不要 using 提前释放。
+            var ms = new MemoryStream(bytes, writable: false);
             var bmp = new BitmapImage { DecodePixelType = DecodePixelType.Logical };
-            // 同步等待 SetSource 完成:返回时位图已从内存流解码,不再触碰磁盘。
-            bmp.SetSourceAsync(stream).AsTask().GetAwaiter().GetResult();
+            // 同步 SetSource:无 await / 无续体回投,绝不在 UI 线程自死锁。解码在随后渲染阶段进行。
+            bmp.SetSource(ms.AsRandomAccessStream());
             return bmp;
         }
         catch { return null; }
