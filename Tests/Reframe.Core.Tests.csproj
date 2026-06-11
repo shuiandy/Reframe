@@ -31,6 +31,7 @@
     <Compile Include="..\Core\UnityPreset.cs" LinkBase="Linked" />
     <Compile Include="..\Core\WindowScanner.cs" LinkBase="Linked" />
     <Compile Include="..\Interop\NativeMethods.cs" LinkBase="Linked" />
+    <Compile Include="..\Services\StartupOptions.cs" LinkBase="Linked" />
   </ItemGroup>
 
   <ItemGroup>

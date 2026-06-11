@@ -128,7 +128,18 @@ public partial class App : Application
         // Clicking X doesn't exit: cancel the close, hide to the tray, and the engine keeps running. Exit is only via the tray menu.
         _window.AppWindow.Closing += OnAppWindowClosing;
 
+        // Start-on-login (the scheduled task passes --minimized) → start silently to the tray: don't show
+        // the main window. A manual launch (no flag) shows it as usual. Parsed from the real process args
+        // because LaunchActivatedEventArgs.Arguments is unreliable on unpackaged WinUI 3.
+        // Reliable silent path (verified empirically): Activate() to let the framework build/render the
+        // content tree and wire up the presenter, then immediately AppWindow.Hide(). A window that is
+        // never Activated can fail to render when shown later; activating first then hiding gives a normal
+        // lifecycle and a later ShowMainWindow (tray "Open") reliably brings it up interactive. The brief
+        // activate→hide happens within a single message-loop turn, so there's no visible window flash.
+        bool startMinimized = StartupOptions.IsMinimized(Environment.GetCommandLineArgs());
         _window.Activate();
+        if (startMinimized)
+            _window.AppWindow.Hide();
 
         // Central global hotkeys (with their own message-window thread): borderless/restore, send window to a zone. Auto re-register on config change.
         _hotkeys = new HotkeyService();
@@ -144,6 +155,11 @@ public partial class App : Application
             EngineEnabledProvider = () => ConfigService.Instance.Config.EngineEnabled,
         };
         _tray.Start(tooltip: "Reframe");
+
+        // Migrate an older start-on-login task (created before --minimized existed) so the user gets the
+        // silent-to-tray behaviour without re-toggling. Runs schtasks, so do it off the UI thread; it's a
+        // no-op when autostart is disabled or the task already carries the flag, and never throws.
+        System.Threading.Tasks.Task.Run(() => StartupTaskService.MigrateIfNeeded());
     }
 
     private void OnAppWindowClosing(Microsoft.UI.Windowing.AppWindow sender,

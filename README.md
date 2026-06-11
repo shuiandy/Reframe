@@ -56,7 +56,7 @@ Most borderless tools store a fixed pixel position per game. Reframe is built ar
 
 #### ⚙️ System integration
 - **Configurable global hotkeys**: toggle borderless on the foreground window, or send it into layout zones 1/2/3. All rebindable.
-- **Tray-resident, single-instance, optional start-on-login** (via a scheduled task, so it runs elevated without a UAC prompt).
+- **Tray-resident, single-instance, optional start-on-login** (via a scheduled task, so it runs elevated without a UAC prompt; the logon launch starts minimized to the tray, while a manual launch opens the window).
 - **Mica / Mica Alt / Acrylic backdrops** and a system / light / dark theme switch.
 - **Config import / export** (validated on import) and a **crash log** written to `%LOCALAPPDATA%\Reframe\crash.log`.
 

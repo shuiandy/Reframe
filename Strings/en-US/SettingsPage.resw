@@ -153,7 +153,7 @@
     <value>Run at startup</value>
   </data>
   <data name="StartupDesc.Text" xml:space="preserve">
-    <value>Start with administrator rights at logon (scheduled task, no UAC prompt).</value>
+    <value>Start with administrator rights at logon (scheduled task, no UAC prompt). The logon launch starts minimized to the tray.</value>
   </data>
 
   <!-- Drag-snap section -->
