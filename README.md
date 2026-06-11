@@ -24,16 +24,14 @@ Reframe strips the title bar and border off a window and snaps it to a position 
 
 ## Why Reframe
 
-[Borderless Gaming](https://github.com/Codeusa/Borderless-Gaming) (BG) is the reference point. Reframe was built to fix a handful of things that get painful once you run multiple monitors or stream to a virtual display:
+Most borderless tools store a fixed pixel position per game. Reframe is built around a different idea — **layouts are first-class, and positions are relative**:
 
-| Borderless Gaming | Reframe |
-|---|---|
-| Position is filled in per game. Change the layout and you edit every profile by hand. | **Layouts are first-class.** A named layout holds zones; a profile just references `layout + zone`. Edit the layout once and every game that uses it follows. |
-| Sizes are absolute pixels — swap the display (e.g. a VDD stream) and the window lands in the wrong place. | **Zones are stored as 0..1 ratios** and resolved against the window's *current* monitor. ⅔ of a 7680-wide screen is 5120 px; on a smaller streamed display it recomputes itself. |
-| No per-monitor branching: one game can't behave differently on different screens. | Each profile carries a **rule list** (first matching monitor wins): `7680×2160 → snap to the game zone`, `any other screen → fullscreen`. |
-| Config changes need a restart to take effect. | **Hot reload.** UI edits apply live, and external edits to `config.json` are watched and reloaded. |
-| 3-second polling, sluggish. | **Event-driven** via WinEvent hooks (window appears / title changes / game moves itself back), with a low-frequency safety-net poll. |
-| Borderless is a one-way trip. | Original style and position are **snapshotted** before any change and restored when you disable a profile or stop the engine. |
+- **Reusable layouts.** A *layout* is a named set of zones; a profile just references a `layout + zone`. Edit the layout once and every game that uses it follows — no per-game rework.
+- **Resolution-independent zones.** Zones are stored as `0..1` ratios and resolved against whichever monitor the window is currently on. ⅔ of a 7680-wide screen is 5120 px; move the window to a smaller display — or a streamed virtual one — and it recomputes itself, no manual editing.
+- **Per-monitor rules.** Each profile carries an ordered rule list, *first matching monitor wins*: `7680×2160 → snap to the game zone`, `any other screen → fullscreen`. The same game can behave differently on your desktop and on a stream.
+- **Live, not restart-bound.** UI edits apply immediately, and external edits to `config.json` are watched and hot-reloaded.
+- **Event-driven.** WinEvent hooks react the moment a window appears, renames itself, or a game moves itself back — with a low-frequency poll as a safety net.
+- **Always reversible.** A window's original style and position are snapshotted before any change and restored when you disable a profile or stop the engine.
 
 ## Features
 
@@ -74,7 +72,7 @@ Reframe strips the title bar and border off a window and snaps it to a position 
 
 Anti-cheat games run their windows under elevated/protected integrity. Windows' [UIPI](https://learn.microsoft.com/en-us/windows/win32/winmsg/about-messages-and-message-queues#message-integrity) blocks a lower-integrity process from manipulating a higher-integrity window, so Reframe has to run elevated to reposition those windows at all.
 
-To be explicit about what that elevation is used for: **Reframe does not inject code and does not read or write game memory.** It only calls the standard Win32 window APIs — `SetWindowLongPtr` to drop the caption/frame styles and `SetWindowPos` to move and size the window. This is the same conservative approach Borderless Gaming has used for years. (See the [FAQ](#faq) for more.)
+To be explicit about what that elevation is used for: **Reframe does not inject code and does not read or write game memory.** It only calls the standard Win32 window APIs — `SetWindowLongPtr` to drop the caption/frame styles and `SetWindowPos` to move and size the window. Nothing more. (See the [FAQ](#faq) for more.)
 
 </details>
 
@@ -118,7 +116,7 @@ Reframe is split into a UI-free **Core** and a WinUI 3 shell on top of it:
 - **`Services/`** — config (`System.Text.Json` source-generated, hot-reloaded), monitors, hotkeys, tray, icon cache, game launcher, start-on-login.
 - **`UI/`** — the WinUI 3 pages (Dashboard, Profiles, Layouts, Settings) and custom canvas controls. Hand-written `INotifyPropertyChanged`, no MVVM framework.
 
-The full design — data model, engine pipeline, and a feature-by-feature comparison with Borderless Gaming — is in [DESIGN.md](DESIGN.md).
+The full design — data model, engine pipeline, and per-feature status — is in [DESIGN.md](DESIGN.md).
 
 ## Configuration
 
@@ -131,7 +129,7 @@ Written on first run if it doesn't exist. JSON is read/written via `System.Text.
 ## FAQ
 
 **Is this safe to use with anti-cheat games?**
-Reframe only changes window *styles* and *position* through documented Win32 APIs (`SetWindowLongPtr`, `SetWindowPos`). It never injects code, never reads or writes another process's memory, and never touches game files. This is the same technique Borderless Gaming has used for years. That said, no third-party tool can offer a guarantee about how a given anti-cheat will react — use your judgment.
+Reframe only changes window *styles* and *position* through documented Win32 APIs (`SetWindowLongPtr`, `SetWindowPos`). It never injects code, never reads or writes another process's memory, and never touches game files. That said, no third-party tool can offer a guarantee about how a given anti-cheat will react — use your judgment.
 
 **Why is it unpackaged (not an MSIX from the Store)?**
 The app needs a `requireAdministrator` manifest to manipulate elevated game windows (see [Why administrator?](#why-administrator)). MSIX packaging is incompatible with `requireAdministrator`, so Reframe ships as a plain unpackaged executable instead.
@@ -139,19 +137,18 @@ The app needs a `requireAdministrator` manifest to manipulate elevated game wind
 **Known limitations**
 - Games in *exclusive* fullscreen have no manipulable bordered window — launch them in windowed / borderless mode. (The miHoYo titles in the default config are already borderless/windowed.)
 - UWP and protected-process windows can't be modified; Reframe reports a lack of permission rather than failing silently.
-- Some BG advanced options are intentionally not implemented (preserve client area, span-all-monitors, hide taskbar, remove menu, etc.). See the status column in [DESIGN.md](DESIGN.md) §4.
+- Some advanced options aren't implemented yet (preserve client area, span-all-monitors, hide taskbar, remove menu, etc.). See the status column in [DESIGN.md](DESIGN.md) §4.
 
 ## Contributing
 
 Issues and pull requests are welcome — bug reports, feature ideas, and questions all help.
 
-**Translations especially.** Reframe is in the middle of moving its UI strings to `.resw` resources for proper multi-language support, so this is a great time to help bring it to a new language. If you'd like to translate, open an issue and we'll sort out the resource files together.
+**Translations especially.** The UI is fully localized through `.resw` resources (English and Simplified Chinese today). Adding a language is mostly translating one folder of resource files — see [docs/dev/I18N.md](docs/dev/I18N.md) for the steps. If you'd like to help, open an issue.
 
 When sending a PR, please keep the **Core** layer UI-free (the placement math lives there and is unit-tested) and run `dotnet test Tests\Reframe.Core.Tests.csproj` before you push.
 
 ## Acknowledgments
 
-- [**Borderless Gaming**](https://github.com/Codeusa/Borderless-Gaming) — the original this was built to extend, and the source of the conservative "styles and position only, no injection" approach.
 - [**PowerToys FancyZones**](https://github.com/microsoft/PowerToys) — inspiration for the zone-based layout editor and drag-snap interaction.
 
 ## License
