@@ -6,18 +6,73 @@
     xmlns:muxc="using:Microsoft.UI.Xaml.Controls"
     Title="Reframe">
 
-    <!-- 根 Grid:NavigationView 铺满整窗(汉堡按钮自然落在窗口最左上角),
-         自定义标题栏作为一条 56 高的覆盖条浮在顶部,左移让开汉堡按钮宽度。
-         ExtendsContentIntoTitleBar=true + SetTitleBar(AppTitleBar) 在代码后置里设。 -->
+    <!-- 真两行布局(图吧工具箱式),取代旧的"标题栏覆盖条浮在 NavigationView 之上"方案。
+         旧方案在侧栏收起时结构性撞车:内容区左移,页面大标题钻进浮在顶上的标题栏带与"Reframe"重叠。
+         现在 Row0 是实体标题栏占据真实高度,Row1 才是 NavigationView —— 页面内容永远从 Row1 起,
+         无论侧栏展开/收起/窗口多窄都不可能钻到标题栏底下。
+         ExtendsContentIntoTitleBar=true + SetTitleBar(AppTitleDragRegion) 在代码后置里设。 -->
     <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="56"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Row 0:实体标题栏。三列 Auto(自绘汉堡) / Auto(图标+标题) / *(拖拽区,延伸到右侧系统按钮处)。
+             自绘汉堡必须在拖拽区(SetTitleBar 元素)之外 —— SetTitleBar 元素内的交互控件收不到输入。
+             图标+标题是非交互元素,放哪都不挡;此处放拖拽区内,随手可拖更顺手。 -->
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 自绘汉堡:替代 NavigationView 自带 PaneToggleButton(已隐藏)。
+                 尺寸/观感对齐原生:约 40 宽 36 高、透明底、hover 有底色(借 SubtleFillColorSecondaryBrush /
+                 pressed 用 Tertiary,与系统 Subtle 按钮一致)、垂直居中。FontIcon E700 = GlobalNavigationButton。
+                 在拖拽区之外,故 Click 能正常收到。 -->
+            <Button x:Name="PaneToggleButton"
+                    Grid.Column="0"
+                    Width="40" Height="36"
+                    VerticalAlignment="Center"
+                    Margin="4,0,0,0"
+                    Padding="0"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    AutomationProperties.Name="导航"
+                    ToolTipService.ToolTip="导航"
+                    Click="PaneToggle_Click">
+                <FontIcon Glyph="&#xE700;" FontSize="16"/>
+            </Button>
+
+            <!-- 拖拽区:占满第二列(* 列自然延伸到右侧,系统按钮区由系统自己接管)。
+                 SetTitleBar 的目标 —— 拖动 / 双击最大化由系统接管。Background 透明 → 透出云母。
+                 图标与文本是非交互元素,不挡拖拽。 -->
+            <Grid x:Name="AppTitleDragRegion"
+                  Grid.Column="1"
+                  Background="Transparent">
+                <StackPanel Orientation="Horizontal" Spacing="10"
+                            VerticalAlignment="Center"
+                            Margin="4,0,0,0">
+                    <Image x:Name="TitleBarIcon" Width="20" Height="20"
+                           VerticalAlignment="Center"/>
+                    <TextBlock x:Name="AppTitleText" Text="Reframe"
+                               Style="{ThemeResource BodyStrongTextBlockStyle}"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+        </Grid>
+
+        <!-- Row 1:NavigationView。自带汉堡隐藏(IsPaneToggleButtonVisible=False),改由 Row0 自绘汉堡驱动。
+             已无浮层撞车问题,故 IsTitleBarAutoPaddingEnabled 与 NavigationViewButtonHolderGridMargin 资源全部清掉。
+             OpenPaneLength=210、行高 48、图标 20px 保留。 -->
         <muxc:NavigationView
             x:Name="Nav"
+            Grid.Row="1"
             IsBackButtonVisible="Collapsed"
             IsSettingsVisible="False"
             PaneDisplayMode="Left"
-            IsPaneToggleButtonVisible="True"
+            IsPaneToggleButtonVisible="False"
             OpenPaneLength="210"
-            IsTitleBarAutoPaddingEnabled="False"
             SelectionChanged="Nav_SelectionChanged">
 
             <!-- 导航项行高:默认 40 偏挤,提到 48 让图标(已放大到 20px)与文字更舒展,
@@ -25,12 +80,6 @@
                  OpenPaneLength 同步 200→210 平衡更大的行高。 -->
             <muxc:NavigationView.Resources>
                 <x:Double x:Key="NavigationViewItemOnLeftMinHeight">48</x:Double>
-                <!-- 汉堡(PaneToggle)按钮垂直居中进 56 标题栏带,与右侧标题图标/文字同轴。
-                     IsTitleBarAutoPaddingEnabled=False 把模板的 TopPadding 清零,汉堡只剩
-                     ButtonHolderGrid 默认 Margin "0,4" 顶着边(顶 4 / 高 36 → 中心 y=22,贴顶发"顶死"感)。
-                     按钮高 36,要在 56 带内居中需顶距 (56-36)/2=10:覆盖该资源为 "0,10" → 按钮 y=10..46、中心 y=28,
-                     与下方 AppTitleBar 内 VerticalAlignment=Center 的标题(56 带中心 y=28)精确同轴。 -->
-                <Thickness x:Key="NavigationViewButtonHolderGridMargin">0,10</Thickness>
             </muxc:NavigationView.Resources>
 
             <muxc:NavigationView.MenuItems>
@@ -61,24 +110,5 @@
 
             <Frame x:Name="ContentFrame"/>
         </muxc:NavigationView>
-
-        <!-- 自定义标题栏:浮在最顶,左 48px 让开汉堡按钮。Background 透明 → 透出云母。
-             右侧系统按钮区(最小化/最大化/关闭)由系统自动保留,这条不延伸到那。
-             SetTitleBar 给这个 Grid:拖动 / 双击最大化由系统接管;图标与文本是非交互元素,不挡拖拽。 -->
-        <Grid x:Name="AppTitleBar"
-              Height="56"
-              VerticalAlignment="Top"
-              Margin="48,0,0,0"
-              Background="Transparent">
-            <StackPanel Orientation="Horizontal" Spacing="10"
-                        VerticalAlignment="Center"
-                        Margin="4,0,0,0">
-                <Image x:Name="TitleBarIcon" Width="20" Height="20"
-                       VerticalAlignment="Center"/>
-                <TextBlock x:Name="AppTitleText" Text="Reframe"
-                           Style="{ThemeResource BodyStrongTextBlockStyle}"
-                           VerticalAlignment="Center"/>
-            </StackPanel>
-        </Grid>
     </Grid>
 </Window>

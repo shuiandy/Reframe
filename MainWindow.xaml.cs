@@ -15,11 +15,12 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
 
-        // 现代标题栏:把内容延伸进标题栏区,自定义元素 AppTitleBar 作为可拖拽标题栏。
+        // 现代标题栏:把内容延伸进标题栏区(Mica 透到顶),Row0 拖拽区 AppTitleDragRegion 作为可拖拽标题栏。
         // 右侧系统按钮(最小化/最大化/关闭)由系统自动保留;拖动 / 双击最大化由 SetTitleBar 接管。
-        // NavigationView 铺满整窗,其汉堡(PaneToggle)按钮因此落在窗口最左上角。
+        // 真两行布局:Row0 实体标题栏(自绘汉堡 + 图标 + 标题 + 拖拽区),Row1 才是 NavigationView。
+        // 自绘汉堡在拖拽区之外,故能正常收到 Click(SetTitleBar 元素内的交互控件收不到输入)。
         ExtendsContentIntoTitleBar = true;
-        SetTitleBar(AppTitleBar);
+        SetTitleBar(AppTitleDragRegion);
         InitTitleBarIcon();
         // 失活时标题文字变灰,激活时恢复(对标 Win11 设置应用)。
         Activated += OnActivated;
@@ -136,6 +137,10 @@ public sealed partial class MainWindow : Window
             ? (Brush)Application.Current.Resources["TextFillColorDisabledBrush"]
             : (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"];
     }
+
+    /// <summary>Row0 自绘汉堡:开/合 NavigationView 侧栏(替代已隐藏的自带 PaneToggleButton)。</summary>
+    private void PaneToggle_Click(object sender, RoutedEventArgs e)
+        => Nav.IsPaneOpen = !Nav.IsPaneOpen;
 
     private void Nav_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
