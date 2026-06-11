@@ -24,8 +24,32 @@ public partial class App : Application
     private DispatcherQueue? _ui;
     private bool _exiting;
 
+    /// <summary>当前 App 实例(OnLaunched 后非空)。供 <see cref="RequestExit"/> 等静态入口转发到实例方法。</summary>
+    private static App? _current;
+
+    /// <summary>
+    /// 程序化触发正常退出(等价于托盘"退出"):还原全部接管窗口 + 清托盘 + Application.Exit。
+    /// 供"语言切换后立即重启"等场景调用。内部切回 UI 线程跑现有 <c>ExitApp</c> 链;幂等。
+    /// </summary>
+    public static void RequestExit()
+    {
+        var app = _current;
+        if (app is null) return;
+        var ui = app._ui;
+        if (ui is null || !ui.TryEnqueue(app.ExitApp)) app.ExitApp();
+    }
+
     public App()
     {
+        _current = this;
+
+        // 显示语言覆盖:必须在任何 XAML 资源解析之前设(InitializeComponent 会加载 App.xaml)。
+        // unpackaged 下 MRT Core 默认按"系统显示语言"解析资源;PrimaryLanguageOverride(WinAppSDK 的
+        // Microsoft.Windows.Globalization,非 UWP 那个——后者 unpackaged 会抛)可改写这一选择。
+        // Config.Language="system"(默认)→ 不设(跟随系统);"zh-CN"/"en-US" → 强制该语言。
+        // 仅启动早期设一次;运行时切换 x:Uid 不可靠,故 SettingsPage 改语言要求重启(见该页)。
+        ApplyLanguageOverride();
+
         InitializeComponent();
 
         // 崩溃日志:把未处理异常落到 %LOCALAPPDATA%\Reframe\crash.log。
@@ -39,6 +63,26 @@ public partial class App : Application
             LogCrash("AppDomain UnhandledException", e.ExceptionObject as Exception);
         System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (_, e) =>
             LogCrash("UnobservedTaskException", e.Exception);
+    }
+
+    /// <summary>
+    /// 据 Config.Language 设 <c>ApplicationLanguages.PrimaryLanguageOverride</c>。在 App 构造最早期调用
+    /// (任何 XAML 加载前)。用 <see cref="ConfigStore.TryLoad"/> 纯读盘——不触发 ConfigService 单例的
+    /// 文件监听/防抖等副作用,也不在缺文件时落默认(首启读不到就跟随系统,正确)。
+    /// "system" 或读不到 → 不覆盖(跟随系统显示语言)。任何异常都吞掉:本地化失败不该挡启动。
+    /// </summary>
+    private static void ApplyLanguageOverride()
+    {
+        try
+        {
+            string? lang = ConfigStore.TryLoad()?.Language;
+            if (string.IsNullOrWhiteSpace(lang) ||
+                string.Equals(lang, "system", StringComparison.OrdinalIgnoreCase))
+                return; // 跟随系统:不设覆盖
+
+            Microsoft.Windows.Globalization.ApplicationLanguages.PrimaryLanguageOverride = lang;
+        }
+        catch { /* 本地化覆盖失败:回落系统语言,不阻断启动 */ }
     }
 
     private static void LogCrash(string source, Exception? ex)

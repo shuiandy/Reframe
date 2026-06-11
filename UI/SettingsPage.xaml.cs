@@ -31,6 +31,12 @@ public sealed partial class SettingsPage : Page
         _loading = true;
         try
         {
+            // ToggleSwitch 的 On/OffContent 走代码本地化(附加式 resw x:Uid 较脆)。用 Common 通用词。
+            string on = Loc.T("Common/On");
+            string off = Loc.T("Common/Off");
+            StartupToggle.OnContent = on;   StartupToggle.OffContent = off;
+            DragSnapToggle.OnContent = on;  DragSnapToggle.OffContent = off;
+
             var cfg = ConfigService.Instance.Config;
             LoadConfigControls(cfg);
             StartupToggle.IsOn = StartupTaskService.IsEnabled();
@@ -39,7 +45,7 @@ public sealed partial class SettingsPage : Page
             BuildHotkeyRows(cfg);
 
             var ver = Assembly.GetExecutingAssembly().GetName().Version;
-            VersionText.Text = $"版本 {ver?.ToString() ?? "—"}";
+            VersionText.Text = Loc.T("SettingsPage/VersionFormat", ver?.ToString() ?? "—");
         }
         finally { _loading = false; }
 
@@ -79,12 +85,26 @@ public sealed partial class SettingsPage : Page
     // 版本与路径(静态)不在此列。
     private void LoadConfigControls(AppConfig cfg)
     {
+        LanguageCombo.SelectedIndex = LanguageToIndex(cfg.Language); // 0=system / 1=zh-CN / 2=en-US
         ThemeCombo.SelectedIndex = (int)cfg.Theme;        // 枚举顺序与 ComboBoxItem 顺序一致
         BackdropCombo.SelectedIndex = (int)cfg.Backdrop;  // 枚举顺序与 ComboBoxItem 顺序一致
         SgdbKeyBox.Text = cfg.SteamGridDbApiKey ?? "";
         PollBox.Value = cfg.PollIntervalMs;
         DragSnapToggle.IsOn = cfg.DragSnapEnabled;
     }
+
+    // 语言 ComboBox 顺序 ↔ AppConfig.Language 值。项 0=跟随系统,1=简体中文,2=English。
+    // 未知/缺省值一律视为 system(回到第 0 项),避免越界。
+    private static readonly string[] _languageByIndex = { "system", "zh-CN", "en-US" };
+
+    private static int LanguageToIndex(string? lang)
+    {
+        int i = Array.IndexOf(_languageByIndex, lang);
+        return i >= 0 ? i : 0; // 含 null / "system" / 任何未知值 → 跟随系统
+    }
+
+    private static string IndexToLanguage(int index)
+        => (index >= 0 && index < _languageByIndex.Length) ? _languageByIndex[index] : "system";
 
     // ====================== 热键 ======================
 
@@ -108,7 +128,7 @@ public sealed partial class SettingsPage : Page
 
             var label = new TextBlock
             {
-                Text = act.DisplayName,
+                Text = HotkeyLabel(act.Id),
                 VerticalAlignment = VerticalAlignment.Center,
             };
             Grid.SetColumn(label, 0);
@@ -121,6 +141,18 @@ public sealed partial class SettingsPage : Page
             HotkeyRows.Children.Add(row);
             _hotkeyBoxes[act.Id] = box;
         }
+    }
+
+    /// <summary>
+    /// 一个热键动作的本地化显示名:优先 resw(键 Hotkey_&lt;Id&gt;);缺键时 Loc.T 回落 id 字符串,
+    /// 再退到 Core 的 ActionInfo.DisplayName(中文硬编码),保证任何情况下都有可读文案。
+    /// </summary>
+    private static string HotkeyLabel(string actionId)
+    {
+        string locKey = $"SettingsPage/Hotkey_{actionId}";
+        string locLabel = Loc.T(locKey);
+        if (locLabel != locKey) return locLabel; // 命中本地化资源
+        return HotkeyService.Actions.FirstOrDefault(a => a.Id == actionId)?.DisplayName ?? actionId;
     }
 
     private void ApplyHotkeysButton_Click(object sender, RoutedEventArgs e)
@@ -142,7 +174,8 @@ public sealed partial class SettingsPage : Page
 
         if (invalid.Count > 0)
         {
-            ShowHotkeyStatus("手势无效:" + string.Join("、", invalid), error: true);
+            string sep = Loc.T("SettingsPage/HotkeyJoinSeparator");
+            ShowHotkeyStatus(Loc.T("SettingsPage/HotkeyInvalidPrefix", string.Join(sep, invalid)), error: true);
             return;
         }
 
@@ -187,20 +220,25 @@ public sealed partial class SettingsPage : Page
             queue.TryEnqueue(() =>
             {
                 var svc = App.Hotkeys;
-                if (svc is null) { ShowHotkeyStatus("已保存。", error: false); return; }
+                if (svc is null) { ShowHotkeyStatus(Loc.T("SettingsPage/HotkeySaved"), error: false); return; }
 
                 var failed = new List<string>();
                 foreach (var st in svc.GetStatuses())
                     if (!st.Registered)
                     {
-                        var name = HotkeyService.Actions.FirstOrDefault(a => a.Id == st.ActionId)?.DisplayName ?? st.ActionId;
-                        failed.Add($"{name}({st.Error})");
+                        var name = HotkeyLabel(st.ActionId);
+                        failed.Add(Loc.T("SettingsPage/HotkeyEntryFormat", name, st.Error ?? ""));
                     }
 
                 if (failed.Count > 0)
-                    ShowHotkeyStatus("以下热键注册失败:" + string.Join("、", failed), error: true);
+                {
+                    string sep = Loc.T("SettingsPage/HotkeyJoinSeparator");
+                    ShowHotkeyStatus(Loc.T("SettingsPage/HotkeyRegisterFailedPrefix", string.Join(sep, failed)), error: true);
+                }
                 else
-                    ShowHotkeyStatus("已应用,全部热键注册成功。", error: false);
+                {
+                    ShowHotkeyStatus(Loc.T("SettingsPage/HotkeyAllRegistered"), error: false);
+                }
             });
         });
     }
@@ -217,7 +255,7 @@ public sealed partial class SettingsPage : Page
     private async void ExportConfigButton_Click(object sender, RoutedEventArgs e)
     {
         bool ok = await ConfigBackup.ExportAsync(this.XamlRoot);
-        ShowBackupStatus(ok ? "已导出配置。" : "导出已取消或失败。", error: !ok);
+        ShowBackupStatus(Loc.T(ok ? "SettingsPage/BackupExported" : "SettingsPage/BackupExportFailed"), error: !ok);
     }
 
     private async void ImportConfigButton_Click(object sender, RoutedEventArgs e)
@@ -229,11 +267,11 @@ public sealed partial class SettingsPage : Page
             _loading = true;
             try { BuildHotkeyRows(ConfigService.Instance.Config); }
             finally { _loading = false; }
-            ShowBackupStatus("已导入。", error: false);
+            ShowBackupStatus(Loc.T("SettingsPage/BackupImported"), error: false);
         }
         else
         {
-            ShowBackupStatus("导入已取消或文件无效。", error: true);
+            ShowBackupStatus(Loc.T("SettingsPage/BackupImportFailed"), error: true);
         }
     }
 
@@ -242,6 +280,62 @@ public sealed partial class SettingsPage : Page
         BackupStatusText.Text = text;
         BackupStatusText.Foreground = new SolidColorBrush(error ? Colors.OrangeRed : Colors.SeaGreen);
         BackupStatusText.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>
+    /// 语言切换:写 Config.Language + Save,然后弹"需重启生效"对话框(立即重启 / 稍后)。
+    /// 立即重启:Process.Start 自身 exe 再走现有退出链(App.RequestExit)。本程序 requireAdministrator,
+    /// 自重启会触发一次 UAC —— 这是预期行为,按钮文案已注明。
+    /// 切语言不即时改 UI(WinUI x:Uid 不可靠热切换);只有下次启动时 App 早期设 PrimaryLanguageOverride 才生效。
+    /// </summary>
+    private async void LanguageCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading) return;
+
+        int idx = LanguageCombo.SelectedIndex;
+        if (idx < 0) return;
+
+        var svc = ConfigService.Instance;
+        string lang = IndexToLanguage(idx);
+        if (svc.Config.Language == lang) return;
+        svc.Config.Language = lang;
+        svc.Save();
+
+        var dlg = new ContentDialog
+        {
+            Title = Loc.T("SettingsPage/RestartDialogTitle"),
+            Content = Loc.T("SettingsPage/RestartDialogBody"),
+            PrimaryButtonText = Loc.T("SettingsPage/RestartNowButton"),
+            CloseButtonText = Loc.T("SettingsPage/RestartLaterButton"),
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = this.XamlRoot
+        };
+        var result = await dlg.ShowAsync();
+        if (result == ContentDialogResult.Primary)
+            RestartApp();
+    }
+
+    /// <summary>
+    /// 重启自身:先启动一个新实例(继承当前管理员令牌会触发 UAC),再走 App 的正常退出链。
+    /// 新进程的单实例互斥量:旧进程必须先退出后新进程才能抢到锁——但 Process.Start 不阻塞,
+    /// 新实例可能在旧实例退出前抢锁失败而立即退出。为稳妥,这里用一个短延迟脚本:借 cmd 等待旧进程退出后再启动。
+    /// 不引入新文件/依赖:用 ProcessStartInfo 直接拉起 exe;旧进程随即退出释放互斥量,
+    /// 新进程的 SingleInstance 抢锁(若偶发竞争,用户再点一次托盘/重开即可——属可接受边角)。
+    /// </summary>
+    private void RestartApp()
+    {
+        string? exe = Environment.ProcessPath;
+        if (!string.IsNullOrEmpty(exe))
+        {
+            try
+            {
+                // UseShellExecute=true:unpackaged + requireAdministrator 下,新进程经 shell 提权(UAC)。
+                Process.Start(new ProcessStartInfo { FileName = exe, UseShellExecute = true });
+            }
+            catch { /* 启动失败就只退出,用户手动重开 */ }
+        }
+        // 走现有退出链(还原窗口 + 清托盘 + Application.Exit),释放单实例互斥量。
+        App.RequestExit();
     }
 
     private void ThemeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -323,9 +417,9 @@ public sealed partial class SettingsPage : Page
 
             var dlg = new ContentDialog
             {
-                Title = "操作失败",
-                Content = want ? "创建开机自启计划任务失败。" : "删除开机自启计划任务失败。",
-                CloseButtonText = "好",
+                Title = Loc.T("SettingsPage/StartupFailedTitle"),
+                Content = Loc.T(want ? "SettingsPage/StartupEnableFailed" : "SettingsPage/StartupDisableFailed"),
+                CloseButtonText = Loc.T("Common/Ok"),
                 XamlRoot = this.XamlRoot
             };
             await dlg.ShowAsync();

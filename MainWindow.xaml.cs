@@ -22,6 +22,7 @@ public sealed partial class MainWindow : Window
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleDragRegion);
         InitTitleBarIcon();
+        InitLocalizedAccessibility();
         // 失活时标题文字变灰,激活时恢复(对标 Win11 设置应用)。
         Activated += OnActivated;
 
@@ -117,6 +118,17 @@ public sealed partial class MainWindow : Window
     /// <summary>配置变更回调(任意线程)。切回 UI 线程重新应用材质与主题。</summary>
     private void OnConfigChanged()
         => DispatcherQueue.TryEnqueue(() => { ApplyBackdrop(); ApplyTheme(); });
+
+    /// <summary>
+    /// 给自绘汉堡按钮设本地化的 tooltip 与无障碍名(从 MainWindow.resw 经 Loc 取)。
+    /// 走代码而非 XAML x:Uid:附加属性(ToolTipService/AutomationProperties)的 resw x:Uid 在 MRT Core 下较脆。
+    /// </summary>
+    private void InitLocalizedAccessibility()
+    {
+        string tip = Loc.T("MainWindow/NavButtonTooltip");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(PaneToggleButton, tip);
+        ToolTipService.SetToolTip(PaneToggleButton, tip);
+    }
 
     /// <summary>把 Assets\reframe.ico 加载进标题栏左侧 16px 图标;缺文件时静默留空。</summary>
     private void InitTitleBarIcon()

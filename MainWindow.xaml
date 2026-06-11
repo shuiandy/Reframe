@@ -30,6 +30,8 @@
                  尺寸/观感对齐原生:约 40 宽 36 高、透明底、hover 有底色(借 SubtleFillColorSecondaryBrush /
                  pressed 用 Tertiary,与系统 Subtle 按钮一致)、垂直居中。FontIcon E700 = GlobalNavigationButton。
                  在拖拽区之外,故 Click 能正常收到。 -->
+            <!-- AutomationProperties.Name / ToolTip set in code-behind via Loc.T (localized);
+                 attached-property x:Uid in resw is brittle in MRT Core. See MainWindow.xaml.cs. -->
             <Button x:Name="PaneToggleButton"
                     Grid.Column="0"
                     Width="40" Height="36"
@@ -38,8 +40,6 @@
                     Padding="0"
                     Background="Transparent"
                     BorderThickness="0"
-                    AutomationProperties.Name="导航"
-                    ToolTipService.ToolTip="导航"
                     Click="PaneToggle_Click">
                 <FontIcon Glyph="&#xE700;" FontSize="16"/>
             </Button>
@@ -82,18 +82,20 @@
                 <x:Double x:Key="NavigationViewItemOnLeftMinHeight">48</x:Double>
             </muxc:NavigationView.Resources>
 
+            <!-- 导航项文案经 x:Uid 从 Strings\<lang>\MainWindow.resw 取(键 NavXxx.Content)。
+                 Tag 是稳定的路由键,不本地化。详见 docs\dev\I18N.md。 -->
             <muxc:NavigationView.MenuItems>
-                <muxc:NavigationViewItem Content="仪表盘" Tag="dashboard">
+                <muxc:NavigationViewItem x:Uid="/MainWindow/NavDashboard" Tag="dashboard">
                     <muxc:NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE7F4;" FontSize="20"/>
                     </muxc:NavigationViewItem.Icon>
                 </muxc:NavigationViewItem>
-                <muxc:NavigationViewItem Content="配置文件" Tag="profiles">
+                <muxc:NavigationViewItem x:Uid="/MainWindow/NavProfiles" Tag="profiles">
                     <muxc:NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE7C1;" FontSize="20"/>
                     </muxc:NavigationViewItem.Icon>
                 </muxc:NavigationViewItem>
-                <muxc:NavigationViewItem Content="布局" Tag="layouts">
+                <muxc:NavigationViewItem x:Uid="/MainWindow/NavLayouts" Tag="layouts">
                     <muxc:NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE80A;" FontSize="20"/>
                     </muxc:NavigationViewItem.Icon>
@@ -101,7 +103,7 @@
             </muxc:NavigationView.MenuItems>
 
             <muxc:NavigationView.FooterMenuItems>
-                <muxc:NavigationViewItem Content="设置" Tag="settings">
+                <muxc:NavigationViewItem x:Uid="/MainWindow/NavSettings" Tag="settings">
                     <muxc:NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE713;" FontSize="20"/>
                     </muxc:NavigationViewItem.Icon>

@@ -1,0 +1,279 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!--
+    SettingsPage.resw (zh-CN) — 设置页全部字符串。
+    静态 UI 文本在 XAML 用 x:Uid="/SettingsPage/<键>"(键 "Title" → data name "Title.Text")。
+    运行时/代码字符串(状态行、对话框、带版本号的格式串)经 Loc.T("SettingsPage/<键>") 取。
+    占位符用 .NET 复合格式索引({0}),供 Loc.T(key, args) 做 string.Format。
+    详见 docs/dev/I18N.md。
+  -->
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- 页标题 -->
+  <data name="Title.Text" xml:space="preserve">
+    <value>设置</value>
+  </data>
+
+  <!-- 外观 -->
+  <data name="AppearanceHeader.Text" xml:space="preserve">
+    <value>外观</value>
+  </data>
+  <data name="AppearanceDesc.Text" xml:space="preserve">
+    <value>主题与主窗口的背景材质,改即生效。亚克力在窗口失焦时会回退为纯色(系统行为)。</value>
+  </data>
+  <data name="LanguageCombo.Header" xml:space="preserve">
+    <value>语言</value>
+  </data>
+  <data name="LanguageSystem.Content" xml:space="preserve">
+    <value>跟随系统</value>
+  </data>
+  <data name="ThemeCombo.Header" xml:space="preserve">
+    <value>主题</value>
+  </data>
+  <data name="ThemeSystem.Content" xml:space="preserve">
+    <value>跟随系统</value>
+  </data>
+  <data name="ThemeLight.Content" xml:space="preserve">
+    <value>浅色</value>
+  </data>
+  <data name="ThemeDark.Content" xml:space="preserve">
+    <value>深色</value>
+  </data>
+  <data name="BackdropCombo.Header" xml:space="preserve">
+    <value>窗口背景材质</value>
+  </data>
+  <data name="BackdropMica.Content" xml:space="preserve">
+    <value>云母(Mica)</value>
+  </data>
+  <data name="BackdropMicaAlt.Content" xml:space="preserve">
+    <value>云母变体(Mica Alt)</value>
+  </data>
+  <data name="BackdropAcrylic.Content" xml:space="preserve">
+    <value>亚克力(毛玻璃)</value>
+  </data>
+
+  <!-- 语言切换重启对话框(代码后置) -->
+  <data name="RestartDialogTitle" xml:space="preserve">
+    <value>需要重启</value>
+  </data>
+  <data name="RestartDialogBody" xml:space="preserve">
+    <value>重启 Reframe 后显示语言生效。</value>
+  </data>
+  <data name="RestartNowButton" xml:space="preserve">
+    <value>立即重启(会弹 UAC)</value>
+  </data>
+  <data name="RestartLaterButton" xml:space="preserve">
+    <value>稍后</value>
+  </data>
+
+  <!-- 在线图标(SteamGridDB) -->
+  <data name="SgdbHeader.Text" xml:space="preserve">
+    <value>在线图标(SteamGridDB)</value>
+  </data>
+  <data name="SgdbDescLine1.Text" xml:space="preserve">
+    <value>本地取不到游戏图标(反作弊保护等)时,按游戏名联网取图标作为兜底。填入免费 API key 才启用,留空则静默关闭。</value>
+  </data>
+  <data name="SgdbDescApply.Text" xml:space="preserve">
+    <value>免费申请:</value>
+  </data>
+  <data name="SgdbKeyBox.Header" xml:space="preserve">
+    <value>API key</value>
+  </data>
+  <data name="SgdbKeyBox.PlaceholderText" xml:space="preserve">
+    <value>留空 = 关闭在线图标</value>
+  </data>
+
+  <!-- 轮询间隔 -->
+  <data name="PollHeader.Text" xml:space="preserve">
+    <value>轮询间隔</value>
+  </data>
+  <data name="PollDesc.Text" xml:space="preserve">
+    <value>引擎兜底扫描的周期(毫秒),越小越灵敏但越费 CPU。</value>
+  </data>
+
+  <!-- 开机自启 -->
+  <data name="StartupHeader.Text" xml:space="preserve">
+    <value>开机自启</value>
+  </data>
+  <data name="StartupDesc.Text" xml:space="preserve">
+    <value>以管理员权限随登录启动(计划任务,免 UAC 弹窗)。</value>
+  </data>
+
+  <!-- 拖拽吸附 -->
+  <data name="DragSnapHeader.Text" xml:space="preserve">
+    <value>拖拽吸附</value>
+  </data>
+  <data name="DragSnapDesc.Text" xml:space="preserve">
+    <value>按住 Shift 拖动任意窗口时显示分区覆盖层,松手把窗口吸进所在分区。</value>
+  </data>
+
+  <!-- 窗口接管(还原全部) -->
+  <data name="TakeoverHeader.Text" xml:space="preserve">
+    <value>窗口接管</value>
+  </data>
+  <data name="TakeoverDesc.Text" xml:space="preserve">
+    <value>把所有被 Reframe 改过的窗口还原为接管前的样式与位置。</value>
+  </data>
+  <data name="RestoreAllButton.Content" xml:space="preserve">
+    <value>还原全部已接管窗口</value>
+  </data>
+
+  <!-- 热键 -->
+  <data name="HotkeysHeader.Text" xml:space="preserve">
+    <value>热键</value>
+  </data>
+  <data name="HotkeysDesc.Text" xml:space="preserve">
+    <value>全局热键。手势形如 Ctrl+Alt+D、Ctrl+Shift+1(修饰符 Ctrl/Alt/Shift/Win + 字母/数字/F1-F12,大小写不限)。改完按「应用热键」生效;若某组合被别的程序或系统占用,会在下方与仪表盘日志提示,换一个即可。</value>
+  </data>
+  <!-- 热键动作行标签,按 HotkeyService 动作 Id 索引。代码经 Loc.T("SettingsPage/Hotkey_<ActionId>") 取;
+       缺键时回落 Core 的 ActionInfo.DisplayName。让 Core 保持 MRT-free 的同时 UI 可本地化这些标签。 -->
+  <data name="Hotkey_ToggleBorderless" xml:space="preserve">
+    <value>无边框开关(前台窗口)</value>
+  </data>
+  <data name="Hotkey_SendToZone1" xml:space="preserve">
+    <value>送入分区 1</value>
+  </data>
+  <data name="Hotkey_SendToZone2" xml:space="preserve">
+    <value>送入分区 2</value>
+  </data>
+  <data name="Hotkey_SendToZone3" xml:space="preserve">
+    <value>送入分区 3</value>
+  </data>
+  <data name="ApplyHotkeysButton.Content" xml:space="preserve">
+    <value>应用热键</value>
+  </data>
+  <data name="ResetHotkeysButton.Content" xml:space="preserve">
+    <value>恢复默认</value>
+  </data>
+
+  <!-- 配置备份 -->
+  <data name="BackupHeader.Text" xml:space="preserve">
+    <value>配置备份</value>
+  </data>
+  <data name="BackupDesc.Text" xml:space="preserve">
+    <value>把当前配置导出为 config.json,或从文件导入(导入会校验并覆盖当前配置)。</value>
+  </data>
+  <data name="ExportConfigButton.Content" xml:space="preserve">
+    <value>导出配置…</value>
+  </data>
+  <data name="ImportConfigButton.Content" xml:space="preserve">
+    <value>导入配置…</value>
+  </data>
+
+  <!-- 配置文件路径 -->
+  <data name="ConfigFileHeader.Text" xml:space="preserve">
+    <value>配置文件</value>
+  </data>
+  <data name="OpenFolderButton.Content" xml:space="preserve">
+    <value>打开所在文件夹</value>
+  </data>
+
+  <!-- 关于 -->
+  <data name="AboutHeader.Text" xml:space="preserve">
+    <value>关于</value>
+  </data>
+  <data name="AboutBlurb.Text" xml:space="preserve">
+    <value>Reframe — 自用窗口管理器:无边框化 + 按显示器自适应布局。</value>
+  </data>
+
+  <!-- ===== 代码后置动态字符串 ===== -->
+  <data name="VersionFormat" xml:space="preserve">
+    <value>版本 {0}</value>
+  </data>
+  <data name="HotkeyInvalidPrefix" xml:space="preserve">
+    <value>手势无效:{0}</value>
+  </data>
+  <data name="HotkeySaved" xml:space="preserve">
+    <value>已保存。</value>
+  </data>
+  <data name="HotkeyRegisterFailedPrefix" xml:space="preserve">
+    <value>以下热键注册失败:{0}</value>
+  </data>
+  <data name="HotkeyAllRegistered" xml:space="preserve">
+    <value>已应用,全部热键注册成功。</value>
+  </data>
+  <data name="HotkeyJoinSeparator" xml:space="preserve">
+    <value>、</value>
+  </data>
+  <data name="HotkeyEntryFormat" xml:space="preserve">
+    <value>{0}({1})</value>
+  </data>
+  <data name="BackupExported" xml:space="preserve">
+    <value>已导出配置。</value>
+  </data>
+  <data name="BackupExportFailed" xml:space="preserve">
+    <value>导出已取消或失败。</value>
+  </data>
+  <data name="BackupImported" xml:space="preserve">
+    <value>已导入。</value>
+  </data>
+  <data name="BackupImportFailed" xml:space="preserve">
+    <value>导入已取消或文件无效。</value>
+  </data>
+  <data name="StartupFailedTitle" xml:space="preserve">
+    <value>操作失败</value>
+  </data>
+  <data name="StartupEnableFailed" xml:space="preserve">
+    <value>创建开机自启计划任务失败。</value>
+  </data>
+  <data name="StartupDisableFailed" xml:space="preserve">
+    <value>删除开机自启计划任务失败。</value>
+  </data>
+</root>

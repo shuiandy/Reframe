@@ -42,6 +42,15 @@
     </Content>
   </ItemGroup>
 
+  <!--
+    本地化资源:Strings\<语言>\*.resw → MRT Core 编译进 resources.pri(随 UseWinUI 的 MakePri 自动执行,
+    并复制到 exe 同目录;unpackaged 下运行时由 MRT Core 自动定位解析)。
+    .NET SDK 的 EnableDefaultPriItems 默认就把 **\*.resw 收进 PRIResource(此处显式声明会触发 NETSDK1022 重复项),
+    故不需要任何额外 ItemGroup —— 约定优于配置:把 resw 放进 Strings\<BCP-47>\ 即被自动收录。
+    每种语言一个子目录(zh-CN / en-US),目录名即 BCP-47 标签;按页分文件(MainWindow/SettingsPage/Common)。
+    取串:XAML 用 x:Uid="/文件名/键名",代码用 Services\Loc.cs(ResourceLoader 包装)。详见 docs\dev\I18N.md。
+  -->
+
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.250916003" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4948" />

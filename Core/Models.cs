@@ -169,6 +169,13 @@ public sealed class AppConfig
     public AppTheme Theme { get; set; } = AppTheme.System;
 
     /// <summary>
+    /// UI 显示语言。BCP-47 标签或 "system"。"system"(默认)= 跟随 Windows 显示语言;
+    /// "zh-CN" / "en-US" = 强制该语言(经 ApplicationLanguages.PrimaryLanguageOverride,App 启动早期设置)。
+    /// 切换后需重启应用生效(WinUI x:Uid 不可靠地热切换)。Core 不消费此字段——仅 UI 层(App/SettingsPage)读写。
+    /// </summary>
+    public string Language { get; set; } = "system";
+
+    /// <summary>
     /// SteamGridDB API key(可空)。配了才启用"在线图标"兜底:本地全失败时按游戏名联网取图标。
     /// 免费申请:https://www.steamgriddb.com/profile/preferences/api 。空 = 该功能静默关闭。
     /// </summary>

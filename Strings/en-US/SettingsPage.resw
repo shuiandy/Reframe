@@ -1,0 +1,280 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!--
+    SettingsPage.resw (en-US) — all strings for the Settings page.
+    Static UI text uses x:Uid="/SettingsPage/<Key>" in XAML (e.g. Key "Title" -> data name "Title.Text").
+    Runtime/code strings (status lines, dialogs, formatted version) are fetched via Loc.T("SettingsPage/<Key>").
+    Placeholders use .NET composite-format indices ({0}) so Loc.T(key, args) can string.Format them.
+    See docs/dev/I18N.md.
+  -->
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- Page title -->
+  <data name="Title.Text" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+
+  <!-- Appearance section -->
+  <data name="AppearanceHeader.Text" xml:space="preserve">
+    <value>Appearance</value>
+  </data>
+  <data name="AppearanceDesc.Text" xml:space="preserve">
+    <value>Theme and the main window's backdrop material; changes apply immediately. Acrylic falls back to a solid color when the window loses focus (system behavior).</value>
+  </data>
+  <data name="LanguageCombo.Header" xml:space="preserve">
+    <value>Language</value>
+  </data>
+  <data name="LanguageSystem.Content" xml:space="preserve">
+    <value>Follow system</value>
+  </data>
+  <data name="ThemeCombo.Header" xml:space="preserve">
+    <value>Theme</value>
+  </data>
+  <data name="ThemeSystem.Content" xml:space="preserve">
+    <value>Follow system</value>
+  </data>
+  <data name="ThemeLight.Content" xml:space="preserve">
+    <value>Light</value>
+  </data>
+  <data name="ThemeDark.Content" xml:space="preserve">
+    <value>Dark</value>
+  </data>
+  <data name="BackdropCombo.Header" xml:space="preserve">
+    <value>Window backdrop material</value>
+  </data>
+  <data name="BackdropMica.Content" xml:space="preserve">
+    <value>Mica</value>
+  </data>
+  <data name="BackdropMicaAlt.Content" xml:space="preserve">
+    <value>Mica Alt</value>
+  </data>
+  <data name="BackdropAcrylic.Content" xml:space="preserve">
+    <value>Acrylic (frosted glass)</value>
+  </data>
+
+  <!-- Language change restart dialog (code-behind) -->
+  <data name="RestartDialogTitle" xml:space="preserve">
+    <value>Restart required</value>
+  </data>
+  <data name="RestartDialogBody" xml:space="preserve">
+    <value>The display language changes after you restart Reframe.</value>
+  </data>
+  <data name="RestartNowButton" xml:space="preserve">
+    <value>Restart now (will prompt for UAC)</value>
+  </data>
+  <data name="RestartLaterButton" xml:space="preserve">
+    <value>Later</value>
+  </data>
+
+  <!-- Online icons (SteamGridDB) section -->
+  <data name="SgdbHeader.Text" xml:space="preserve">
+    <value>Online icons (SteamGridDB)</value>
+  </data>
+  <data name="SgdbDescLine1.Text" xml:space="preserve">
+    <value>When a game icon can't be read locally (anti-cheat protection, etc.), fetch one online by game name as a fallback. Enabled only when a free API key is filled in; leave empty to silently disable.</value>
+  </data>
+  <data name="SgdbDescApply.Text" xml:space="preserve">
+    <value>Free sign-up: </value>
+  </data>
+  <data name="SgdbKeyBox.Header" xml:space="preserve">
+    <value>API key</value>
+  </data>
+  <data name="SgdbKeyBox.PlaceholderText" xml:space="preserve">
+    <value>Empty = online icons off</value>
+  </data>
+
+  <!-- Poll interval section -->
+  <data name="PollHeader.Text" xml:space="preserve">
+    <value>Poll interval</value>
+  </data>
+  <data name="PollDesc.Text" xml:space="preserve">
+    <value>The engine's fallback scan period (milliseconds); lower is more responsive but uses more CPU.</value>
+  </data>
+
+  <!-- Run at startup section -->
+  <data name="StartupHeader.Text" xml:space="preserve">
+    <value>Run at startup</value>
+  </data>
+  <data name="StartupDesc.Text" xml:space="preserve">
+    <value>Start with administrator rights at logon (scheduled task, no UAC prompt).</value>
+  </data>
+
+  <!-- Drag-snap section -->
+  <data name="DragSnapHeader.Text" xml:space="preserve">
+    <value>Drag-snap</value>
+  </data>
+  <data name="DragSnapDesc.Text" xml:space="preserve">
+    <value>Hold Shift while dragging any window to show the zone overlay; release to snap the window into the zone under the cursor.</value>
+  </data>
+
+  <!-- Window takeover (restore all) section -->
+  <data name="TakeoverHeader.Text" xml:space="preserve">
+    <value>Window takeover</value>
+  </data>
+  <data name="TakeoverDesc.Text" xml:space="preserve">
+    <value>Restore every window Reframe has modified to its style and position before takeover.</value>
+  </data>
+  <data name="RestoreAllButton.Content" xml:space="preserve">
+    <value>Restore all taken-over windows</value>
+  </data>
+
+  <!-- Hotkeys section -->
+  <data name="HotkeysHeader.Text" xml:space="preserve">
+    <value>Hotkeys</value>
+  </data>
+  <data name="HotkeysDesc.Text" xml:space="preserve">
+    <value>Global hotkeys. A gesture looks like Ctrl+Alt+D or Ctrl+Shift+1 (modifiers Ctrl/Alt/Shift/Win + a letter/digit/F1-F12, case-insensitive). Press "Apply hotkeys" to take effect; if a combo is already taken by another program or the system, it's reported below and in the dashboard log&#x2014;just pick another.</value>
+  </data>
+  <!-- Hotkey action row labels, keyed by HotkeyService action Id. Fetched in code via
+       Loc.T("SettingsPage/Hotkey_<ActionId>"); falls back to the Core ActionInfo.DisplayName
+       if a key is missing. Keeps Core MRT-free while letting the UI localize the labels. -->
+  <data name="Hotkey_ToggleBorderless" xml:space="preserve">
+    <value>Borderless toggle (foreground window)</value>
+  </data>
+  <data name="Hotkey_SendToZone1" xml:space="preserve">
+    <value>Send to zone 1</value>
+  </data>
+  <data name="Hotkey_SendToZone2" xml:space="preserve">
+    <value>Send to zone 2</value>
+  </data>
+  <data name="Hotkey_SendToZone3" xml:space="preserve">
+    <value>Send to zone 3</value>
+  </data>
+  <data name="ApplyHotkeysButton.Content" xml:space="preserve">
+    <value>Apply hotkeys</value>
+  </data>
+  <data name="ResetHotkeysButton.Content" xml:space="preserve">
+    <value>Reset to defaults</value>
+  </data>
+
+  <!-- Config backup section -->
+  <data name="BackupHeader.Text" xml:space="preserve">
+    <value>Config backup</value>
+  </data>
+  <data name="BackupDesc.Text" xml:space="preserve">
+    <value>Export the current config as config.json, or import one from a file (import validates and overwrites the current config).</value>
+  </data>
+  <data name="ExportConfigButton.Content" xml:space="preserve">
+    <value>Export config&#x2026;</value>
+  </data>
+  <data name="ImportConfigButton.Content" xml:space="preserve">
+    <value>Import config&#x2026;</value>
+  </data>
+
+  <!-- Config file path section -->
+  <data name="ConfigFileHeader.Text" xml:space="preserve">
+    <value>Config file</value>
+  </data>
+  <data name="OpenFolderButton.Content" xml:space="preserve">
+    <value>Open containing folder</value>
+  </data>
+
+  <!-- About section -->
+  <data name="AboutHeader.Text" xml:space="preserve">
+    <value>About</value>
+  </data>
+  <data name="AboutBlurb.Text" xml:space="preserve">
+    <value>Reframe &#x2014; a personal window manager: borderless + per-monitor adaptive layout.</value>
+  </data>
+
+  <!-- ===== Code-behind dynamic strings ===== -->
+  <data name="VersionFormat" xml:space="preserve">
+    <value>Version {0}</value>
+  </data>
+  <data name="HotkeyInvalidPrefix" xml:space="preserve">
+    <value>Invalid gesture: {0}</value>
+  </data>
+  <data name="HotkeySaved" xml:space="preserve">
+    <value>Saved.</value>
+  </data>
+  <data name="HotkeyRegisterFailedPrefix" xml:space="preserve">
+    <value>These hotkeys failed to register: {0}</value>
+  </data>
+  <data name="HotkeyAllRegistered" xml:space="preserve">
+    <value>Applied; all hotkeys registered successfully.</value>
+  </data>
+  <data name="HotkeyJoinSeparator" xml:space="preserve">
+    <value>, </value>
+  </data>
+  <data name="HotkeyEntryFormat" xml:space="preserve">
+    <value>{0} ({1})</value>
+  </data>
+  <data name="BackupExported" xml:space="preserve">
+    <value>Config exported.</value>
+  </data>
+  <data name="BackupExportFailed" xml:space="preserve">
+    <value>Export was cancelled or failed.</value>
+  </data>
+  <data name="BackupImported" xml:space="preserve">
+    <value>Imported.</value>
+  </data>
+  <data name="BackupImportFailed" xml:space="preserve">
+    <value>Import was cancelled or the file is invalid.</value>
+  </data>
+  <data name="StartupFailedTitle" xml:space="preserve">
+    <value>Operation failed</value>
+  </data>
+  <data name="StartupEnableFailed" xml:space="preserve">
+    <value>Failed to create the run-at-startup scheduled task.</value>
+  </data>
+  <data name="StartupDisableFailed" xml:space="preserve">
+    <value>Failed to delete the run-at-startup scheduled task.</value>
+  </data>
+</root>
