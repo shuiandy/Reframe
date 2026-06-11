@@ -6,25 +6,25 @@ using RECT = Reframe.Interop.NativeMethods.RECT;
 namespace Reframe.Core.Tests;
 
 /// <summary>
-/// PlacementResolver.ResolveRect 纯几何核(M3 契约靶点)。
-/// 不碰任何 Win32:直接喂入 rcMonitor / rcWork / currentWindowRect。
-/// 验证:Fullscreen、UseWorkArea、Zone 比例→像素、非零原点偏移、CustomRect、
-/// 规则表顺序、Offsets 叠加、KeepAspectRatio letterbox、无累计漂移。
+/// PlacementResolver.ResolveRect pure geometry core (the M3 contract target).
+/// No Win32: rcMonitor / rcWork / currentWindowRect are fed in directly.
+/// Verifies: Fullscreen, UseWorkArea, Zone ratio→pixels, non-zero-origin offset, CustomRect,
+/// rule-table ordering, Offsets stacking, KeepAspectRatio letterbox, no cumulative drift.
 /// </summary>
 public class ResolveRectTests
 {
-    // ---- 构造辅助 ----
+    // ---- Construction helpers ----
 
     private static RECT R(int l, int t, int r, int b) => new() { Left = l, Top = t, Right = r, Bottom = b };
 
-    /// <summary>一块原点在 (ox,oy)、尺寸 w×h 的屏。</summary>
+    /// <summary>A monitor with origin (ox,oy) and size w×h.</summary>
     private static RECT Mon(int ox, int oy, int w, int h) => R(ox, oy, ox + w, oy + h);
 
     private const string LayoutId = "LAYOUT-A";
     private const string GameZoneId = "ZONE-GAME";   // (0,0,2/3,1)
     private const string SideZoneId = "ZONE-SIDE";   // (2/3,0,1/3,1)
 
-    /// <summary>含 57″ 布局(游戏区 2/3 宽 + 副屏区 1/3 宽)的配置。</summary>
+    /// <summary>A config with the 57″ layout (game zone 2/3 wide + secondary zone 1/3 wide).</summary>
     private static AppConfig CfgWithZones() => new()
     {
         Layouts =
@@ -73,7 +73,7 @@ public class ResolveRectTests
 
     // ---- Fullscreen / WorkArea ----
 
-    [Fact(DisplayName = "Fullscreen:整屏铺满 rcMonitor")]
+    [Fact(DisplayName = "Fullscreen: fills the whole rcMonitor")]
     public void Fullscreen_WholeMonitor()
     {
         var mon = Mon(0, 0, 7680, 2160);
@@ -83,19 +83,19 @@ public class ResolveRectTests
         AssertRect(rect, 0, 0, 7680, 2160);
     }
 
-    [Fact(DisplayName = "Fullscreen + UseWorkArea:铺满工作区(避开任务栏)")]
+    [Fact(DisplayName = "Fullscreen + UseWorkArea: fills the work area (avoiding the taskbar)")]
     public void Fullscreen_UseWorkArea()
     {
         var mon = Mon(0, 0, 7680, 2160);
-        var work = R(0, 0, 7680, 2112); // 任务栏 48px
+        var work = R(0, 0, 7680, 2112); // taskbar 48px
         var p = ProfWithRules(FullscreenRule(useWork: true));
         var rect = PlacementResolver.ResolveRect(mon, work, R(0, 0, 100, 100), p, new AppConfig());
         AssertRect(rect, 0, 0, 7680, 2112);
     }
 
-    // ---- Zone 比例 → 像素 ----
+    // ---- Zone ratio → pixels ----
 
-    [Fact(DisplayName = "Zone 游戏区:7680×2160 + 2/3 宽 → (0,0,5120,2160)")]
+    [Fact(DisplayName = "Zone game area: 7680×2160 + 2/3 wide → (0,0,5120,2160)")]
     public void Zone_GameArea_FullMonitor()
     {
         var mon = Mon(0, 0, 7680, 2160);
@@ -104,39 +104,39 @@ public class ResolveRectTests
         AssertRect(rect, 0, 0, 5120, 2160);
     }
 
-    [Fact(DisplayName = "Zone 副屏区:7680×2160 + 1/3 宽起于 2/3 → (5120,0,7680,2160)")]
+    [Fact(DisplayName = "Zone secondary area: 7680×2160 + 1/3 wide starting at 2/3 → (5120,0,7680,2160)")]
     public void Zone_SideArea_FullMonitor()
     {
         var mon = Mon(0, 0, 7680, 2160);
         var p = ProfWithRules(ZoneRule(SideZoneId));
         var rect = PlacementResolver.ResolveRect(mon, mon, R(0, 0, 100, 100), p, CfgWithZones());
-        // Left = Round(2/3 * 7680) = 5120;Right = Round(1 * 7680) = 7680
+        // Left = Round(2/3 * 7680) = 5120; Right = Round(1 * 7680) = 7680
         AssertRect(rect, 5120, 0, 7680, 2160);
     }
 
-    [Fact(DisplayName = "Zone + UseWorkArea:高度按 rcWork(2160-48=2112)")]
+    [Fact(DisplayName = "Zone + UseWorkArea: height from rcWork (2160-48=2112)")]
     public void Zone_UseWorkArea_HeightFromWork()
     {
         var mon = Mon(0, 0, 7680, 2160);
         var work = R(0, 0, 7680, 2112);
         var p = ProfWithRules(ZoneRule(GameZoneId, useWork: true));
         var rect = PlacementResolver.ResolveRect(mon, work, R(0, 0, 100, 100), p, CfgWithZones());
-        // 宽度仍按工作区宽 7680 算(此处工作区宽==屏宽);高度到 2112
+        // Width still computed from the work-area width 7680 (here work-area width == screen width); height down to 2112
         AssertRect(rect, 0, 0, 5120, 2112);
     }
 
-    [Fact(DisplayName = "Zone 在非零原点显示器:偏移正确(屏置于 x=5120)")]
+    [Fact(DisplayName = "Zone on a non-zero-origin monitor: offset correct (monitor placed at x=5120)")]
     public void Zone_NonZeroOriginMonitor()
     {
-        // 一块 7680 宽的屏,左上角在 (5120,0)——例如主屏右侧
+        // A 7680-wide monitor with top-left at (5120,0) — e.g. to the right of the primary
         var mon = Mon(5120, 0, 7680, 2160);
         var p = ProfWithRules(ZoneRule(GameZoneId));
         var rect = PlacementResolver.ResolveRect(mon, mon, R(5120, 0, 5220, 100), p, CfgWithZones());
-        // Left = 5120 + Round(0) = 5120;Right = 5120 + Round(2/3*7680=5120) = 10240
+        // Left = 5120 + Round(0) = 5120; Right = 5120 + Round(2/3*7680=5120) = 10240
         AssertRect(rect, 5120, 0, 10240, 2160);
     }
 
-    [Fact(DisplayName = "Zone 在负原点显示器(屏在主屏左侧 x=-7680)")]
+    [Fact(DisplayName = "Zone on a negative-origin monitor (monitor to the left of the primary, x=-7680)")]
     public void Zone_NegativeOriginMonitor()
     {
         var mon = Mon(-7680, 0, 7680, 2160);
@@ -147,7 +147,7 @@ public class ResolveRectTests
 
     // ---- CustomRect ----
 
-    [Fact(DisplayName = "CustomRect:相对屏原点的绝对矩形(零原点)")]
+    [Fact(DisplayName = "CustomRect: absolute rect relative to the monitor origin (zero origin)")]
     public void CustomRect_ZeroOrigin()
     {
         var mon = Mon(0, 0, 3840, 2160);
@@ -161,7 +161,7 @@ public class ResolveRectTests
         AssertRect(rect, 100, 50, 1380, 770);
     }
 
-    [Fact(DisplayName = "CustomRect:在非零原点屏上叠加屏原点")]
+    [Fact(DisplayName = "CustomRect: adds the monitor origin on a non-zero-origin monitor")]
     public void CustomRect_NonZeroOrigin()
     {
         var mon = Mon(5120, 0, 3840, 2160);
@@ -175,9 +175,9 @@ public class ResolveRectTests
         AssertRect(rect, 5130, 20, 5330, 120);
     }
 
-    // ---- None / 无规则 ----
+    // ---- None / no rule ----
 
-    [Fact(DisplayName = "Kind=None:命中但不产出矩形 → null")]
+    [Fact(DisplayName = "Kind=None: matches but produces no rect → null")]
     public void None_ReturnsNull()
     {
         var mon = Mon(0, 0, 1920, 1080);
@@ -186,16 +186,16 @@ public class ResolveRectTests
         Assert.Null(rect);
     }
 
-    [Fact(DisplayName = "无规则命中:所有规则 Monitor 都不匹配 → null")]
+    [Fact(DisplayName = "No rule matches: no rule's Monitor matches → null")]
     public void NoRuleMatches_ReturnsNull()
     {
         var mon = Mon(0, 0, 1920, 1080);
-        var p = ProfWithRules(FullscreenRule(7680, 2160)); // 只对 7680×2160 生效
+        var p = ProfWithRules(FullscreenRule(7680, 2160)); // Only applies to 7680×2160
         var rect = PlacementResolver.ResolveRect(mon, mon, R(0, 0, 100, 100), p, new AppConfig());
         Assert.Null(rect);
     }
 
-    [Fact(DisplayName = "空规则表 → null")]
+    [Fact(DisplayName = "Empty rule table → null")]
     public void EmptyRules_ReturnsNull()
     {
         var mon = Mon(0, 0, 1920, 1080);
@@ -204,49 +204,49 @@ public class ResolveRectTests
         Assert.Null(rect);
     }
 
-    // ---- 规则表顺序:第一条命中生效 ----
+    // ---- Rule-table ordering: the first match wins ----
 
-    [Fact(DisplayName = "规则顺序:本地 57″ 命中首条 Zone 规则(而非末条 Fullscreen)")]
+    [Fact(DisplayName = "Rule order: local 57″ matches the first Zone rule (not the last Fullscreen)")]
     public void RuleOrder_FirstMatchWins_Local()
     {
         var cfg = CfgWithZones();
         var p = ProfWithRules(
-            ZoneRule(GameZoneId, 7680, 2160, useWork: true), // 仅本地 57″
-            FullscreenRule());                                // 任意屏兜底
+            ZoneRule(GameZoneId, 7680, 2160, useWork: true), // Local 57″ only
+            FullscreenRule());                                // Any-monitor fallback
         var mon = Mon(0, 0, 7680, 2160);
         var work = R(0, 0, 7680, 2112);
         var rect = PlacementResolver.ResolveRect(mon, work, R(0, 0, 100, 100), p, cfg);
-        // 首条 Zone+UseWorkArea 生效
+        // The first Zone+UseWorkArea wins
         AssertRect(rect, 0, 0, 5120, 2112);
     }
 
-    [Fact(DisplayName = "规则顺序:VDD 其它分辨率落到末条 Fullscreen 兜底")]
+    [Fact(DisplayName = "Rule order: a different VDD resolution falls to the last Fullscreen fallback")]
     public void RuleOrder_FallbackFullscreen_Vdd()
     {
         var cfg = CfgWithZones();
         var p = ProfWithRules(
             ZoneRule(GameZoneId, 7680, 2160, useWork: true),
             FullscreenRule());
-        var mon = Mon(0, 0, 2560, 1440); // VDD 串流分辨率,首条不命中
+        var mon = Mon(0, 0, 2560, 1440); // VDD streaming resolution; the first rule doesn't match
         var rect = PlacementResolver.ResolveRect(mon, mon, R(0, 0, 100, 100), p, cfg);
         AssertRect(rect, 0, 0, 2560, 1440);
     }
 
-    [Fact(DisplayName = "规则顺序:两条都命中时取靠前那条")]
+    [Fact(DisplayName = "Rule order: when both match, take the earlier one")]
     public void RuleOrder_BothMatch_TakesFirst()
     {
         var cfg = CfgWithZones();
         var p = ProfWithRules(
-            ZoneRule(GameZoneId),     // Monitor 0×0 任意,先命中
-            FullscreenRule());        // 也任意,但在后
+            ZoneRule(GameZoneId),     // Monitor 0×0 (any), matches first
+            FullscreenRule());        // Also any, but later
         var mon = Mon(0, 0, 7680, 2160);
         var rect = PlacementResolver.ResolveRect(mon, mon, R(0, 0, 100, 100), p, cfg);
-        AssertRect(rect, 0, 0, 5120, 2160); // Zone 生效,不是 Fullscreen
+        AssertRect(rect, 0, 0, 5120, 2160); // Zone wins, not Fullscreen
     }
 
-    // ---- Zone 规则但找不到 Zone(脏配置)----
+    // ---- Zone rule but the Zone can't be found (dirty config) ----
 
-    [Fact(DisplayName = "Zone 规则但 LayoutId/ZoneId 找不到 → null(不崩)")]
+    [Fact(DisplayName = "Zone rule but LayoutId/ZoneId not found → null (no crash)")]
     public void Zone_MissingZone_ReturnsNull()
     {
         var p = ProfWithRules(new PlacementRule
@@ -261,9 +261,9 @@ public class ResolveRectTests
         Assert.Null(rect);
     }
 
-    // ---- Offsets 四边叠加 ----
+    // ---- Offsets stacking on all four edges ----
 
-    [Fact(DisplayName = "Offsets:四边偏移分别叠加到 L/T/R/B")]
+    [Fact(DisplayName = "Offsets: each edge offset stacks onto L/T/R/B")]
     public void Offsets_AppliedToAllFourEdges()
     {
         var mon = Mon(0, 0, 1920, 1080);
@@ -274,7 +274,7 @@ public class ResolveRectTests
         AssertRect(rect, 10, 20, 1890, 1040);
     }
 
-    [Fact(DisplayName = "Offsets:Zone 之上叠加偏移")]
+    [Fact(DisplayName = "Offsets: stacks on top of a Zone")]
     public void Offsets_OnTopOfZone()
     {
         var mon = Mon(0, 0, 7680, 2160);
@@ -284,7 +284,7 @@ public class ResolveRectTests
         AssertRect(rect, 5, 0, 5120, 2152);
     }
 
-    [Fact(DisplayName = "Offsets:None 不产出矩形时偏移无作用(仍 null)")]
+    [Fact(DisplayName = "Offsets: no effect when None produces no rect (still null)")]
     public void Offsets_NoEffectWhenNull()
     {
         var mon = Mon(0, 0, 1920, 1080);
@@ -296,34 +296,34 @@ public class ResolveRectTests
 
     // ---- KeepAspectRatio letterbox ----
 
-    [Fact(DisplayName = "KeepAspectRatio:16:9 窗口放进 5120×2160(≈21:9)zone → 等比 3840×2160 居中")]
+    [Fact(DisplayName = "KeepAspectRatio: a 16:9 window into a 5120×2160 (≈21:9) zone → proportional 3840×2160 centered")]
     public void KeepAspectRatio_16x9_Into_UltraWide()
     {
         var mon = Mon(0, 0, 7680, 2160);
         var p = ProfWithRules(ZoneRule(GameZoneId));
         p.KeepAspectRatio = true;
-        // 当前窗口是 16:9(1920×1080)
+        // The current window is 16:9 (1920×1080)
         var cur = R(0, 0, 1920, 1080);
         var rect = PlacementResolver.ResolveRect(mon, mon, cur, p, CfgWithZones());
-        // zone 5120×2160;16:9 等比塞入:高度顶满 2160,宽 = 2160*16/9 = 3840
-        // 居中:left = (5120-3840)/2 = 640
+        // zone 5120×2160; 16:9 fitted proportionally: height fills 2160, width = 2160*16/9 = 3840
+        // centered: left = (5120-3840)/2 = 640
         AssertRect(rect, 640, 0, 4480, 2160);
     }
 
-    [Fact(DisplayName = "KeepAspectRatio:窗口比 zone 更宽 → 宽度顶满,上下黑边")]
+    [Fact(DisplayName = "KeepAspectRatio: window wider than the zone → width fills, black bars top and bottom")]
     public void KeepAspectRatio_WideContent_VerticalLetterbox()
     {
         var mon = Mon(0, 0, 3840, 2160);
         var p = ProfWithRules(FullscreenRule()); // zone = 3840×2160 (16:9)
         p.KeepAspectRatio = true;
-        // 当前窗口是 32:9(3840×1080)——比 16:9 更宽
+        // The current window is 32:9 (3840×1080) — wider than 16:9
         var cur = R(0, 0, 3840, 1080);
         var rect = PlacementResolver.ResolveRect(mon, mon, cur, p, new AppConfig());
-        // 宽度顶满 3840,高 = 3840 * 1080/3840 = 1080;居中 top=(2160-1080)/2=540
+        // width fills 3840, height = 3840 * 1080/3840 = 1080; centered top=(2160-1080)/2=540
         AssertRect(rect, 0, 540, 3840, 1620);
     }
 
-    [Fact(DisplayName = "KeepAspectRatio:同比例窗口 → 充满不变形")]
+    [Fact(DisplayName = "KeepAspectRatio: same-ratio window → fills exactly without distortion")]
     public void KeepAspectRatio_SameRatio_FillsExactly()
     {
         var mon = Mon(0, 0, 3840, 2160);
@@ -334,18 +334,18 @@ public class ResolveRectTests
         AssertRect(rect, 0, 0, 3840, 2160);
     }
 
-    [Fact(DisplayName = "KeepAspectRatio:当前窗口宽高非法(0)时原样返回目标矩形")]
+    [Fact(DisplayName = "KeepAspectRatio: when the current window's width/height is invalid (0), return the target rect unchanged")]
     public void KeepAspectRatio_DegenerateCurrent_ReturnsOuter()
     {
         var mon = Mon(0, 0, 3840, 2160);
         var p = ProfWithRules(FullscreenRule());
         p.KeepAspectRatio = true;
-        var cur = R(0, 0, 0, 0); // 宽高 0
+        var cur = R(0, 0, 0, 0); // width/height 0
         var rect = PlacementResolver.ResolveRect(mon, mon, cur, p, new AppConfig());
         AssertRect(rect, 0, 0, 3840, 2160);
     }
 
-    [Fact(DisplayName = "KeepAspectRatio=false:不做 letterbox,直接铺满")]
+    [Fact(DisplayName = "KeepAspectRatio=false: no letterbox, fills directly")]
     public void KeepAspectRatio_Off_NoLetterbox()
     {
         var mon = Mon(0, 0, 3840, 2160);
@@ -356,20 +356,20 @@ public class ResolveRectTests
         AssertRect(rect, 0, 0, 3840, 2160);
     }
 
-    // ---- 比例换算无累计漂移 ----
+    // ---- Ratio conversion has no cumulative drift ----
 
-    [Fact(DisplayName = "无累计漂移:0.6666... × 7680 经 Round 精确得 5120")]
+    [Fact(DisplayName = "No cumulative drift: 0.6666... × 7680 rounds exactly to 5120")]
     public void NoFloatDrift_TwoThirds_Of_7680()
     {
         var mon = Mon(0, 0, 7680, 2160);
         var p = ProfWithRules(ZoneRule(GameZoneId));
         var rect = PlacementResolver.ResolveRect(mon, mon, R(0, 0, 100, 100), p, CfgWithZones());
         Assert.NotNull(rect);
-        // 右边界精确 5120,不是 5119/5121
+        // Right edge exactly 5120, not 5119/5121
         Assert.Equal(5120, rect!.Value.Right);
     }
 
-    [Fact(DisplayName = "无累计漂移:游戏区 + 副屏区右边界相接无缝/不重叠(5120 | 5120→7680)")]
+    [Fact(DisplayName = "No cumulative drift: game and secondary zones' edges meet seamlessly / don't overlap (5120 | 5120→7680)")]
     public void NoFloatDrift_AdjacentZonesTileExactly()
     {
         var cfg = CfgWithZones();
@@ -381,13 +381,13 @@ public class ResolveRectTests
         var g = PlacementResolver.ResolveRect(mon, mon, R(0, 0, 100, 100), game, cfg)!.Value;
         var s = PlacementResolver.ResolveRect(mon, mon, R(0, 0, 100, 100), side, cfg)!.Value;
 
-        // 游戏区右边界 == 副屏区左边界:无缝平铺、无 1px 缝隙或重叠
+        // Game zone's right edge == secondary zone's left edge: seamless tiling, no 1px gap or overlap
         Assert.Equal(g.Right, s.Left);
         Assert.Equal(5120, g.Right);
-        Assert.Equal(7680, s.Right); // 副屏区一直贴到屏右
+        Assert.Equal(7680, s.Right); // Secondary zone goes all the way to the screen's right
     }
 
-    [Fact(DisplayName = "无累计漂移:三等分屏(各 1/3)右边界 1280/2560/3840 精确")]
+    [Fact(DisplayName = "No cumulative drift: a three-way split (each 1/3) has exact right edges 1280/2560/3840")]
     public void NoFloatDrift_ThirdsOf3840()
     {
         const string L = "L3", Z1 = "z1", Z2 = "z2", Z3 = "z3";
@@ -422,32 +422,32 @@ public class ResolveRectTests
         Assert.Equal((2560, 3840), (r3.Left, r3.Right));
     }
 
-    // ---- MoveOnly:只定位不调尺寸(Unity 固定渲染分辨率游戏) ----
+    // ---- MoveOnly: position only, don't change size (Unity fixed-render-resolution games) ----
 
-    [Fact(DisplayName = "MoveOnly:Zone 命中 → 位置=zone 左上角、尺寸=窗口当前尺寸(不缩放)")]
+    [Fact(DisplayName = "MoveOnly: Zone matches → position=zone top-left, size=window's current size (no scaling)")]
     public void MoveOnly_Zone_PositionAtZoneOrigin_KeepsCurrentSize()
     {
         var mon = Mon(0, 0, 7680, 2160);
         var p = ProfWithRules(ZoneRule(GameZoneId, moveOnly: true));
-        // 游戏窗口当前是 5120×2088(注册表渲染分辨率),恰好不在 zone 左上角
+        // The game window is currently 5120×2088 (registry render resolution), and happens not to be at the zone's top-left
         var cur = R(300, 120, 300 + 5120, 120 + 2088);
         var rect = PlacementResolver.ResolveRect(mon, mon, cur, p, CfgWithZones());
-        // zone 游戏区左上角 = (0,0);尺寸保持 5120×2088
+        // Game-zone top-left = (0,0); size stays 5120×2088
         AssertRect(rect, 0, 0, 5120, 2088);
     }
 
-    [Fact(DisplayName = "MoveOnly:非零原点屏上,位置=zone 左上角(含屏原点),尺寸不变")]
+    [Fact(DisplayName = "MoveOnly: on a non-zero-origin monitor, position=zone top-left (including the monitor origin), size unchanged")]
     public void MoveOnly_NonZeroOrigin_PositionIncludesMonitorOrigin()
     {
-        // 屏在 x=5120,zone 游戏区左上角 = 屏原点 (5120,0)
+        // Monitor at x=5120; game-zone top-left = monitor origin (5120,0)
         var mon = Mon(5120, 0, 7680, 2160);
         var p = ProfWithRules(ZoneRule(GameZoneId, moveOnly: true));
-        var cur = R(9999, 50, 9999 + 5120, 50 + 2088); // 当前乱放
+        var cur = R(9999, 50, 9999 + 5120, 50 + 2088); // Currently placed arbitrarily
         var rect = PlacementResolver.ResolveRect(mon, mon, cur, p, CfgWithZones());
         AssertRect(rect, 5120, 0, 5120 + 5120, 0 + 2088);
     }
 
-    [Fact(DisplayName = "MoveOnly + Offsets:偏移挪动目标左上角,尺寸仍取窗口当前尺寸")]
+    [Fact(DisplayName = "MoveOnly + Offsets: offsets move the target's top-left, size still taken from the window's current size")]
     public void MoveOnly_WithOffsets_OffsetsMoveTopLeftOnly()
     {
         var mon = Mon(0, 0, 7680, 2160);
@@ -455,23 +455,23 @@ public class ResolveRectTests
         p.Offsets = new Offsets { Left = 10, Top = 20, Right = -30, Bottom = -40 };
         var cur = R(0, 0, 5120, 2088);
         var rect = PlacementResolver.ResolveRect(mon, mon, cur, p, CfgWithZones());
-        // zone 左上角 (0,0) 加 Left/Top 偏移 → (10,20);尺寸保持 5120×2088,Right/Bottom 偏移不参与尺寸
+        // Zone top-left (0,0) plus Left/Top offsets → (10,20); size stays 5120×2088, Right/Bottom offsets don't affect size
         AssertRect(rect, 10, 20, 10 + 5120, 20 + 2088);
     }
 
-    [Fact(DisplayName = "MoveOnly + KeepAspectRatio:MoveOnly 优先(不 letterbox,只挪位置)")]
+    [Fact(DisplayName = "MoveOnly + KeepAspectRatio: MoveOnly wins (no letterbox, only move)")]
     public void MoveOnly_TakesPrecedenceOver_KeepAspectRatio()
     {
         var mon = Mon(0, 0, 7680, 2160);
         var p = ProfWithRules(ZoneRule(GameZoneId, moveOnly: true));
-        p.KeepAspectRatio = true; // 同时开,应被 MoveOnly 压制
+        p.KeepAspectRatio = true; // Both on; should be suppressed by MoveOnly
         var cur = R(200, 100, 200 + 5120, 100 + 2088);
         var rect = PlacementResolver.ResolveRect(mon, mon, cur, p, CfgWithZones());
-        // 若 letterbox 生效会得到居中缩放后的矩形;MoveOnly 优先 → 直接 zone 左上角 + 原尺寸
+        // If letterbox applied we'd get a centered, scaled rect; MoveOnly wins → straight to zone top-left + original size
         AssertRect(rect, 0, 0, 5120, 2088);
     }
 
-    [Fact(DisplayName = "MoveOnly + Fullscreen:位置=屏左上角,尺寸保持窗口当前尺寸")]
+    [Fact(DisplayName = "MoveOnly + Fullscreen: position=monitor top-left, size keeps the window's current size")]
     public void MoveOnly_Fullscreen_PositionAtMonitorOrigin()
     {
         var mon = Mon(0, 0, 7680, 2160);

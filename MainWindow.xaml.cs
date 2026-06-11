@@ -15,43 +15,49 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
 
-        // 现代标题栏:把内容延伸进标题栏区(Mica 透到顶),Row0 拖拽区 AppTitleDragRegion 作为可拖拽标题栏。
-        // 右侧系统按钮(最小化/最大化/关闭)由系统自动保留;拖动 / 双击最大化由 SetTitleBar 接管。
-        // 真两行布局:Row0 实体标题栏(自绘汉堡 + 图标 + 标题 + 拖拽区),Row1 才是 NavigationView。
-        // 自绘汉堡在拖拽区之外,故能正常收到 Click(SetTitleBar 元素内的交互控件收不到输入)。
+        // Modern title bar: extend content into the title-bar area (Mica shows through to the top), with
+        // the Row0 drag region AppTitleDragRegion acting as the draggable title bar.
+        // The right-side system buttons (minimize/maximize/close) are kept automatically by the system;
+        // dragging / double-click-to-maximize is handled by SetTitleBar.
+        // A true two-row layout: Row0 is the physical title bar (custom-drawn hamburger + icon + title +
+        // drag region), and Row1 is the NavigationView.
+        // The custom hamburger is outside the drag region, so it receives Click normally (interactive
+        // controls inside a SetTitleBar element don't get input).
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleDragRegion);
         InitTitleBarIcon();
         InitLocalizedAccessibility();
-        // 失活时标题文字变灰,激活时恢复(对标 Win11 设置应用)。
+        // The title text greys out when deactivated and restores when activated (matching the Win11 Settings app).
         Activated += OnActivated;
 
-        // 背景材质:由配置决定(云母 / 云母变体 / 亚克力),WinAppSDK 1.8 + Win11 原生支持,无需 fallback。
-        // NavigationView 的 Pane/内容背景刷在 App.xaml 已设透明,材质得以透出;标题栏延伸后也透云母。
+        // Background material: chosen by config (Mica / Mica Alt / Acrylic), natively supported by
+        // WinAppSDK 1.8 + Win11, no fallback needed.
+        // The NavigationView Pane/content background brushes are set transparent in App.xaml so the
+        // material shows through; after the title bar is extended, Mica shows through there too.
         ApplyBackdrop();
 
-        // 主题(夜间模式):由配置决定(跟随系统 / 浅色 / 深色),实时跟随系统明暗。
+        // Theme (dark mode): chosen by config (follow system / light / dark), tracking the system light/dark in real time.
         ApplyTheme();
 
-        // 配置变化(设置页改材质 / 外部热重载 config.json)→ 切回 UI 线程重新应用。
-        // MainWindow 生命周期 = 应用全程,不退订。
+        // Config change (Settings page changes the material / external config.json hot reload) → marshal
+        // back to the UI thread and re-apply. MainWindow's lifetime = the whole app, so don't unsubscribe.
         ConfigService.Instance.Changed += OnConfigChanged;
 
-        // 窗口左上角 + 任务栏图标。unpackaged 下 ApplicationIcon 不会自动落到 AppWindow,
-        // 显式从输出目录加载(csproj 已配 CopyToOutputDirectory)。
+        // Top-left window + taskbar icon. Unpackaged, ApplicationIcon doesn't flow to AppWindow
+        // automatically, so load it explicitly from the output directory (csproj already sets CopyToOutputDirectory).
         TrySetWindowIcon();
 
-        // Window 没有 Width/Height,用 AppWindow.Resize(物理像素)。
+        // Window has no Width/Height, so use AppWindow.Resize (physical pixels).
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1280, 860));
 
-        // 默认进仪表盘。设 SelectedItem 会触发 SelectionChanged → 由它统一 Navigate。
+        // Default to the dashboard. Setting SelectedItem fires SelectionChanged → which does the Navigate uniformly.
         Nav.SelectedItem = Nav.MenuItems[0];
-        // 兜底:若设选中项未触发导航(已是选中项等),手动进一次。
+        // Fallback: if setting the selected item didn't trigger navigation (already selected, etc.), navigate once manually.
         if (ContentFrame.Content is null)
             ContentFrame.Navigate(typeof(DashboardPage));
     }
 
-    /// <summary>按当前配置设置窗口背景材质。改即生效;须在 UI 线程调用。</summary>
+    /// <summary>Set the window background material from the current config. Takes effect immediately; call on the UI thread.</summary>
     public void ApplyBackdrop()
     {
         SystemBackdrop = ConfigService.Instance.Config.Backdrop switch
@@ -63,10 +69,11 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 按当前配置设置应用主题(夜间模式)。改即生效;须在 UI 线程调用。
-    /// System → ElementTheme.Default:自动跟随系统明暗,并实时响应系统切换。
-    /// ExtendsContentIntoTitleBar 下,右上系统按钮(最小化/最大化/关闭)的前景色不会随 ElementTheme
-    /// 自动适配,这里据最终生效主题显式给 TitleBar 配一组按钮颜色,保证深浅两态都看得清。
+    /// Set the app theme (dark mode) from the current config. Takes effect immediately; call on the UI thread.
+    /// System → ElementTheme.Default: follow the system light/dark automatically and respond to system switches in real time.
+    /// Under ExtendsContentIntoTitleBar, the top-right system buttons' (minimize/maximize/close) foreground
+    /// color doesn't adapt to ElementTheme automatically, so set an explicit set of TitleBar button colors
+    /// from the effective theme here, ensuring they're legible in both light and dark.
     /// </summary>
     public void ApplyTheme()
     {
@@ -76,28 +83,29 @@ public sealed partial class MainWindow : Window
         {
             AppTheme.Light => ElementTheme.Light,
             AppTheme.Dark  => ElementTheme.Dark,
-            _              => ElementTheme.Default, // System:跟随系统,实时响应切换
+            _              => ElementTheme.Default, // System: follow the system, respond to switches in real time
         };
 
         ApplyTitleBarButtonColors(root);
     }
 
     /// <summary>
-    /// 据当前实际主题给标题栏系统按钮上色。System(Default)时按 root.ActualTheme 读出系统实际明暗。
-    /// 浅色主题用深字、深色主题用浅字;hover/pressed 背景用半透明灰阶,与 Win11 观感一致。
+    /// Color the title-bar system buttons from the current effective theme. For System (Default), read
+    /// the actual system light/dark via root.ActualTheme. Light theme uses dark text, dark theme uses
+    /// light text; hover/pressed backgrounds use translucent grays, matching the Win11 look.
     /// </summary>
     private void ApplyTitleBarButtonColors(FrameworkElement root)
     {
         var titleBar = AppWindow.TitleBar;
 
-        // RequestedTheme=Default 时 ActualTheme 反映系统实际明暗;Light/Dark 时即所选值。
+        // With RequestedTheme=Default, ActualTheme reflects the actual system light/dark; for Light/Dark it's the chosen value.
         bool dark = root.ActualTheme == ElementTheme.Dark;
 
         var fg     = dark ? Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF)
                           : Windows.UI.Color.FromArgb(0xFF, 0x00, 0x00, 0x00);
         var disabled = dark ? Windows.UI.Color.FromArgb(0xFF, 0x6E, 0x6E, 0x6E)
                             : Windows.UI.Color.FromArgb(0xFF, 0x9E, 0x9E, 0x9E);
-        // hover/pressed 用主题字色的低透明度叠色(深色态浅灰、浅色态深灰)。
+        // hover/pressed use a low-opacity overlay of the theme text color (light gray in dark mode, dark gray in light mode).
         var hoverBg   = dark ? Windows.UI.Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF)
                              : Windows.UI.Color.FromArgb(0x14, 0x00, 0x00, 0x00);
         var pressedBg = dark ? Windows.UI.Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF)
@@ -115,13 +123,14 @@ public sealed partial class MainWindow : Window
         titleBar.ButtonPressedBackgroundColor  = pressedBg;
     }
 
-    /// <summary>配置变更回调(任意线程)。切回 UI 线程重新应用材质与主题。</summary>
+    /// <summary>Config-change callback (any thread). Marshal back to the UI thread and re-apply the material and theme.</summary>
     private void OnConfigChanged()
         => DispatcherQueue.TryEnqueue(() => { ApplyBackdrop(); ApplyTheme(); });
 
     /// <summary>
-    /// 给自绘汉堡按钮设本地化的 tooltip 与无障碍名(从 MainWindow.resw 经 Loc 取)。
-    /// 走代码而非 XAML x:Uid:附加属性(ToolTipService/AutomationProperties)的 resw x:Uid 在 MRT Core 下较脆。
+    /// Set the localized tooltip and accessibility name on the custom-drawn hamburger button (fetched
+    /// from MainWindow.resw via Loc). Done in code rather than XAML x:Uid: resw x:Uid for attached
+    /// properties (ToolTipService/AutomationProperties) is brittle under MRT Core.
     /// </summary>
     private void InitLocalizedAccessibility()
     {
@@ -130,7 +139,7 @@ public sealed partial class MainWindow : Window
         ToolTipService.SetToolTip(PaneToggleButton, tip);
     }
 
-    /// <summary>把 Assets\reframe.ico 加载进标题栏左侧 16px 图标;缺文件时静默留空。</summary>
+    /// <summary>Load Assets\reframe.ico into the 16px icon at the left of the title bar; leave it blank silently if the file is missing.</summary>
     private void InitTitleBarIcon()
     {
         try
@@ -139,10 +148,10 @@ public sealed partial class MainWindow : Window
             if (System.IO.File.Exists(ico))
                 TitleBarIcon.Source = new BitmapImage(new System.Uri(ico));
         }
-        catch { /* 图标非关键,忽略 */ }
+        catch { /* the icon is non-critical, ignore */ }
     }
 
-    /// <summary>窗口失活时标题文字变灰,重新激活时恢复(Win11 标准观感)。</summary>
+    /// <summary>The title text greys out when the window is deactivated and restores when re-activated (the standard Win11 look).</summary>
     private void OnActivated(object sender, WindowActivatedEventArgs args)
     {
         AppTitleText.Foreground = args.WindowActivationState == WindowActivationState.Deactivated
@@ -150,7 +159,7 @@ public sealed partial class MainWindow : Window
             : (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"];
     }
 
-    /// <summary>Row0 自绘汉堡:开/合 NavigationView 侧栏(替代已隐藏的自带 PaneToggleButton)。</summary>
+    /// <summary>Row0 custom-drawn hamburger: open/close the NavigationView pane (replacing the hidden built-in PaneToggleButton).</summary>
     private void PaneToggle_Click(object sender, RoutedEventArgs e)
         => Nav.IsPaneOpen = !Nav.IsPaneOpen;
 
@@ -171,7 +180,7 @@ public sealed partial class MainWindow : Window
             ContentFrame.Navigate(pageType);
     }
 
-    /// <summary>从输出目录的 Assets\reframe.ico 设窗口图标;缺文件时静默跳过(不阻断启动)。</summary>
+    /// <summary>Set the window icon from Assets\reframe.ico in the output directory; skip silently if the file is missing (don't block startup).</summary>
     private void TrySetWindowIcon()
     {
         try
@@ -180,6 +189,6 @@ public sealed partial class MainWindow : Window
             if (System.IO.File.Exists(ico))
                 AppWindow.SetIcon(ico);
         }
-        catch { /* 图标非关键,忽略 */ }
+        catch { /* the icon is non-critical, ignore */ }
     }
 }

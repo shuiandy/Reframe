@@ -17,98 +17,94 @@
         <ScrollViewer Grid.Row="0" Padding="24,24,24,12">
             <StackPanel Spacing="20" MaxWidth="820" HorizontalAlignment="Left">
 
-                <!-- 标题 -->
+                <!-- Title -->
                 <StackPanel Orientation="Horizontal" Spacing="12">
-                    <Button Click="Back_Click" ToolTipService.ToolTip="返回">
+                    <!-- Tooltip set from code-behind (Loc.T) — attached-property x:Uid is brittle in MRT Core. -->
+                    <Button x:Name="BackButton" Click="Back_Click">
                         <FontIcon Glyph="&#xE72B;" FontSize="14"/>
                     </Button>
-                    <TextBlock Text="编辑配置文件" Style="{ThemeResource TitleTextBlockStyle}"
+                    <TextBlock x:Uid="/ProfileEditorPage/Title" Style="{ThemeResource TitleTextBlockStyle}"
                                VerticalAlignment="Center"/>
                 </StackPanel>
 
-                <!-- 基本区 -->
+                <!-- Basic section -->
                 <StackPanel Spacing="12">
-                    <TextBlock Text="基本" Style="{ThemeResource SubtitleTextBlockStyle}"/>
-                    <TextBox x:Name="NameBox" Header="名称" Width="360"
+                    <TextBlock x:Uid="/ProfileEditorPage/BasicHeader" Style="{ThemeResource SubtitleTextBlockStyle}"/>
+                    <TextBox x:Name="NameBox" x:Uid="/ProfileEditorPage/NameBox" Width="360"
                              HorizontalAlignment="Left"
                              TextChanged="NameBox_TextChanged"/>
                     <StackPanel Orientation="Horizontal" Spacing="12">
-                        <ComboBox x:Name="MatchKindBox" Header="匹配类型" Width="200"
+                        <ComboBox x:Name="MatchKindBox" x:Uid="/ProfileEditorPage/MatchKindBox" Width="200"
                                   SelectionChanged="MatchKindBox_SelectionChanged">
-                            <ComboBoxItem Content="进程名"/>
-                            <ComboBoxItem Content="窗口标题(包含)"/>
-                            <ComboBoxItem Content="标题正则"/>
+                            <ComboBoxItem x:Uid="/ProfileEditorPage/MatchKindProcess"/>
+                            <ComboBoxItem x:Uid="/ProfileEditorPage/MatchKindTitle"/>
+                            <ComboBoxItem x:Uid="/ProfileEditorPage/MatchKindTitleRegex"/>
                         </ComboBox>
-                        <TextBox x:Name="MatchValueBox" Header="匹配文本" Width="360"
+                        <TextBox x:Name="MatchValueBox" x:Uid="/ProfileEditorPage/MatchValueBox" Width="360"
                                  TextChanged="MatchValueBox_TextChanged"/>
                     </StackPanel>
 
-                    <!-- 可执行文件(图标来源):反作弊游戏读不到 MainModule 时手动指定,IconCache 直接从此 exe 提取图标 -->
+                    <!-- Executable (icon source): manually specified when an anti-cheat game's MainModule can't be read; IconCache extracts the icon straight from this exe. -->
                     <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Bottom">
-                        <TextBox x:Name="ExePathBox" Header="可执行文件(图标来源)" Width="480"
-                                 PlaceholderText="例如 D:\Games\Zenless Zone Zero\ZenlessZoneZero.exe"
+                        <TextBox x:Name="ExePathBox" x:Uid="/ProfileEditorPage/ExePathBox" Width="480"
                                  TextChanged="ExePathBox_TextChanged"/>
-                        <Button x:Name="BrowseExeButton" Content="浏览…" Click="BrowseExe_Click"
+                        <Button x:Name="BrowseExeButton" x:Uid="/ProfileEditorPage/BrowseExeButton" Click="BrowseExe_Click"
                                 VerticalAlignment="Bottom"/>
                     </StackPanel>
-                    <TextBlock Text="反作弊保护的游戏(绝区零/原神等)可能取不到图标,可在此手动指定 exe 作为图标来源。"
+                    <TextBlock x:Uid="/ProfileEditorPage/ExePathHint"
                                Opacity="0.6" Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"/>
 
-                    <!-- 启动命令(可选):一键启动用。空则直接运行可执行文件;可填启动器命令或 URI(如 hoyoplay://) -->
-                    <TextBox x:Name="LaunchCommandBox" Header="启动命令(可选)" Width="480"
+                    <!-- Launch command (optional): for one-click launch. Empty = run the executable directly; can be a launcher command or URI (e.g. hoyoplay://). -->
+                    <TextBox x:Name="LaunchCommandBox" x:Uid="/ProfileEditorPage/LaunchCommandBox" Width="480"
                              HorizontalAlignment="Left"
-                             PlaceholderText="留空则直接运行可执行文件;可填启动器命令或 URI"
                              TextChanged="LaunchCommandBox_TextChanged"/>
                 </StackPanel>
 
-                <!-- 启动分辨率预设(Unity) -->
-                <Expander x:Name="ResolutionExpander" Header="启动分辨率预设 (Unity)" IsExpanded="False"
+                <!-- Startup resolution preset (Unity). ToggleSwitch On/OffContent are set from code-behind (Common/On|Off) — see note in code-behind. -->
+                <Expander x:Name="ResolutionExpander" x:Uid="/ProfileEditorPage/ResolutionExpander" IsExpanded="False"
                           HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                     <StackPanel Spacing="12" Padding="0,8,0,0">
-                        <TextBlock Text="适用于渲染分辨率钉死在注册表的 Unity 游戏(如原神)。启动游戏前生效;游戏运行中修改无效。"
+                        <TextBlock x:Uid="/ProfileEditorPage/ResolutionDesc"
                                    Opacity="0.7" TextWrapping="Wrap"
                                    Style="{ThemeResource CaptionTextBlockStyle}"/>
-                        <ToggleSwitch x:Name="ResEnabledToggle" Header="启用启动分辨率预设"
-                                      OnContent="开" OffContent="关" Toggled="ResEnabled_Toggled"/>
-                        <TextBox x:Name="ResPathBox" Header="注册表路径 (HKCU 下相对路径)" Width="420"
+                        <ToggleSwitch x:Name="ResEnabledToggle" x:Uid="/ProfileEditorPage/ResEnabledToggle"
+                                      Toggled="ResEnabled_Toggled"/>
+                        <TextBox x:Name="ResPathBox" x:Uid="/ProfileEditorPage/ResPathBox" Width="420"
                                  HorizontalAlignment="Left"
-                                 PlaceholderText="Software\miHoYo\原神"
                                  TextChanged="ResPath_TextChanged"/>
                         <StackPanel Orientation="Horizontal" Spacing="12">
-                            <NumberBox x:Name="ResWidthBox" Header="宽" Width="160"
+                            <NumberBox x:Name="ResWidthBox" x:Uid="/ProfileEditorPage/ResWidthBox" Width="160"
                                        Minimum="0" Maximum="32768" SmallChange="1" LargeChange="100"
                                        SpinButtonPlacementMode="Compact"
                                        ValueChanged="ResSize_ValueChanged"/>
-                            <NumberBox x:Name="ResHeightBox" Header="高" Width="160"
+                            <NumberBox x:Name="ResHeightBox" x:Uid="/ProfileEditorPage/ResHeightBox" Width="160"
                                        Minimum="0" Maximum="32768" SmallChange="1" LargeChange="100"
                                        SpinButtonPlacementMode="Compact"
                                        ValueChanged="ResSize_ValueChanged"/>
                         </StackPanel>
-                        <CheckBox x:Name="ResWindowedCheck" Content="窗口化 (Is Fullscreen mode = 0)"
+                        <CheckBox x:Name="ResWindowedCheck" x:Uid="/ProfileEditorPage/ResWindowedCheck"
                                   Checked="ResWindowed_Changed" Unchecked="ResWindowed_Changed"/>
                     </StackPanel>
                 </Expander>
 
-                <!-- 无边框区 -->
+                <!-- Borderless section -->
                 <StackPanel Spacing="12">
-                    <TextBlock Text="无边框" Style="{ThemeResource SubtitleTextBlockStyle}"/>
-                    <ToggleSwitch x:Name="BorderlessToggle" Header="去除窗口边框"
-                                  OnContent="开启" OffContent="关闭"
+                    <TextBlock x:Uid="/ProfileEditorPage/BorderlessHeader" Style="{ThemeResource SubtitleTextBlockStyle}"/>
+                    <ToggleSwitch x:Name="BorderlessToggle" x:Uid="/ProfileEditorPage/BorderlessToggle"
                                   Toggled="BorderlessToggle_Toggled"/>
-                    <NumberBox x:Name="DelayBox" Header="处理延迟 (毫秒)" Width="240"
+                    <NumberBox x:Name="DelayBox" x:Uid="/ProfileEditorPage/DelayBox" Width="240"
                                HorizontalAlignment="Left"
                                Minimum="0" Maximum="60000" SmallChange="100" LargeChange="500"
                                SpinButtonPlacementMode="Compact"
-                               Description="游戏启动期会重建窗口,建议 1000"
                                ValueChanged="DelayBox_ValueChanged"/>
                 </StackPanel>
 
-                <!-- 规则表 -->
+                <!-- Rules list -->
                 <StackPanel Spacing="12">
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                        <TextBlock Text="规则" Style="{ThemeResource SubtitleTextBlockStyle}"
+                        <TextBlock x:Uid="/ProfileEditorPage/RulesHeader" Style="{ThemeResource SubtitleTextBlockStyle}"
                                    VerticalAlignment="Center"/>
-                        <TextBlock Text="(自上而下,第一条命中当前显示器的规则生效)"
+                        <TextBlock x:Uid="/ProfileEditorPage/RulesHint"
                                    Opacity="0.6" VerticalAlignment="Center"
                                    Style="{ThemeResource CaptionTextBlockStyle}"/>
                     </StackPanel>
@@ -118,64 +114,64 @@
                     <Button Click="AddRule_Click" HorizontalAlignment="Left">
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <FontIcon Glyph="&#xE710;" FontSize="14"/>
-                            <TextBlock Text="添加规则"/>
+                            <TextBlock x:Uid="/ProfileEditorPage/AddRuleButton"/>
                         </StackPanel>
                     </Button>
                 </StackPanel>
 
-                <!-- 高级区 -->
-                <Expander x:Name="AdvancedExpander" Header="高级" IsExpanded="False"
+                <!-- Advanced section. ToggleSwitch On/OffContent are set from code-behind (Common/On|Off). -->
+                <Expander x:Name="AdvancedExpander" x:Uid="/ProfileEditorPage/AdvancedExpander" IsExpanded="False"
                           HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                     <StackPanel Spacing="16" Padding="0,8,0,0">
                         <StackPanel Spacing="8">
-                            <TextBlock Text="四边偏移 (像素)" Style="{ThemeResource BodyStrongTextBlockStyle}"/>
-                            <TextBlock Text="施加在最终矩形上的微调。" Opacity="0.6"
+                            <TextBlock x:Uid="/ProfileEditorPage/OffsetsHeader" Style="{ThemeResource BodyStrongTextBlockStyle}"/>
+                            <TextBlock x:Uid="/ProfileEditorPage/OffsetsDesc" Opacity="0.6"
                                        Style="{ThemeResource CaptionTextBlockStyle}"/>
                             <StackPanel Orientation="Horizontal" Spacing="12">
-                                <NumberBox x:Name="OffLeftBox" Header="左" Width="120"
+                                <NumberBox x:Name="OffLeftBox" x:Uid="/ProfileEditorPage/OffLeftBox" Width="120"
                                            SpinButtonPlacementMode="Compact"
                                            ValueChanged="Offset_ValueChanged"/>
-                                <NumberBox x:Name="OffTopBox" Header="上" Width="120"
+                                <NumberBox x:Name="OffTopBox" x:Uid="/ProfileEditorPage/OffTopBox" Width="120"
                                            SpinButtonPlacementMode="Compact"
                                            ValueChanged="Offset_ValueChanged"/>
-                                <NumberBox x:Name="OffRightBox" Header="右" Width="120"
+                                <NumberBox x:Name="OffRightBox" x:Uid="/ProfileEditorPage/OffRightBox" Width="120"
                                            SpinButtonPlacementMode="Compact"
                                            ValueChanged="Offset_ValueChanged"/>
-                                <NumberBox x:Name="OffBottomBox" Header="下" Width="120"
+                                <NumberBox x:Name="OffBottomBox" x:Uid="/ProfileEditorPage/OffBottomBox" Width="120"
                                            SpinButtonPlacementMode="Compact"
                                            ValueChanged="Offset_ValueChanged"/>
                             </StackPanel>
                         </StackPanel>
 
                         <StackPanel Spacing="8">
-                            <TextBlock Text="附加行为" Style="{ThemeResource BodyStrongTextBlockStyle}"/>
-                            <ToggleSwitch x:Name="TopmostToggle" Header="始终置顶"
-                                          OnContent="开" OffContent="关" Toggled="M3Toggle_Toggled"/>
-                            <ToggleSwitch x:Name="AspectToggle" Header="保持宽高比"
-                                          OnContent="开" OffContent="关" Toggled="M3Toggle_Toggled"/>
-                            <ToggleSwitch x:Name="MuteToggle" Header="后台静音"
-                                          OnContent="开" OffContent="关" Toggled="M3Toggle_Toggled"/>
-                            <ToggleSwitch x:Name="ClipToggle" Header="光标限制在窗口内"
-                                          OnContent="开" OffContent="关" Toggled="M3Toggle_Toggled"/>
-                            <!-- 唯一尚未被引擎消费的开关:如实存盘,但当前不生效。 -->
-                            <ToggleSwitch x:Name="ClientToggle" Header="保持客户区大小 (暂未实装)"
-                                          OnContent="开" OffContent="关" Toggled="M3Toggle_Toggled"/>
+                            <TextBlock x:Uid="/ProfileEditorPage/ExtraBehaviorHeader" Style="{ThemeResource BodyStrongTextBlockStyle}"/>
+                            <ToggleSwitch x:Name="TopmostToggle" x:Uid="/ProfileEditorPage/TopmostToggle"
+                                          Toggled="M3Toggle_Toggled"/>
+                            <ToggleSwitch x:Name="AspectToggle" x:Uid="/ProfileEditorPage/AspectToggle"
+                                          Toggled="M3Toggle_Toggled"/>
+                            <ToggleSwitch x:Name="MuteToggle" x:Uid="/ProfileEditorPage/MuteToggle"
+                                          Toggled="M3Toggle_Toggled"/>
+                            <ToggleSwitch x:Name="ClipToggle" x:Uid="/ProfileEditorPage/ClipToggle"
+                                          Toggled="M3Toggle_Toggled"/>
+                            <!-- The only toggle the engine doesn't consume yet: persisted faithfully, but currently has no effect. -->
+                            <ToggleSwitch x:Name="ClientToggle" x:Uid="/ProfileEditorPage/ClientToggle"
+                                          Toggled="M3Toggle_Toggled"/>
                         </StackPanel>
                     </StackPanel>
                 </Expander>
             </StackPanel>
         </ScrollViewer>
 
-        <!-- 底部操作栏 -->
+        <!-- Bottom action bar -->
         <Border Grid.Row="1" BorderThickness="0,1,0,0"
                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                 Padding="24,12">
             <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
-                <TextBlock x:Name="MissingHint" Text="未找到该配置文件。"
+                <TextBlock x:Name="MissingHint" x:Uid="/ProfileEditorPage/MissingHint"
                            Foreground="{ThemeResource SystemFillColorCautionBrush}"
                            VerticalAlignment="Center" Visibility="Collapsed"/>
-                <Button x:Name="CancelButton" Content="取消" Click="Cancel_Click"/>
-                <Button x:Name="SaveButton" Content="保存" Style="{ThemeResource AccentButtonStyle}"
+                <Button x:Name="CancelButton" x:Uid="/ProfileEditorPage/CancelButton" Click="Cancel_Click"/>
+                <Button x:Name="SaveButton" x:Uid="/ProfileEditorPage/SaveButton" Style="{ThemeResource AccentButtonStyle}"
                         Click="Save_Click"/>
             </StackPanel>
         </Border>

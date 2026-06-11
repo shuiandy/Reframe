@@ -15,30 +15,30 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- 标题行 -->
-        <TextBlock Grid.Row="0" Text="编辑布局" Style="{ThemeResource TitleTextBlockStyle}"/>
+        <!-- Title row -->
+        <TextBlock Grid.Row="0" x:Uid="/LayoutEditorPage/Title" Style="{ThemeResource TitleTextBlockStyle}"/>
 
-        <!-- 工具栏 -->
+        <!-- Toolbar -->
         <StackPanel Grid.Row="1" Orientation="Vertical" Spacing="8">
             <StackPanel Orientation="Horizontal" Spacing="12">
                 <StackPanel Orientation="Vertical" Spacing="2">
-                    <TextBlock Text="名称" Style="{ThemeResource CaptionTextBlockStyle}"/>
+                    <TextBlock x:Uid="/LayoutEditorPage/NameLabel" Style="{ThemeResource CaptionTextBlockStyle}"/>
                     <TextBox x:Name="NameBox" Width="220" TextChanged="NameBox_TextChanged"/>
                 </StackPanel>
                 <StackPanel Orientation="Vertical" Spacing="2">
-                    <TextBlock Text="参考分辨率" Style="{ThemeResource CaptionTextBlockStyle}"/>
+                    <TextBlock x:Uid="/LayoutEditorPage/RefResLabel" Style="{ThemeResource CaptionTextBlockStyle}"/>
                     <ComboBox x:Name="MonitorCombo" Width="240"
-                              PlaceholderText="选择显示器或手输"
+                              x:Uid="/LayoutEditorPage/MonitorCombo"
                               SelectionChanged="MonitorCombo_SelectionChanged"/>
                 </StackPanel>
                 <StackPanel Orientation="Vertical" Spacing="2">
-                    <TextBlock Text="宽" Style="{ThemeResource CaptionTextBlockStyle}"/>
+                    <TextBlock x:Uid="/LayoutEditorPage/WidthLabel" Style="{ThemeResource CaptionTextBlockStyle}"/>
                     <NumberBox x:Name="RefWidthBox" Width="110"
                                SpinButtonPlacementMode="Compact" Minimum="1" Maximum="61440"
                                ValueChanged="RefSize_ValueChanged"/>
                 </StackPanel>
                 <StackPanel Orientation="Vertical" Spacing="2">
-                    <TextBlock Text="高" Style="{ThemeResource CaptionTextBlockStyle}"/>
+                    <TextBlock x:Uid="/LayoutEditorPage/HeightLabel" Style="{ThemeResource CaptionTextBlockStyle}"/>
                     <NumberBox x:Name="RefHeightBox" Width="110"
                                SpinButtonPlacementMode="Compact" Minimum="1" Maximum="34560"
                                ValueChanged="RefSize_ValueChanged"/>
@@ -46,30 +46,31 @@
             </StackPanel>
 
             <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock Text="预设模板:" VerticalAlignment="Center"
+                <TextBlock x:Uid="/LayoutEditorPage/PresetLabel" VerticalAlignment="Center"
                            Style="{ThemeResource CaptionTextBlockStyle}"/>
-                <Button Content="左右二等分" Tag="half" Click="Preset_Click"/>
-                <Button Content="三等分" Tag="thirds" Click="Preset_Click"/>
-                <Button Content="左⅔+右⅓" Tag="twoThirds" Click="Preset_Click"/>
-                <Button Content="16:9 居中" Tag="center169" Click="Preset_Click"/>
-                <Button Content="21:9 居左" Tag="left219" Click="Preset_Click"/>
+                <Button x:Uid="/LayoutEditorPage/PresetHalf" Tag="half" Click="Preset_Click"/>
+                <Button x:Uid="/LayoutEditorPage/PresetThirds" Tag="thirds" Click="Preset_Click"/>
+                <Button x:Uid="/LayoutEditorPage/PresetTwoThirds" Tag="twoThirds" Click="Preset_Click"/>
+                <Button x:Uid="/LayoutEditorPage/PresetCenter169" Tag="center169" Click="Preset_Click"/>
+                <Button x:Uid="/LayoutEditorPage/PresetLeft219" Tag="left219" Click="Preset_Click"/>
                 <AppBarSeparator/>
-                <Button Content="添加分区" Click="AddZone_Click">
+                <Button x:Uid="/LayoutEditorPage/AddZoneButton" Click="AddZone_Click">
                     <ToolTipService.ToolTip>
-                        <TextBlock Text="在画布中央添加一个新分区"/>
+                        <TextBlock x:Uid="/LayoutEditorPage/AddZoneTip"/>
                     </ToolTipService.ToolTip>
                 </Button>
             </StackPanel>
         </StackPanel>
 
-        <!-- 主体:左画布 + 右属性面板 -->
+        <!-- Body: canvas on the left + property panel on the right -->
         <Grid Grid.Row="2" ColumnSpacing="16">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <!-- 画布容器:用满可用宽度,画布高度按参考宽高比决定,容器随之收缩 -->
+            <!-- Canvas host: fills the available width; the canvas height follows the reference aspect
+                 ratio and the host shrinks to fit -->
             <Border Grid.Column="0"
                     x:Name="CanvasHost"
                     Background="{ThemeResource LayerFillColorDefaultBrush}"
@@ -79,10 +80,12 @@
                     Padding="16"
                     VerticalAlignment="Top"
                     SizeChanged="CanvasHost_SizeChanged">
-                <!-- 画布:背景框 + zone 层 + 对齐参考线层。尺寸由代码按可用宽度与宽高比设定。 -->
-                <!-- 有意为之:画布底色保持深色(#101418),它模拟的是物理屏幕,屏幕是黑的;
-                     浅色主题下也不随主题翻白,否则会误导用户对所摆区域的认知。
-                     描边属容器 chrome 而非屏幕内容,改用 ThemeResource 随主题适配。 -->
+                <!-- Canvas: background frame + zone layer + alignment-guide layer. Its size is set from
+                     code based on the available width and the aspect ratio. -->
+                <!-- Intentional: the canvas backdrop stays dark (#101418) because it simulates the
+                     physical screen, which is black; it must not turn white under the light theme,
+                     which would mislead the user about the area they are placing. The border is
+                     container chrome rather than screen content, so it uses a ThemeResource to adapt. -->
                 <Border x:Name="CanvasFrame"
                         HorizontalAlignment="Center"
                         Background="#101418"
@@ -94,7 +97,7 @@
                 </Border>
             </Border>
 
-            <!-- 属性面板 -->
+            <!-- Property panel -->
             <Border Grid.Column="1" Width="280"
                     Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
@@ -102,11 +105,11 @@
                     CornerRadius="6"
                     Padding="16">
                 <StackPanel Spacing="12">
-                    <TextBlock Text="分区属性" Style="{ThemeResource BodyStrongTextBlockStyle}"/>
+                    <TextBlock x:Uid="/LayoutEditorPage/PropHeader" Style="{ThemeResource BodyStrongTextBlockStyle}"/>
 
                     <StackPanel x:Name="PropPanel" Spacing="10" Visibility="Collapsed">
                         <StackPanel Spacing="2">
-                            <TextBlock Text="名称" Style="{ThemeResource CaptionTextBlockStyle}"/>
+                            <TextBlock x:Uid="/LayoutEditorPage/ZoneNameLabel" Style="{ThemeResource CaptionTextBlockStyle}"/>
                             <TextBox x:Name="ZoneNameBox" TextChanged="ZoneNameBox_TextChanged"/>
                         </StackPanel>
                         <Grid ColumnSpacing="8" RowSpacing="8">
@@ -119,26 +122,26 @@
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
                             <StackPanel Grid.Row="0" Grid.Column="0" Spacing="2">
-                                <TextBlock Text="X (px)" Style="{ThemeResource CaptionTextBlockStyle}"/>
+                                <TextBlock x:Uid="/LayoutEditorPage/ZoneXLabel" Style="{ThemeResource CaptionTextBlockStyle}"/>
                                 <NumberBox x:Name="ZoneXBox" Minimum="0" ValueChanged="ZonePx_ValueChanged"/>
                             </StackPanel>
                             <StackPanel Grid.Row="0" Grid.Column="1" Spacing="2">
-                                <TextBlock Text="Y (px)" Style="{ThemeResource CaptionTextBlockStyle}"/>
+                                <TextBlock x:Uid="/LayoutEditorPage/ZoneYLabel" Style="{ThemeResource CaptionTextBlockStyle}"/>
                                 <NumberBox x:Name="ZoneYBox" Minimum="0" ValueChanged="ZonePx_ValueChanged"/>
                             </StackPanel>
                             <StackPanel Grid.Row="1" Grid.Column="0" Spacing="2">
-                                <TextBlock Text="宽 (px)" Style="{ThemeResource CaptionTextBlockStyle}"/>
+                                <TextBlock x:Uid="/LayoutEditorPage/ZoneWLabel" Style="{ThemeResource CaptionTextBlockStyle}"/>
                                 <NumberBox x:Name="ZoneWBox" Minimum="1" ValueChanged="ZonePx_ValueChanged"/>
                             </StackPanel>
                             <StackPanel Grid.Row="1" Grid.Column="1" Spacing="2">
-                                <TextBlock Text="高 (px)" Style="{ThemeResource CaptionTextBlockStyle}"/>
+                                <TextBlock x:Uid="/LayoutEditorPage/ZoneHLabel" Style="{ThemeResource CaptionTextBlockStyle}"/>
                                 <NumberBox x:Name="ZoneHBox" Minimum="1" ValueChanged="ZonePx_ValueChanged"/>
                             </StackPanel>
                         </Grid>
                         <TextBlock x:Name="ZoneRatioText"
                                    Style="{ThemeResource CaptionTextBlockStyle}"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                        <Button Content="删除此分区" Click="DeleteZone_Click">
+                        <Button x:Uid="/LayoutEditorPage/DeleteZoneButton" Click="DeleteZone_Click">
                             <Button.Resources>
                                 <ResourceDictionary>
                                     <StaticResource x:Key="ButtonForeground" ResourceKey="SystemFillColorCriticalBrush"/>
@@ -148,7 +151,7 @@
                     </StackPanel>
 
                     <TextBlock x:Name="NoSelHint"
-                               Text="在画布中点选一个分区以编辑其属性。"
+                               x:Uid="/LayoutEditorPage/NoSelHint"
                                TextWrapping="Wrap"
                                Style="{ThemeResource CaptionTextBlockStyle}"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
@@ -156,10 +159,10 @@
             </Border>
         </Grid>
 
-        <!-- 底部按钮 -->
+        <!-- Bottom buttons -->
         <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-            <Button Content="取消" Click="Cancel_Click"/>
-            <Button Content="保存" Style="{ThemeResource AccentButtonStyle}" Click="Save_Click"/>
+            <Button x:Uid="/LayoutEditorPage/CancelButton" Click="Cancel_Click"/>
+            <Button x:Uid="/LayoutEditorPage/SaveButton" Style="{ThemeResource AccentButtonStyle}" Click="Save_Click"/>
         </StackPanel>
     </Grid>
 </Page>

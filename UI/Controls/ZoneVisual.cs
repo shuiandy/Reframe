@@ -10,22 +10,23 @@ using Windows.UI;
 namespace Reframe.UI.Controls;
 
 /// <summary>
-/// 编辑器画布上的一个分区视觉:可拖动的本体 + 名称/像素标签 + 8 个缩放手柄。
-/// 几何状态以 Zone 的 0..1 比例为权威;交互时在画布像素空间计算,结束/进行中写回比例。
-/// 取整只发生在像素标签显示,比例本身保持 double 不漂移。
+/// The visual for one zone on the editor canvas: a draggable body + name/pixel labels + 8 resize handles.
+/// Geometry is authoritative as the Zone's 0..1 ratios; interaction computes in canvas-pixel space and
+/// writes the ratios back on completion / in progress. Rounding happens only in the pixel label; the
+/// ratios themselves stay double and don't drift.
 /// </summary>
 internal sealed class ZoneVisual
 {
     private readonly LayoutEditorPage _page;
     private readonly int _index;
 
-    // 本体既是色块也是移动手柄(Thumb 自带 DragDelta,delta 为 DIP)。
+    // The body is both the color block and the move handle (Thumb provides DragDelta; delta is in DIP).
     private readonly Thumb _body = new();
     private readonly TextBlock _nameLabel = new();
     private readonly TextBlock _sizeLabel = new();
     private readonly List<Thumb> _handles = new();
 
-    // 拖拽期间的画布像素矩形(权威值在 Zone 比例,这里是临时工作值)。
+    // The canvas-pixel rect during a drag (authoritative value is the Zone ratios; this is a temp working value).
     private double _l, _t, _w, _h;
 
     public Zone Zone { get; }
@@ -49,14 +50,14 @@ internal sealed class ZoneVisual
         foreach (var h in _handles) canvas.Children.Add(h);
     }
 
-    // ---------- 构建本体 ----------
+    // ---------- Build the body ----------
     private void BuildBody()
     {
         var fill = new SolidColorBrush(ZoneColors.Fill(_index, 0x55));
         var stroke = new SolidColorBrush(ZoneColors.Stroke(_index));
 
-        // 用一个模板:Thumb 内部就是个矩形面板。WinUI Thumb 默认有视觉,
-        // 这里替换成自定义,避免默认按钮外观。
+        // Use a template whose interior is just a rectangle panel. WinUI's Thumb has a default visual,
+        // replaced here with a custom one to avoid the default button look.
         _body.Template = BuildBodyTemplate();
         _body.Background = fill;
         _body.BorderBrush = stroke;
@@ -65,7 +66,7 @@ internal sealed class ZoneVisual
         _body.DragStarted += (_, _) => OnDragStart();
         _body.DragDelta += Body_DragDelta;
         _body.DragCompleted += (_, _) => OnDragEnd();
-        // 点击本体即选中。
+        // Clicking the body selects it.
         _body.PointerPressed += (_, _) => _page.SelectZone(Zone);
 
         _nameLabel.Foreground = new SolidColorBrush(Colors.White);
@@ -80,7 +81,7 @@ internal sealed class ZoneVisual
 
     private static ControlTemplate BuildBodyTemplate()
     {
-        // 边框色走 TemplateBinding,选中时直接改 Thumb.BorderBrush 即可,无需 GetTemplateChild。
+        // The border color uses TemplateBinding, so selection just sets Thumb.BorderBrush — no GetTemplateChild needed.
         string xaml = @"
 <ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'
                  TargetType='Thumb'>
@@ -91,8 +92,8 @@ internal sealed class ZoneVisual
         return (ControlTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load(xaml);
     }
 
-    // ---------- 构建 8 个手柄 ----------
-    // 方位:0=NW 1=N 2=NE 3=E 4=SE 5=S 6=SW 7=W
+    // ---------- Build the 8 handles ----------
+    // Directions: 0=NW 1=N 2=NE 3=E 4=SE 5=S 6=SW 7=W
     private void BuildHandles()
     {
         for (int dir = 0; dir < 8; dir++)
@@ -137,12 +138,13 @@ internal sealed class ZoneVisual
             1 or 5 => Microsoft.UI.Input.InputSystemCursorShape.SizeNorthSouth,
             _      => Microsoft.UI.Input.InputSystemCursorShape.SizeWestEast,
         };
-        // Thumb 没有公开 ProtectedCursor,用 PointerEntered 走 InputCursor 间接设置较繁琐,
-        // 这里保持默认箭头即可(行为已正确)。预留 dir/shape 以便后续接入。
+        // Thumb doesn't expose ProtectedCursor publicly, and routing through PointerEntered + InputCursor
+        // is fiddly; keep the default arrow here (behavior is already correct). dir/shape are kept for
+        // wiring this up later.
         _ = shape;
     }
 
-    // ---------- 布局到画布像素 ----------
+    // ---------- Layout to canvas pixels ----------
     public void Layout(double cw, double ch)
     {
         _l = Zone.X * cw;
@@ -199,7 +201,7 @@ internal sealed class ZoneVisual
         Canvas.SetTop(_nameLabel, _t + (_h - _nameLabel.DesiredSize.Height) / 2);
         Canvas.SetZIndex(_nameLabel, 20);
 
-        // 右下角:换算后的像素尺寸(比例 × Ref,四舍五入)。
+        // Bottom-right corner: the converted pixel size (ratio × Ref, rounded).
         int pw = (int)Math.Round(Zone.W * _page.RefWidthOf());
         int ph = (int)Math.Round(Zone.H * _page.RefHeightOf());
         _sizeLabel.Text = $"{pw}×{ph}";
@@ -218,11 +220,11 @@ internal sealed class ZoneVisual
             h.Visibility = sel ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    // ---------- 拖拽 ----------
+    // ---------- Dragging ----------
     private void OnDragStart()
     {
         _page.SelectZone(Zone);
-        // 用当前比例重置工作矩形,避免累积误差。
+        // Reset the working rect from the current ratios to avoid accumulated error.
         _l = Zone.X * _page.CanvasW;
         _t = Zone.Y * _page.CanvasH;
         _w = Zone.W * _page.CanvasW;
@@ -235,11 +237,11 @@ internal sealed class ZoneVisual
         double nl = _l + e.HorizontalChange;
         double nt = _t + e.VerticalChange;
 
-        // 钳制在画布内。
+        // Clamp inside the canvas.
         nl = Math.Clamp(nl, 0, cw - _w);
         nt = Math.Clamp(nt, 0, ch - _h);
 
-        // 吸附:左右两边都尝试,取吸到的那条作参考线。
+        // Snapping: try both left and right edges; use whichever snaps as the guide line.
         var hEdges = _page.OtherEdges(Zone, horizontal: true);
         var vEdges = _page.OtherEdges(Zone, horizontal: false);
 
@@ -316,7 +318,7 @@ internal sealed class ZoneVisual
         _page.OnZoneGeometryChanged(Zone);
     }
 
-    // 画布像素 → 0..1 比例写回(仅此处做除法,显示像素另行四舍五入)。
+    // Canvas pixels -> 0..1 ratios written back (the only place that divides; display pixels are rounded separately).
     private void CommitToZone()
     {
         double cw = _page.CanvasW, ch = _page.CanvasH;

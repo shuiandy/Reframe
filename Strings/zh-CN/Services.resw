@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!--
+    Services.resw (zh-CN) — 来自 Services\*.cs 的用户可见字符串(托盘菜单 / 启动错误 / 备份对话框 /
+    热键动作名与注册失败原因)。代码取串:Loc.T("Services/Key")。
+    红线:仅"最终显示在 UI"(托盘菜单 / ContentDialog / 设置页状态)的串放这里;
+    写进引擎仪表盘日志流(Watcher.LogExternal)或 hotkey.log 的串保持英文硬编码,不入此表。
+    详见 docs/dev/I18N.md。
+  -->
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- ===== 托盘右键菜单(TrayIcon.cs) ===== -->
+  <data name="TrayOpen" xml:space="preserve">
+    <value>打开</value>
+  </data>
+  <data name="TrayEngine" xml:space="preserve">
+    <value>引擎</value>
+  </data>
+  <data name="TrayExit" xml:space="preserve">
+    <value>退出</value>
+  </data>
+
+  <!-- ===== 热键动作显示名(HotkeyService.cs;设置页热键区与无效手势提示用) =====
+       按动作 Id 取:Loc.T("Services/Hotkey_<ActionId>")。 -->
+  <data name="Hotkey_ToggleBorderless" xml:space="preserve">
+    <value>无边框开关(前台窗口)</value>
+  </data>
+  <data name="Hotkey_SendToZone1" xml:space="preserve">
+    <value>送入分区 1</value>
+  </data>
+  <data name="Hotkey_SendToZone2" xml:space="preserve">
+    <value>送入分区 2</value>
+  </data>
+  <data name="Hotkey_SendToZone3" xml:space="preserve">
+    <value>送入分区 3</value>
+  </data>
+
+  <!-- ===== 热键注册失败原因(HotkeyService.DescribeError;入设置页状态表)=====
+       注:hotkey.log 与仪表盘日志另用英文,不取这些键。 -->
+  <data name="HotkeyErrUnknown" xml:space="preserve">
+    <value>未知</value>
+  </data>
+  <data name="HotkeyErrAlreadyRegistered" xml:space="preserve">
+    <value>已被占用</value>
+  </data>
+  <data name="HotkeyErrNotRegistered" xml:space="preserve">
+    <value>热键不可用</value>
+  </data>
+  <data name="HotkeyErrInvalidParam" xml:space="preserve">
+    <value>参数无效</value>
+  </data>
+  <data name="HotkeyErrInvalidGesture" xml:space="preserve">
+    <value>手势无效</value>
+  </data>
+  <data name="HotkeyErrCodeFormat" xml:space="preserve">
+    <value>错误码 {0}</value>
+  </data>
+
+  <!-- ===== 启动游戏错误(GameLauncher.cs;入 ContentDialog) ===== -->
+  <data name="LaunchNoMethod" xml:space="preserve">
+    <value>没有配置启动方式:请填写“启动命令”或“可执行文件”。</value>
+  </data>
+  <data name="LaunchAlreadyRunningFormat" xml:space="preserve">
+    <value>“{0}”已在运行。</value>
+  </data>
+  <data name="LaunchUnsupportedCommand" xml:space="preserve">
+    <value>不支持的启动命令:仅允许 steam:// hoyoplay:// http(s):// 等已知启动器协议。</value>
+  </data>
+  <data name="LaunchFileNotFoundFormat" xml:space="preserve">
+    <value>找不到文件:{0}</value>
+  </data>
+  <data name="LaunchFailedFormat" xml:space="preserve">
+    <value>启动失败:{0}</value>
+  </data>
+  <data name="LaunchUnnamedProfile" xml:space="preserve">
+    <value>该配置</value>
+  </data>
+
+  <!-- ===== 配置备份对话框(ConfigBackup.cs) ===== -->
+  <data name="BackupFileTypeLabel" xml:space="preserve">
+    <value>Reframe 配置</value>
+  </data>
+  <data name="ImportInvalidTitle" xml:space="preserve">
+    <value>导入失败</value>
+  </data>
+  <data name="ImportInvalidContent" xml:space="preserve">
+    <value>文件无效:不是有效的 Reframe 配置文件。</value>
+  </data>
+</root>

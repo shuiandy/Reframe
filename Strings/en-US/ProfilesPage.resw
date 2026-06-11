@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!--
+    ProfilesPage.resw (en-US) — all strings for the Profiles page (running-windows + profile-list two-column layout).
+    Static UI text uses x:Uid="/ProfilesPage/<Key>" in XAML (key "Title" -> data name "Title.Text").
+    Runtime/code strings (status lines, dialogs, filter-reason pills, match summaries) are fetched via Loc.T("ProfilesPage/<Key>").
+    Placeholders use .NET composite-format indices ({0}) for Loc.T(key, args) -> string.Format.
+    See docs/dev/I18N.md.
+  -->
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- Page title -->
+  <data name="Title.Text" xml:space="preserve">
+    <value>Profiles</value>
+  </data>
+
+  <!-- ===== Left column: running windows ===== -->
+  <data name="RunningWindowsHeader.Text" xml:space="preserve">
+    <value>Running windows</value>
+  </data>
+  <data name="SearchBox.PlaceholderText" xml:space="preserve">
+    <value>Filter by title or process name…</value>
+  </data>
+  <!-- Label inside the ShowFilteredToggle (a ToggleButton); applied to the inner TextBlock, hence .Text -->
+  <data name="ShowFilteredLabel.Text" xml:space="preserve">
+    <value>Show filtered</value>
+  </data>
+  <!-- ShowFilteredToggle tooltip (set from code-behind via ToolTipService; see ProfilesPage.xaml.cs) -->
+  <data name="ShowFilteredToggle.ToolTip" xml:space="preserve">
+    <value>Show windows that were filtered out (system / ignored / hidden / too small)</value>
+  </data>
+  <data name="RefreshButton.ToolTip" xml:space="preserve">
+    <value>Refresh window list</value>
+  </data>
+  <data name="WindowEmptyHint.Text" xml:space="preserve">
+    <value>No windows available.</value>
+  </data>
+
+  <!-- Left-column row trailing tag + trailing "+" button tooltip -->
+  <data name="HasProfileTag.Text" xml:space="preserve">
+    <value>Has profile</value>
+  </data>
+  <data name="CreateFromWindowButton.ToolTip" xml:space="preserve">
+    <value>Create a profile from this window</value>
+  </data>
+
+  <!-- Left-column context menu -->
+  <data name="MenuCreateProfile.Text" xml:space="preserve">
+    <value>Create profile</value>
+  </data>
+  <data name="MenuQuickBorderless.Text" xml:space="preserve">
+    <value>Make borderless now</value>
+  </data>
+  <data name="MenuIgnoreProcess.Text" xml:space="preserve">
+    <value>Ignore this process</value>
+  </data>
+  <data name="MenuUnignoreProcess.Text" xml:space="preserve">
+    <value>Stop ignoring</value>
+  </data>
+
+  <!-- Filter-reason pills (code-behind; keyed by FilterReason) -->
+  <data name="ReasonSystemWindow" xml:space="preserve">
+    <value>System window</value>
+  </data>
+  <data name="ReasonIgnored" xml:space="preserve">
+    <value>Ignored</value>
+  </data>
+  <data name="ReasonHidden" xml:space="preserve">
+    <value>Hidden</value>
+  </data>
+  <data name="ReasonTooSmall" xml:space="preserve">
+    <value>Too small</value>
+  </data>
+
+  <!-- ===== Right column: profile list ===== -->
+  <data name="ProfileListHeader.Text" xml:space="preserve">
+    <value>Profiles</value>
+  </data>
+  <data name="NewButton.Label" xml:space="preserve">
+    <value>New</value>
+  </data>
+  <data name="EditButton.Label" xml:space="preserve">
+    <value>Edit</value>
+  </data>
+  <data name="DeleteButton.Label" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+  <data name="LaunchButton.ToolTip" xml:space="preserve">
+    <value>Launch</value>
+  </data>
+  <data name="EmptyHint.Text" xml:space="preserve">
+    <value>No profiles yet. Click “New” above, or create one from a window on the left.</value>
+  </data>
+
+  <!-- Right-column row context menu -->
+  <data name="MenuEdit.Text" xml:space="preserve">
+    <value>Edit</value>
+  </data>
+  <data name="MenuDelete.Text" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+
+  <!-- ===== Code-behind dynamic strings ===== -->
+  <!-- Profile row display -->
+  <data name="Unnamed" xml:space="preserve">
+    <value>Untitled</value>
+  </data>
+  <data name="RulesCountFormat" xml:space="preserve">
+    <value>{0} rule(s)</value>
+  </data>
+  <!-- Match summary: kind label + value (e.g. "Process: StarRail.exe") -->
+  <data name="MatchKindProcess" xml:space="preserve">
+    <value>Process</value>
+  </data>
+  <data name="MatchKindTitle" xml:space="preserve">
+    <value>Title contains</value>
+  </data>
+  <data name="MatchKindTitleRegex" xml:space="preserve">
+    <value>Title regex</value>
+  </data>
+  <data name="MatchKindGeneric" xml:space="preserve">
+    <value>Match</value>
+  </data>
+  <data name="MatchSummaryFormat" xml:space="preserve">
+    <value>{0}: {1}</value>
+  </data>
+  <data name="MatchValueUnset" xml:space="preserve">
+    <value>(not set)</value>
+  </data>
+  <data name="UnknownProcess" xml:space="preserve">
+    <value>(unknown process)</value>
+  </data>
+
+  <!-- Launch-failed dialog -->
+  <data name="LaunchFailedTitle" xml:space="preserve">
+    <value>Can't launch</value>
+  </data>
+  <data name="LaunchFailedFallback" xml:space="preserve">
+    <value>Launch failed.</value>
+  </data>
+  <data name="LaunchFailedClose" xml:space="preserve">
+    <value>Got it</value>
+  </data>
+
+  <!-- Default name for a new profile -->
+  <data name="NewProfileName" xml:space="preserve">
+    <value>New profile</value>
+  </data>
+
+  <!-- Delete confirmation dialog -->
+  <data name="DeleteDialogTitle" xml:space="preserve">
+    <value>Delete profile</value>
+  </data>
+  <data name="DeleteDialogContentFormat" xml:space="preserve">
+    <value>Delete “{0}”? This can't be undone.</value>
+  </data>
+
+  <!-- Duplicate-process confirmation dialog -->
+  <data name="DuplicateDialogTitle" xml:space="preserve">
+    <value>A profile already targets this process</value>
+  </data>
+  <data name="DuplicateDialogContentFormat" xml:space="preserve">
+    <value>A profile “{0}” already targets this process. Create another one anyway?</value>
+  </data>
+  <data name="DuplicateDialogPrimary" xml:space="preserve">
+    <value>Create anyway</value>
+  </data>
+</root>

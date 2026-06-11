@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!--
+    LayoutEditorPage.resw (zh-CN) — 布局编辑器全部字符串。
+    静态 UI 文本在 XAML 用 x:Uid="/LayoutEditorPage/<键>"(键 "Title" → data name "Title.Text")。
+    运行时/代码字符串(参考分辨率下拉项、比例文本、新分区/预设分区默认名)经
+    Loc.T("LayoutEditorPage/<键>") 取。占位符用 .NET 复合格式索引({0}),供 Loc.T(key, args) 做 string.Format。
+    ZoneNameNew / ZonePreset* 是生成时写入用户数据的种子名:按当前语言生成一次即可,
+    已存在的用户数据不再翻译(见 docs/dev/I18N.md §8)。
+  -->
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- 页标题 -->
+  <data name="Title.Text" xml:space="preserve">
+    <value>编辑布局</value>
+  </data>
+
+  <!-- 工具栏:名称 / 参考分辨率 / 宽 / 高 -->
+  <data name="NameLabel.Text" xml:space="preserve">
+    <value>名称</value>
+  </data>
+  <data name="RefResLabel.Text" xml:space="preserve">
+    <value>参考分辨率</value>
+  </data>
+  <data name="MonitorCombo.PlaceholderText" xml:space="preserve">
+    <value>选择显示器或手输</value>
+  </data>
+  <data name="WidthLabel.Text" xml:space="preserve">
+    <value>宽</value>
+  </data>
+  <data name="HeightLabel.Text" xml:space="preserve">
+    <value>高</value>
+  </data>
+
+  <!-- 预设模板按钮 -->
+  <data name="PresetLabel.Text" xml:space="preserve">
+    <value>预设模板:</value>
+  </data>
+  <data name="PresetHalf.Content" xml:space="preserve">
+    <value>左右二等分</value>
+  </data>
+  <data name="PresetThirds.Content" xml:space="preserve">
+    <value>三等分</value>
+  </data>
+  <data name="PresetTwoThirds.Content" xml:space="preserve">
+    <value>左⅔+右⅓</value>
+  </data>
+  <data name="PresetCenter169.Content" xml:space="preserve">
+    <value>16:9 居中</value>
+  </data>
+  <data name="PresetLeft219.Content" xml:space="preserve">
+    <value>21:9 居左</value>
+  </data>
+
+  <!-- 添加分区 -->
+  <data name="AddZoneButton.Content" xml:space="preserve">
+    <value>添加分区</value>
+  </data>
+  <data name="AddZoneTip.Text" xml:space="preserve">
+    <value>在画布中央添加一个新分区</value>
+  </data>
+
+  <!-- 分区属性面板 -->
+  <data name="PropHeader.Text" xml:space="preserve">
+    <value>分区属性</value>
+  </data>
+  <data name="ZoneNameLabel.Text" xml:space="preserve">
+    <value>名称</value>
+  </data>
+  <data name="ZoneXLabel.Text" xml:space="preserve">
+    <value>X (px)</value>
+  </data>
+  <data name="ZoneYLabel.Text" xml:space="preserve">
+    <value>Y (px)</value>
+  </data>
+  <data name="ZoneWLabel.Text" xml:space="preserve">
+    <value>宽 (px)</value>
+  </data>
+  <data name="ZoneHLabel.Text" xml:space="preserve">
+    <value>高 (px)</value>
+  </data>
+  <data name="DeleteZoneButton.Content" xml:space="preserve">
+    <value>删除此分区</value>
+  </data>
+  <data name="NoSelHint.Text" xml:space="preserve">
+    <value>在画布中点选一个分区以编辑其属性。</value>
+  </data>
+
+  <!-- 底部按钮 -->
+  <data name="CancelButton.Content" xml:space="preserve">
+    <value>取消</value>
+  </data>
+  <data name="SaveButton.Content" xml:space="preserve">
+    <value>保存</value>
+  </data>
+
+  <!-- ===== 代码后置动态字符串 ===== -->
+  <!-- 参考分辨率下拉项:{0}=宽,{1}=高 -->
+  <data name="MonitorItemFormat" xml:space="preserve">
+    <value>{0}×{1}</value>
+  </data>
+  <!-- 主显示器后缀(拼在 MonitorItemFormat 之后,含前导空格) -->
+  <data name="MonitorPrimarySuffix" xml:space="preserve">
+    <value> (主)</value>
+  </data>
+  <!-- 不匹配任何显示器时的自定义项:{0}=宽,{1}=高 -->
+  <data name="MonitorCustomFormat" xml:space="preserve">
+    <value>{0}×{1}(自定义)</value>
+  </data>
+  <!-- 属性面板比例文本:{0}=X {1}=Y {2}=W {3}=H(均为 0..1 比例,3 位小数) -->
+  <data name="ZoneRatioFormat" xml:space="preserve">
+    <value>比例 X={0} Y={1} W={2} H={3}</value>
+  </data>
+
+  <!-- 生成时写入用户数据的种子名(按当前语言生成一次,不再翻译) -->
+  <!-- 「添加分区」默认名:{0}=序号 -->
+  <data name="ZoneNameNew" xml:space="preserve">
+    <value>分区{0}</value>
+  </data>
+  <data name="ZonePresetLeft" xml:space="preserve">
+    <value>左区</value>
+  </data>
+  <data name="ZonePresetRight" xml:space="preserve">
+    <value>右区</value>
+  </data>
+  <data name="ZonePresetCenter" xml:space="preserve">
+    <value>中区</value>
+  </data>
+  <data name="ZonePresetGame" xml:space="preserve">
+    <value>游戏区</value>
+  </data>
+  <data name="ZonePresetSecondary" xml:space="preserve">
+    <value>副屏区</value>
+  </data>
+</root>

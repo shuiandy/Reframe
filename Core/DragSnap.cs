@@ -8,41 +8,45 @@ using Windows.Graphics;
 namespace Reframe.Core;
 
 /// <summary>
-/// FancyZones 式拖拽吸附:按住 Shift 拖任意窗口 → 分区覆盖层亮起 → 松手把窗口吸进光标所在分区。
+/// FancyZones-style drag snapping: hold Shift and drag any window → the zone overlay lights up → on release,
+/// the window snaps into the zone under the cursor.
 ///
-/// <para>线程模型(照搬 <see cref="WinEventHook"/> 的手法):</para>
+/// <para>Thread model (mirrors <see cref="WinEventHook"/>'s approach):</para>
 /// <list type="bullet">
-/// <item>独占一个后台线程装 MOVESIZESTART/END 两个 OUT_OF_CONTEXT 钩子并跑消息泵;
-///       Stop 用 PostThreadMessage(WM_QUIT) 退泵后解钩。</item>
-/// <item>钩子线程只发事件、读光标/键状态、算几何、调 SetWindowPos(都是线程无关的 Win32);
-///       一切覆盖层(WinUI 窗口)操作都经 <see cref="_ui"/> 切回 UI 线程。</item>
-/// <item>拖动期间一个 100ms 线程池 Timer 轮询光标,告诉覆盖层高亮;Shift 中途松开即退出吸附。</item>
+/// <item>A dedicated background thread installs the two OUT_OF_CONTEXT MOVESIZESTART/END hooks and runs a
+///       message pump; Stop uses PostThreadMessage(WM_QUIT) to exit the pump, then unhooks.</item>
+/// <item>The hook thread only raises events, reads cursor/key state, computes geometry and calls SetWindowPos
+///       (all thread-agnostic Win32); every overlay (WinUI window) operation is marshaled back to the UI
+///       thread via <see cref="_ui"/>.</item>
+/// <item>During the drag, a 100ms thread-pool Timer polls the cursor to tell the overlay what to highlight;
+///       releasing Shift mid-drag exits snapping.</item>
 /// </list>
 ///
-/// <para>zone 来源:取 <c>Config.Layouts[0]</c> 的全部 zone,按比例投到每块显示器的工作区
-/// (吸附一律用 rcWork,与 PlacementResolver 同逻辑)。TODO: 多布局支持(目前固定第一个)。</para>
+/// <para>Zone source: take all zones of <c>Config.Layouts[0]</c> and project them by ratio onto each
+/// monitor's work area (snapping always uses rcWork, same logic as PlacementResolver). TODO: multi-layout
+/// support (currently fixed to the first).</para>
 /// </summary>
 public static class DragSnapService
 {
     private static Func<AppConfig>? _getConfig;
     private static DispatcherQueue? _ui;
 
-    // 委托保存为字段:OUT_OF_CONTEXT 回调跨线程调用,局部会被 GC(同 WinEventHook 的坑)。
+    // The delegate is kept in a field: the OUT_OF_CONTEXT callback is invoked cross-thread, and a local would be GC'd (same pitfall as WinEventHook).
     private static NativeMethods.WinEventProc? _proc;
     private static Thread? _thread;
-    // volatile:钩子线程写、Start/Stop 读;超时清理与重入时都要读到最新值。
+    // volatile: written by the hook thread, read by Start/Stop; timeout cleanup and re-entry must read the latest value.
     private static volatile uint _threadId;
     private static IntPtr _hook;
-    // 静态、跨 Start/Stop 复用:Stop() 必须 Reset,否则二次 Start 的 Wait 会立刻返回(看到上轮的 Set)。
+    // Static, reused across Start/Stop: Stop() must Reset it, otherwise a second Start's Wait would return immediately (seeing the previous round's Set).
     private static readonly ManualResetEventSlim _ready = new(false);
 
     private static System.Threading.Timer? _pollTimer;
     private static readonly object _gate = new();
 
-    // ---- 吸附会话状态(仅 _gate 保护) ----
+    // ---- Snap-session state (protected only by _gate) ----
     private static bool _snapping;
     private static IntPtr _targetHwnd;
-    // 各屏 zone 的虚拟桌面物理矩形 + 名称,供 MOVESIZEEND 命中判定与定位。
+    // The virtual-desktop physical rects + names of each monitor's zones, for MOVESIZEEND hit-testing and positioning.
     private static List<SessionZone> _sessionZones = new();
 
     private sealed record SessionZone(NativeMethods.RECT VirtualRect);
@@ -50,19 +54,19 @@ public static class DragSnapService
     public static void Start(Func<AppConfig> getConfig)
     {
         _getConfig = getConfig;
-        // 在 UI 线程调用(App.xaml.cs 集成点),据此拿覆盖层操作要切回的队列。
+        // Called on the UI thread (the App.xaml.cs integration point), which gives us the queue to marshal overlay operations back to.
         _ui = DispatcherQueue.GetForCurrentThread();
 
         if (_thread != null) return;
         _proc = OnWinEvent;
-        _ready.Reset(); // 复用的静态事件:每次启动前清掉上轮的 Set,Wait 才真正等本轮就绪。
+        _ready.Reset(); // Reused static event: clear the previous round's Set before each start, so Wait really waits for this round's readiness.
         var t = new Thread(ThreadProc) { IsBackground = true, Name = "Reframe.DragSnap" };
         _thread = t;
         t.Start();
 
         if (!_ready.Wait(2000))
         {
-            // 超时:尽力收线程,清状态(等同 Stop 的线程清理路径),别留僵线程。
+            // Timeout: make a best effort to collect the thread and clear state (same path as Stop's thread cleanup); don't leave a zombie.
             uint tid = _threadId;
             if (tid != 0)
                 NativeMethods.PostThreadMessage(tid, NativeMethods.WM_QUIT, IntPtr.Zero, IntPtr.Zero);
@@ -75,7 +79,7 @@ public static class DragSnapService
 
     public static void Stop()
     {
-        // 幂等:无线程直接退。
+        // Idempotent: no thread → just return.
         var t = _thread;
         if (t != null)
         {
@@ -85,7 +89,7 @@ public static class DragSnapService
             _thread = null;
         }
 
-        // 复用的静态状态全部归零,保证 Stop→Start 可重入(否则 _ready 残留 Set、_threadId/_hook 残留旧值)。
+        // Zero out all reused static state to keep Stop→Start re-entrant (otherwise _ready keeps a stale Set, _threadId/_hook keep stale values).
         _ready.Reset();
         _threadId = 0;
         _hook = IntPtr.Zero;
@@ -93,7 +97,7 @@ public static class DragSnapService
         StopPoll();
         lock (_gate) { _snapping = false; _targetHwnd = IntPtr.Zero; _sessionZones = new(); }
 
-        // 覆盖层在 UI 线程销毁。
+        // The overlay is destroyed on the UI thread.
         _ui?.TryEnqueue(SnapOverlayWindow.CloseAll);
     }
 
@@ -101,7 +105,7 @@ public static class DragSnapService
     {
         _threadId = NativeMethods.GetCurrentThreadId();
 
-        // MOVESIZESTART(0x000A)..MOVESIZEEND(0x000B)连续区间,一个钩子覆盖。
+        // One hook covers the contiguous MOVESIZESTART (0x000A)..MOVESIZEEND (0x000B) range.
         _hook = NativeMethods.SetWinEventHook(
             NativeMethods.EVENT_SYSTEM_MOVESIZESTART, NativeMethods.EVENT_SYSTEM_MOVESIZEEND,
             IntPtr.Zero, _proc!, 0, 0,
@@ -131,7 +135,7 @@ public static class DragSnapService
             OnMoveSizeEnd(hwnd);
     }
 
-    // ---- 开始拖拽:决定是否进入吸附模式 ----
+    // ---- Drag start: decide whether to enter snap mode ----
     private static void OnMoveSizeStart(IntPtr hwnd)
     {
         var cfg = _getConfig?.Invoke();
@@ -139,7 +143,7 @@ public static class DragSnapService
         if (!ShiftDown()) return;
 
         var zones = BuildSessionZones(cfg, out var sets);
-        if (zones.Count == 0) return; // 没有可用布局/分区,不进入
+        if (zones.Count == 0) return; // No usable layout/zones, don't enter
 
         lock (_gate)
         {
@@ -152,7 +156,7 @@ public static class DragSnapService
         StartPoll();
     }
 
-    // ---- 结束拖拽:命中则吸附 ----
+    // ---- Drag end: snap if there's a hit ----
     private static void OnMoveSizeEnd(IntPtr hwnd)
     {
         bool snapping;
@@ -173,7 +177,7 @@ public static class DragSnapService
         if (!snapping || hwnd != target) return;
         if (!NativeMethods.GetCursorPos(out var pt)) return;
 
-        // 命中光标所在 zone(虚拟坐标)。
+        // Find the zone under the cursor (virtual coordinates).
         foreach (var z in zones)
         {
             var r = z.VirtualRect;
@@ -185,8 +189,8 @@ public static class DragSnapService
         }
     }
 
-    // 普通吸附:从最大化/最小化先还原,再 SetWindowPos 移过去。不去边框、不快照、不置顶
-    //(与引擎接管无关,纯手动摆放)。
+    // Plain snap: first restore from maximized/minimized, then SetWindowPos it over. No border strip, no
+    // snapshot, no topmost (unrelated to engine takeover; purely manual placement).
     private static void SnapWindowTo(IntPtr hwnd, NativeMethods.RECT r)
     {
         if (NativeMethods.IsIconic(hwnd))
@@ -198,7 +202,7 @@ public static class DragSnapService
             NativeMethods.SWP_NOOWNERZORDER | NativeMethods.SWP_FRAMECHANGED);
     }
 
-    // ---- 轮询光标 → 高亮 ----
+    // ---- Poll the cursor → highlight ----
     private static void StartPoll()
     {
         StopPoll();
@@ -216,7 +220,7 @@ public static class DragSnapService
     {
         lock (_gate) { if (!_snapping) return; }
 
-        // Shift 中途松开 → 退出吸附,隐藏覆盖层(窗口照常被系统继续拖,我们不再吸附)。
+        // Shift released mid-drag → exit snapping, hide the overlay (the system keeps dragging the window; we just stop snapping).
         if (!ShiftDown())
         {
             lock (_gate) { _snapping = false; _targetHwnd = IntPtr.Zero; }
@@ -233,21 +237,21 @@ public static class DragSnapService
     private static bool ShiftDown()
         => (NativeMethods.GetAsyncKeyState(NativeMethods.VK_SHIFT) & 0x8000) != 0;
 
-    // ---- 几何:Layouts[0] 的 zone 投到每块显示器工作区 ----
-    // 返回会话用的虚拟矩形列表;同时产出覆盖层要画的 per-monitor 集合(out sets)。
+    // ---- Geometry: project Layouts[0]'s zones onto each monitor's work area ----
+    // Returns the list of virtual rects for the session; also produces the per-monitor sets the overlay draws (out sets).
     private static List<SessionZone> BuildSessionZones(AppConfig cfg, out List<MonitorZoneSet> sets)
     {
         sets = new List<MonitorZoneSet>();
         var session = new List<SessionZone>();
 
-        // TODO: 多布局支持。目前固定取第一个布局(简单可预期)。
+        // TODO: multi-layout support. Currently fixed to the first layout (simple and predictable).
         var layout = cfg.Layouts.Count > 0 ? cfg.Layouts[0] : null;
         if (layout is null || layout.Zones.Count == 0) return session;
 
         foreach (var mon in MonitorService.GetMonitors())
         {
-            // 吸附一律用工作区(rcWork);构造 basis 矩形交给 PlacementResolver.ZoneToRect,
-            // 保证与引擎接管(ResolveRect 的 Zone 分支)取整口径完全一致。
+            // Snapping always uses the work area (rcWork); build the basis rect and hand it to
+            // PlacementResolver.ZoneToRect, so the rounding matches engine takeover (ResolveRect's Zone branch) exactly.
             var basis = new NativeMethods.RECT
             {
                 Left = mon.WorkX, Top = mon.WorkY,
@@ -263,7 +267,7 @@ public static class DragSnapService
 
                 session.Add(new SessionZone(r));
 
-                // 覆盖层要的是"相对该屏左上角"(rcMonitor 原点)的物理像素。
+                // The overlay wants physical pixels "relative to that monitor's top-left" (rcMonitor origin).
                 localRects.Add(new RectInt32(r.Left - mon.X, r.Top - mon.Y, r.Right - r.Left, r.Bottom - r.Top));
                 names.Add(z.Name);
             }

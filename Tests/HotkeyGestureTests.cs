@@ -4,20 +4,20 @@ using Xunit;
 namespace Reframe.Core.Tests;
 
 /// <summary>
-/// 热键手势纯解析:文本 → (修饰符位掩码, 虚拟键)。覆盖默认手势、大小写宽容、
-/// 各类无效输入、以及与 Format 的往返。
+/// Hotkey gesture pure parsing: text → (modifier bitmask, virtual key). Covers default gestures, case
+/// tolerance, various invalid inputs, and the round-trip with Format.
 /// </summary>
 public class HotkeyGestureTests
 {
-    // user32 RegisterHotKey fsModifiers(与 HotkeyGesture 常量同值)。
+    // user32 RegisterHotKey fsModifiers (same values as the HotkeyGesture constants).
     private const uint MOD_ALT = 0x0001;
     private const uint MOD_CONTROL = 0x0002;
     private const uint MOD_SHIFT = 0x0004;
     private const uint MOD_WIN = 0x0008;
 
-    // ---- 默认手势全部可解析 ----
+    // ---- All default gestures parse ----
 
-    [Theory(DisplayName = "默认手势均可解析")]
+    [Theory(DisplayName = "Default gestures all parse")]
     [InlineData("Ctrl+Alt+B")]
     [InlineData("Ctrl+Alt+F")]
     [InlineData("Win+Alt+1")]
@@ -44,16 +44,16 @@ public class HotkeyGestureTests
         Assert.Equal((uint)'1', vk);
     }
 
-    [Fact(DisplayName = "解析结果不含 NOREPEAT(由注册时附加)")]
+    [Fact(DisplayName = "Parsed result excludes NOREPEAT (added at registration)")]
     public void Parse_DoesNotIncludeNoRepeat()
     {
         Assert.True(HotkeyGesture.TryParse("Ctrl+Alt+B", out uint mods, out _));
         Assert.Equal(0u, mods & 0x4000); // MOD_NOREPEAT
     }
 
-    // ---- 大小写宽容 + 修饰符别名 ----
+    // ---- Case tolerance + modifier aliases ----
 
-    [Theory(DisplayName = "大小写宽容:ctrl/CTRL/Ctrl 等价")]
+    [Theory(DisplayName = "Case tolerance: ctrl/CTRL/Ctrl are equivalent")]
     [InlineData("ctrl+alt+f")]
     [InlineData("CTRL+ALT+F")]
     [InlineData("Ctrl+Alt+f")]
@@ -65,7 +65,7 @@ public class HotkeyGestureTests
         Assert.Equal((uint)'F', vk);
     }
 
-    [Theory(DisplayName = "Control 是 Ctrl 的别名")]
+    [Theory(DisplayName = "Control is an alias for Ctrl")]
     [InlineData("Control+Alt+B")]
     [InlineData("control+alt+b")]
     public void Control_Alias(string gesture)
@@ -74,7 +74,7 @@ public class HotkeyGestureTests
         Assert.Equal(MOD_CONTROL | MOD_ALT, mods);
     }
 
-    [Theory(DisplayName = "Win 的别名:Windows/Meta/Super")]
+    [Theory(DisplayName = "Aliases for Win: Windows/Meta/Super")]
     [InlineData("Windows+Alt+1")]
     [InlineData("Meta+Alt+1")]
     [InlineData("Super+Alt+1")]
@@ -84,7 +84,7 @@ public class HotkeyGestureTests
         Assert.Equal(MOD_WIN | MOD_ALT, mods);
     }
 
-    [Fact(DisplayName = "Shift 单修饰符 + 字母")]
+    [Fact(DisplayName = "Shift single modifier + letter")]
     public void Shift_Letter()
     {
         Assert.True(HotkeyGesture.TryParse("Shift+Q", out uint mods, out uint vk));
@@ -92,7 +92,7 @@ public class HotkeyGestureTests
         Assert.Equal((uint)'Q', vk);
     }
 
-    [Fact(DisplayName = "全部四个修饰符 + 主键")]
+    [Fact(DisplayName = "All four modifiers + main key")]
     public void AllFourModifiers()
     {
         Assert.True(HotkeyGesture.TryParse("Ctrl+Alt+Shift+Win+K", out uint mods, out uint vk));
@@ -100,7 +100,7 @@ public class HotkeyGestureTests
         Assert.Equal((uint)'K', vk);
     }
 
-    [Fact(DisplayName = "修饰符顺序无关")]
+    [Fact(DisplayName = "Modifier order doesn't matter")]
     public void ModifierOrder_Independent()
     {
         Assert.True(HotkeyGesture.TryParse("Alt+Ctrl+B", out uint m1, out uint vk1));
@@ -109,9 +109,9 @@ public class HotkeyGestureTests
         Assert.Equal(vk2, vk1);
     }
 
-    // ---- 功能键 ----
+    // ---- Function keys ----
 
-    [Theory(DisplayName = "功能键 F1..F12 → VK_F1(0x70)..")]
+    [Theory(DisplayName = "Function keys F1..F12 → VK_F1(0x70)..")]
     [InlineData("Ctrl+F1", 0x70)]
     [InlineData("Ctrl+F2", 0x71)]
     [InlineData("Ctrl+F12", 0x7B)]
@@ -122,7 +122,7 @@ public class HotkeyGestureTests
         Assert.Equal((uint)expectedVk, vk);
     }
 
-    [Fact(DisplayName = "F24 仍合法,F25 越界无效")]
+    [Fact(DisplayName = "F24 still valid, F25 out of range invalid")]
     public void FunctionKey_Bounds()
     {
         Assert.True(HotkeyGesture.TryParse("Ctrl+F24", out _, out uint vk));
@@ -131,9 +131,9 @@ public class HotkeyGestureTests
         Assert.False(HotkeyGesture.TryParse("Ctrl+F0", out _, out _));
     }
 
-    // ---- 无效输入 ----
+    // ---- Invalid input ----
 
-    [Theory(DisplayName = "空 / 空白 → 无效")]
+    [Theory(DisplayName = "Empty / whitespace → invalid")]
     [InlineData("")]
     [InlineData("   ")]
     [InlineData(null)]
@@ -142,7 +142,7 @@ public class HotkeyGestureTests
         Assert.False(HotkeyGesture.TryParse(gesture, out _, out _));
     }
 
-    [Theory(DisplayName = "无修饰符的裸主键 → 无效(易误触)")]
+    [Theory(DisplayName = "Bare main key without a modifier → invalid (easy to trigger by accident)")]
     [InlineData("B")]
     [InlineData("F1")]
     [InlineData("1")]
@@ -151,21 +151,21 @@ public class HotkeyGestureTests
         Assert.False(HotkeyGesture.TryParse(gesture, out _, out _));
     }
 
-    [Fact(DisplayName = "只有修饰符没有主键 → 无效")]
+    [Fact(DisplayName = "Modifiers only, no main key → invalid")]
     public void ModifiersOnly_Invalid()
     {
         Assert.False(HotkeyGesture.TryParse("Ctrl+Alt", out _, out _));
         Assert.False(HotkeyGesture.TryParse("Win", out _, out _));
     }
 
-    [Fact(DisplayName = "两个主键 → 无效")]
+    [Fact(DisplayName = "Two main keys → invalid")]
     public void TwoMainKeys_Invalid()
     {
         Assert.False(HotkeyGesture.TryParse("Ctrl+A+B", out _, out _));
         Assert.False(HotkeyGesture.TryParse("Ctrl+1+2", out _, out _));
     }
 
-    [Theory(DisplayName = "未知 token → 无效")]
+    [Theory(DisplayName = "Unknown token → invalid")]
     [InlineData("Ctrl+Alt+Foobar")]
     [InlineData("Ctrl+Alt+#")]
     [InlineData("Ctrl+Alt+F99")]
@@ -175,9 +175,9 @@ public class HotkeyGestureTests
         Assert.False(HotkeyGesture.TryParse(gesture, out _, out _));
     }
 
-    // ---- 数字键 / 字母键 全覆盖 ----
+    // ---- Full coverage of digit / letter keys ----
 
-    [Theory(DisplayName = "数字 0-9 VK 与 ASCII 一致")]
+    [Theory(DisplayName = "Digits 0-9 VK matches ASCII")]
     [InlineData("Win+Alt+0", '0')]
     [InlineData("Win+Alt+5", '5')]
     [InlineData("Win+Alt+9", '9')]
@@ -187,7 +187,7 @@ public class HotkeyGestureTests
         Assert.Equal((uint)expected, vk);
     }
 
-    [Theory(DisplayName = "字母 A/Z 边界 VK 与大写 ASCII 一致")]
+    [Theory(DisplayName = "Letter A/Z boundary VK matches uppercase ASCII")]
     [InlineData("Ctrl+A", 'A')]
     [InlineData("Ctrl+Z", 'Z')]
     [InlineData("Ctrl+a", 'A')]
@@ -197,9 +197,9 @@ public class HotkeyGestureTests
         Assert.Equal((uint)expected, vk);
     }
 
-    // ---- Format 往返 ----
+    // ---- Format round-trip ----
 
-    [Theory(DisplayName = "Format(TryParse(g)) 规范化往返一致")]
+    [Theory(DisplayName = "Format(TryParse(g)) canonical round-trip is consistent")]
     [InlineData("Ctrl+Alt+B")]
     [InlineData("Ctrl+Alt+F")]
     [InlineData("Win+Alt+1")]
@@ -209,13 +209,13 @@ public class HotkeyGestureTests
     {
         Assert.True(HotkeyGesture.TryParse(gesture, out uint mods, out uint vk));
         string formatted = HotkeyGesture.Format(mods, vk);
-        // 再解析 formatted 应得到同样的 (mods, vk)
+        // Re-parsing formatted should give the same (mods, vk)
         Assert.True(HotkeyGesture.TryParse(formatted, out uint mods2, out uint vk2));
         Assert.Equal(mods, mods2);
         Assert.Equal(vk, vk2);
     }
 
-    [Fact(DisplayName = "Format 固定修饰符顺序 Ctrl+Alt+Shift+Win")]
+    [Fact(DisplayName = "Format uses a fixed modifier order Ctrl+Alt+Shift+Win")]
     public void Format_FixedOrder()
     {
         HotkeyGesture.TryParse("Win+Shift+Alt+Ctrl+B", out uint mods, out uint vk);

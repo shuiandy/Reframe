@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!--
+    LayoutsPage.resw (en-US) — all strings for the layouts list page.
+    Static UI text uses x:Uid="/LayoutsPage/<Key>" in XAML (key "Title" -> data name "Title.Text").
+    Runtime/code strings (summary line, delete dialog, new/duplicate default names) are fetched via
+    Loc.T("LayoutsPage/<Key>"). Placeholders use .NET composite-format indices ({0}) for
+    Loc.T(key, args) -> string.Format.
+    NewLayoutName / NewLayoutZoneName / DuplicateNameFormat are seed names written into user data:
+    generated once in the current language at creation time and never re-translated afterwards
+    (see docs/dev/I18N.md section 8).
+  -->
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- Page title -->
+  <data name="Title.Text" xml:space="preserve">
+    <value>Layouts</value>
+  </data>
+
+  <!-- Command bar -->
+  <data name="NewButton.Label" xml:space="preserve">
+    <value>New</value>
+  </data>
+  <data name="DuplicateButton.Label" xml:space="preserve">
+    <value>Duplicate</value>
+  </data>
+  <data name="EditButton.Label" xml:space="preserve">
+    <value>Edit</value>
+  </data>
+  <data name="DeleteButton.Label" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+
+  <!-- Card context menu -->
+  <data name="MenuEdit.Text" xml:space="preserve">
+    <value>Edit</value>
+  </data>
+  <data name="MenuDuplicate.Text" xml:space="preserve">
+    <value>Duplicate</value>
+  </data>
+  <data name="MenuDelete.Text" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+
+  <!-- Empty-list hint -->
+  <data name="EmptyHintText.Text" xml:space="preserve">
+    <value>No layouts yet. Click "New" to create your first one.</value>
+  </data>
+
+  <!-- ===== Code-behind dynamic strings ===== -->
+  <!-- Card summary line: {0}=zone count, {1}=reference width, {2}=reference height -->
+  <data name="SummaryFormat" xml:space="preserve">
+    <value>{0} zones · {1}×{2}</value>
+  </data>
+
+  <!-- Delete confirmation dialog -->
+  <data name="DeleteDialogTitle" xml:space="preserve">
+    <value>Delete Layout</value>
+  </data>
+  <!-- No rule references it: {0}=layout name -->
+  <data name="DeleteConfirm" xml:space="preserve">
+    <value>Delete layout "{0}"? This cannot be undone.</value>
+  </data>
+  <!-- Rules reference it: {0}=layout name, {1}=number of affected profiles -->
+  <data name="DeleteConfirmCascade" xml:space="preserve">
+    <value>Deleting layout "{0}" will remove the referencing rules in {1} profile(s) (the whole rule is deleted). This cannot be undone.</value>
+  </data>
+
+  <!-- Seed names written into user data (generated once in the current language, never re-translated) -->
+  <data name="NewLayoutName" xml:space="preserve">
+    <value>New Layout</value>
+  </data>
+  <data name="NewLayoutZoneName" xml:space="preserve">
+    <value>Full Screen</value>
+  </data>
+  <!-- Duplicated layout name suffix: {0}=source layout name -->
+  <data name="DuplicateNameFormat" xml:space="preserve">
+    <value>{0} Copy</value>
+  </data>
+</root>

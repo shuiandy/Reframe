@@ -11,12 +11,13 @@ using Reframe.Services;
 
 namespace Reframe.UI;
 
-/// <summary>列表项包装:GridView 模板用 x:Bind 取 Model/摘要。</summary>
+/// <summary>List-item wrapper: the GridView template binds to Model/summary via x:Bind.</summary>
 public sealed class LayoutItem
 {
     public LayoutItem(Layout model) => Model = model;
     public Layout Model { get; }
-    public string SummaryText => $"{Model.Zones.Count} 个分区 · {Model.RefWidth}×{Model.RefHeight}";
+    public string SummaryText =>
+        Loc.T("LayoutsPage/SummaryFormat", Model.Zones.Count, Model.RefWidth, Model.RefHeight);
 }
 
 public sealed partial class LayoutsPage : Page
@@ -43,7 +44,7 @@ public sealed partial class LayoutsPage : Page
         ConfigService.Instance.Changed -= OnConfigChanged;
     }
 
-    // Changed 可能在任意线程触发,UI 自行回到 UI 线程。
+    // Changed can fire on any thread; the UI marshals itself back onto the UI thread.
     private void OnConfigChanged() => _dispatcher.TryEnqueue(Refresh);
 
     private void Refresh()
@@ -56,7 +57,7 @@ public sealed partial class LayoutsPage : Page
 
         EmptyHint.Visibility = _items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
-        // 尽量保持原选中项。
+        // Preserve the previously selected item where possible.
         if (keepId is not null)
         {
             var again = _items.FirstOrDefault(i => i.Model.Id == keepId);
@@ -78,7 +79,8 @@ public sealed partial class LayoutsPage : Page
     private void LayoutsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
         => UpdateCommandState();
 
-    // 双击 = 进入编辑器。从事件源向上找到承载该项的 GridViewItem,取其 Content 拿到对应布局。
+    // Double-click = open the editor. Walk up from the event source to the GridViewItem hosting the
+    // item, then read its Content to get the corresponding layout.
     private void LayoutsGrid_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
         var item = ItemFromEventSource(e.OriginalSource as DependencyObject);
@@ -86,7 +88,8 @@ public sealed partial class LayoutsPage : Page
             Frame.Navigate(typeof(LayoutEditorPage), item.Model.Id);
     }
 
-    // 右键 = 在 ContextFlyout 打开前先选中该卡片,使复用 SelectedLayout 的编辑/复制/删除落到正确项上。
+    // Right-click: select the card before the ContextFlyout opens, so the edit/duplicate/delete
+    // handlers (which reuse SelectedLayout) act on the correct item.
     private void LayoutCard_ContextRequested(UIElement sender, ContextRequestedEventArgs e)
     {
         if ((sender as FrameworkElement)?.DataContext is LayoutItem item)
@@ -108,14 +111,16 @@ public sealed partial class LayoutsPage : Page
 
     private void NewButton_Click(object sender, RoutedEventArgs e)
     {
+        // Default name and the seed zone name are localized at creation time and written into user
+        // data as-is; existing data is never re-translated (see docs/dev/I18N.md section 8).
         var layout = new Layout
         {
-            Name = "新布局",
-            Zones = { new Zone { Name = "全屏", X = 0, Y = 0, W = 1, H = 1 } }
+            Name = Loc.T("LayoutsPage/NewLayoutName"),
+            Zones = { new Zone { Name = Loc.T("LayoutsPage/NewLayoutZoneName"), X = 0, Y = 0, W = 1, H = 1 } }
         };
         ConfigService.Instance.Config.Layouts.Add(layout);
-        ConfigService.Instance.Save();   // 触发 Changed → Refresh
-        // 直接进编辑器编辑新建的布局。
+        ConfigService.Instance.Save();   // raises Changed -> Refresh
+        // Jump straight into the editor for the newly created layout.
         Frame.Navigate(typeof(LayoutEditorPage), layout.Id);
     }
 
@@ -125,7 +130,7 @@ public sealed partial class LayoutsPage : Page
 
         var copy = new Layout
         {
-            Name = src.Name + " 副本",
+            Name = Loc.T("LayoutsPage/DuplicateNameFormat", src.Name),
             RefWidth = src.RefWidth,
             RefHeight = src.RefHeight,
             Zones = src.Zones
@@ -141,26 +146,27 @@ public sealed partial class LayoutsPage : Page
         if (SelectedLayout is not { } target) return;
 
         var cfg = ConfigService.Instance.Config;
-        // 统计受影响 profile:有任意规则引用本布局者。
+        // Count affected profiles: any profile with a rule referencing this layout.
         int affected = cfg.Profiles.Count(p => p.Rules.Any(r => r.LayoutId == target.Id));
 
         string body = affected == 0
-            ? $"确定删除布局「{target.Name}」吗?此操作无法撤销。"
-            : $"删除布局「{target.Name}」会移除 {affected} 个配置文件中引用它的规则(整条删除)。此操作无法撤销。";
+            ? Loc.T("LayoutsPage/DeleteConfirm", target.Name)
+            : Loc.T("LayoutsPage/DeleteConfirmCascade", target.Name, affected);
 
         var dialog = new ContentDialog
         {
-            Title = "删除布局",
+            Title = Loc.T("LayoutsPage/DeleteDialogTitle"),
             Content = body,
-            PrimaryButtonText = "删除",
-            CloseButtonText = "取消",
+            PrimaryButtonText = Loc.T("Common/Delete"),
+            CloseButtonText = Loc.T("Common/Cancel"),
             DefaultButton = ContentDialogButton.Close,
             XamlRoot = XamlRoot
         };
 
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
 
-        // 级联清理:把引用该布局的规则整条移除(不留空引用),再删布局,统一保存一次。
+        // Cascade cleanup: remove whole rules that reference this layout (no dangling references),
+        // then delete the layout, and save once at the end.
         foreach (var p in cfg.Profiles)
             p.Rules.RemoveAll(r => r.LayoutId == target.Id);
         cfg.Layouts.RemoveAll(l => l.Id == target.Id);

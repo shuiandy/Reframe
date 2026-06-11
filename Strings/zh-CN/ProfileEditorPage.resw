@@ -1,0 +1,343 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!--
+    ProfileEditorPage.resw (zh-CN) — 配置编辑页全部字符串。
+    静态 UI 文本在 XAML 用 x:Uid="/ProfileEditorPage/<键>"(键 "BasicHeader" → data name "BasicHeader.Text")。
+    纯代码生成的规则行 UI(BuildRuleRow 一系列)与对话框经 Loc.T("ProfileEditorPage/<键>") 取;
+    动态串(如「规则 N」)用 .NET 复合格式索引({0}),供 Loc.T(key, args) 做 string.Format。
+    详见 docs/dev/I18N.md。
+  -->
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- ===== 标题栏 ===== -->
+  <data name="BackButton.ToolTip" xml:space="preserve">
+    <value>返回</value>
+  </data>
+  <data name="Title.Text" xml:space="preserve">
+    <value>编辑配置文件</value>
+  </data>
+
+  <!-- ===== 基本区 ===== -->
+  <data name="BasicHeader.Text" xml:space="preserve">
+    <value>基本</value>
+  </data>
+  <data name="NameBox.Header" xml:space="preserve">
+    <value>名称</value>
+  </data>
+  <data name="MatchKindBox.Header" xml:space="preserve">
+    <value>匹配类型</value>
+  </data>
+  <data name="MatchKindProcess.Content" xml:space="preserve">
+    <value>进程名</value>
+  </data>
+  <data name="MatchKindTitle.Content" xml:space="preserve">
+    <value>窗口标题(包含)</value>
+  </data>
+  <data name="MatchKindTitleRegex.Content" xml:space="preserve">
+    <value>标题正则</value>
+  </data>
+  <data name="MatchValueBox.Header" xml:space="preserve">
+    <value>匹配文本</value>
+  </data>
+  <data name="ExePathBox.Header" xml:space="preserve">
+    <value>可执行文件(图标来源)</value>
+  </data>
+  <data name="ExePathBox.PlaceholderText" xml:space="preserve">
+    <value>例如 D:\Games\Zenless Zone Zero\ZenlessZoneZero.exe</value>
+  </data>
+  <data name="BrowseExeButton.Content" xml:space="preserve">
+    <value>浏览…</value>
+  </data>
+  <data name="ExePathHint.Text" xml:space="preserve">
+    <value>反作弊保护的游戏(绝区零/原神等)可能取不到图标,可在此手动指定 exe 作为图标来源。</value>
+  </data>
+  <data name="LaunchCommandBox.Header" xml:space="preserve">
+    <value>启动命令(可选)</value>
+  </data>
+  <data name="LaunchCommandBox.PlaceholderText" xml:space="preserve">
+    <value>留空则直接运行可执行文件;可填启动器命令或 URI</value>
+  </data>
+
+  <!-- ===== 启动分辨率预设(Unity) ===== -->
+  <data name="ResolutionExpander.Header" xml:space="preserve">
+    <value>启动分辨率预设 (Unity)</value>
+  </data>
+  <data name="ResolutionDesc.Text" xml:space="preserve">
+    <value>适用于渲染分辨率钉死在注册表的 Unity 游戏(如原神)。启动游戏前生效;游戏运行中修改无效。</value>
+  </data>
+  <data name="ResEnabledToggle.Header" xml:space="preserve">
+    <value>启用启动分辨率预设</value>
+  </data>
+  <data name="ResPathBox.Header" xml:space="preserve">
+    <value>注册表路径 (HKCU 下相对路径)</value>
+  </data>
+  <data name="ResPathBox.PlaceholderText" xml:space="preserve">
+    <value>Software\miHoYo\原神</value>
+  </data>
+  <data name="ResWidthBox.Header" xml:space="preserve">
+    <value>宽</value>
+  </data>
+  <data name="ResHeightBox.Header" xml:space="preserve">
+    <value>高</value>
+  </data>
+  <data name="ResWindowedCheck.Content" xml:space="preserve">
+    <value>窗口化 (Is Fullscreen mode = 0)</value>
+  </data>
+
+  <!-- ===== 无边框区 ===== -->
+  <data name="BorderlessHeader.Text" xml:space="preserve">
+    <value>无边框</value>
+  </data>
+  <data name="BorderlessToggle.Header" xml:space="preserve">
+    <value>去除窗口边框</value>
+  </data>
+  <data name="DelayBox.Header" xml:space="preserve">
+    <value>处理延迟 (毫秒)</value>
+  </data>
+  <data name="DelayBox.Description" xml:space="preserve">
+    <value>游戏启动期会重建窗口,建议 1000</value>
+  </data>
+
+  <!-- ===== 规则区(标题) ===== -->
+  <data name="RulesHeader.Text" xml:space="preserve">
+    <value>规则</value>
+  </data>
+  <data name="RulesHint.Text" xml:space="preserve">
+    <value>(自上而下,第一条命中当前显示器的规则生效)</value>
+  </data>
+  <data name="AddRuleButton.Text" xml:space="preserve">
+    <value>添加规则</value>
+  </data>
+
+  <!-- ===== 高级区 ===== -->
+  <data name="AdvancedExpander.Header" xml:space="preserve">
+    <value>高级</value>
+  </data>
+  <data name="OffsetsHeader.Text" xml:space="preserve">
+    <value>四边偏移 (像素)</value>
+  </data>
+  <data name="OffsetsDesc.Text" xml:space="preserve">
+    <value>施加在最终矩形上的微调。</value>
+  </data>
+  <data name="OffLeftBox.Header" xml:space="preserve">
+    <value>左</value>
+  </data>
+  <data name="OffTopBox.Header" xml:space="preserve">
+    <value>上</value>
+  </data>
+  <data name="OffRightBox.Header" xml:space="preserve">
+    <value>右</value>
+  </data>
+  <data name="OffBottomBox.Header" xml:space="preserve">
+    <value>下</value>
+  </data>
+  <data name="ExtraBehaviorHeader.Text" xml:space="preserve">
+    <value>附加行为</value>
+  </data>
+  <data name="TopmostToggle.Header" xml:space="preserve">
+    <value>始终置顶</value>
+  </data>
+  <data name="AspectToggle.Header" xml:space="preserve">
+    <value>保持宽高比</value>
+  </data>
+  <data name="MuteToggle.Header" xml:space="preserve">
+    <value>后台静音</value>
+  </data>
+  <data name="ClipToggle.Header" xml:space="preserve">
+    <value>光标限制在窗口内</value>
+  </data>
+  <data name="ClientToggle.Header" xml:space="preserve">
+    <value>保持客户区大小 (暂未实装)</value>
+  </data>
+
+  <!-- ===== 底部操作栏 ===== -->
+  <data name="MissingHint.Text" xml:space="preserve">
+    <value>未找到该配置文件。</value>
+  </data>
+  <data name="CancelButton.Content" xml:space="preserve">
+    <value>取消</value>
+  </data>
+  <data name="SaveButton.Content" xml:space="preserve">
+    <value>保存</value>
+  </data>
+
+  <!-- ===== 匹配文本占位符(代码后置,随匹配类型切换) ===== -->
+  <data name="MatchPlaceholderProcess" xml:space="preserve">
+    <value>例如 StarRail.exe</value>
+  </data>
+  <data name="MatchPlaceholderTitle" xml:space="preserve">
+    <value>例如 原神</value>
+  </data>
+  <data name="MatchPlaceholderTitleRegex" xml:space="preserve">
+    <value>例如 ^崩坏</value>
+  </data>
+
+  <!-- ===== 规则行(纯代码生成 BuildRuleRow) ===== -->
+  <data name="RuleTitleFormat" xml:space="preserve">
+    <value>规则 {0}</value>
+  </data>
+  <data name="RuleMoveUp" xml:space="preserve">
+    <value>上移</value>
+  </data>
+  <data name="RuleMoveDown" xml:space="preserve">
+    <value>下移</value>
+  </data>
+  <data name="RuleDelete" xml:space="preserve">
+    <value>删除</value>
+  </data>
+
+  <!-- 显示器条件子区 -->
+  <data name="MonitorConditionHeader" xml:space="preserve">
+    <value>显示器条件</value>
+  </data>
+  <data name="MonitorAny" xml:space="preserve">
+    <value>任意显示器</value>
+  </data>
+  <data name="MonitorSpecific" xml:space="preserve">
+    <value>指定分辨率</value>
+  </data>
+  <data name="MonitorWidth" xml:space="preserve">
+    <value>宽</value>
+  </data>
+  <data name="MonitorHeight" xml:space="preserve">
+    <value>高</value>
+  </data>
+  <data name="MonitorPickHeader" xml:space="preserve">
+    <value>从当前显示器选</value>
+  </data>
+
+  <!-- 动作子区 -->
+  <data name="ActionHeader" xml:space="preserve">
+    <value>动作</value>
+  </data>
+  <data name="ActionNone" xml:space="preserve">
+    <value>不动几何</value>
+  </data>
+  <data name="ActionFullscreen" xml:space="preserve">
+    <value>铺满</value>
+  </data>
+  <data name="ActionZone" xml:space="preserve">
+    <value>套布局分区</value>
+  </data>
+  <data name="ActionCustomRect" xml:space="preserve">
+    <value>自定义矩形</value>
+  </data>
+
+  <!-- Zone 子区 -->
+  <data name="ZoneLayoutHeader" xml:space="preserve">
+    <value>布局</value>
+  </data>
+  <data name="ZoneHeader" xml:space="preserve">
+    <value>分区</value>
+  </data>
+  <data name="NoLayoutsHint" xml:space="preserve">
+    <value>尚未创建任何布局,请先到“布局”页面新建。</value>
+  </data>
+
+  <!-- 自定义矩形子区 -->
+  <data name="RectX" xml:space="preserve">
+    <value>X</value>
+  </data>
+  <data name="RectY" xml:space="preserve">
+    <value>Y</value>
+  </data>
+  <data name="RectW" xml:space="preserve">
+    <value>宽</value>
+  </data>
+  <data name="RectH" xml:space="preserve">
+    <value>高</value>
+  </data>
+  <data name="PickRegionButton" xml:space="preserve">
+    <value>可视化选择…</value>
+  </data>
+
+  <!-- 行级开关 -->
+  <data name="UseWorkAreaCheck" xml:space="preserve">
+    <value>避开任务栏(使用工作区)</value>
+  </data>
+  <data name="MoveOnlyCheck" xml:space="preserve">
+    <value>只定位(不调尺寸)</value>
+  </data>
+  <data name="MoveOnlyTooltip" xml:space="preserve">
+    <value>只把窗口左上角移到目标位置,保持游戏自身尺寸不变(避免拉伸)。配合启动分辨率预设使用。</value>
+  </data>
+
+  <!-- ===== 选择显示器对话框(可视化选择前) ===== -->
+  <data name="PickMonitorTitle" xml:space="preserve">
+    <value>选择显示器</value>
+  </data>
+  <data name="PickMonitorPrimary" xml:space="preserve">
+    <value>确定</value>
+  </data>
+  <data name="PickMonitorClose" xml:space="preserve">
+    <value>取消</value>
+  </data>
+
+  <!-- ===== 下拉项包装(ToString) ===== -->
+  <data name="MonitorPrimarySuffix" xml:space="preserve">
+    <value> (主屏)</value>
+  </data>
+  <data name="UnnamedLayout" xml:space="preserve">
+    <value>未命名布局</value>
+  </data>
+  <data name="UnnamedZone" xml:space="preserve">
+    <value>未命名分区</value>
+  </data>
+</root>

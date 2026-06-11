@@ -2,28 +2,28 @@ using System.Text.Json.Serialization;
 
 namespace Reframe.Core;
 
-/// <summary>匹配方式:进程名 / 窗口标题(含) / 标题正则。</summary>
+/// <summary>How a window is matched: process name / window title (contains) / title regex.</summary>
 public enum MatchKind { Process, Title, TitleRegex }
 
-/// <summary>无边框实现。GpuScaling 为 M4 预留(WGC 捕获 + 覆盖层渲染)。</summary>
+/// <summary>Borderless implementation. GpuScaling is reserved for M4 (WGC capture + overlay rendering).</summary>
 public enum BorderlessMethod { Win32, GpuScaling }
 
-/// <summary>主窗口背景材质。Mica/MicaAlt = 云母及其变体,Acrylic = 桌面亚克力(毛玻璃)。</summary>
+/// <summary>Main-window backdrop material. Mica/MicaAlt = mica and its variant, Acrylic = desktop acrylic (frosted glass).</summary>
 public enum BackdropKind { Mica, MicaAlt, Acrylic }
 
-/// <summary>应用主题。System = 跟随系统设置。</summary>
+/// <summary>Application theme. System = follow the OS setting.</summary>
 public enum AppTheme { System, Light, Dark }
 
-/// <summary>规则命中后对窗口几何做什么。</summary>
+/// <summary>What to do to a window's geometry once a rule matches.</summary>
 public enum PlacementKind
 {
-    None,        // 只去边框,不动几何
-    Fullscreen,  // 铺满当前屏
-    Zone,        // 套用某布局的某分区
-    CustomRect   // 绝对矩形(相对当前屏左上角,物理像素)
+    None,        // Strip the border only; leave geometry alone
+    Fullscreen,  // Fill the current monitor
+    Zone,        // Apply a specific zone of a specific layout
+    CustomRect   // Absolute rect (relative to the current monitor's top-left, physical pixels)
 }
 
-/// <summary>物理像素矩形(相对某显示器左上角)。</summary>
+/// <summary>A physical-pixel rect (relative to a monitor's top-left).</summary>
 public sealed class RectPx
 {
     public int X { get; set; }
@@ -32,7 +32,7 @@ public sealed class RectPx
     public int H { get; set; }
 }
 
-/// <summary>最终矩形的四边微调(对标 BG 的窗口偏移)。</summary>
+/// <summary>Per-edge fine-tuning of the final rect (mirrors Borderless Gaming's window offsets).</summary>
 public sealed class Offsets
 {
     public int Left { get; set; }
@@ -41,7 +41,7 @@ public sealed class Offsets
     public int Bottom { get; set; }
 }
 
-/// <summary>按分辨率识别一块屏。0 = 任意。直观且跨设备名稳定(\\.\DISPLAYn 会漂移)。</summary>
+/// <summary>Identify a monitor by resolution. 0 = any. Intuitive and stable across devices (\\.\DISPLAYn drifts).</summary>
 public sealed class MonitorFilter
 {
     public int Width { get; set; }
@@ -51,7 +51,7 @@ public sealed class MonitorFilter
         => (Width == 0 || Width == w) && (Height == 0 || Height == h);
 }
 
-/// <summary>布局中的一个分区。坐标为 0..1 比例,相对"窗口当前所在显示器"。</summary>
+/// <summary>A zone within a layout. Coordinates are 0..1 ratios, relative to "the monitor the window is currently on".</summary>
 public sealed class Zone
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -62,20 +62,20 @@ public sealed class Zone
     public double H { get; set; } = 1;
 }
 
-/// <summary>命名布局 = 一组分区。一等公民:多个 profile 复用,改一处全跟随。</summary>
+/// <summary>A named layout = a set of zones. A first-class citizen: reused by multiple profiles, edit once and all follow.</summary>
 public sealed class Layout
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public string Name { get; set; } = "未命名布局";
 
-    /// <summary>编辑器用的参考分辨率,仅供比例↔像素换算显示,不参与运行时解析。</summary>
+    /// <summary>Reference resolution used by the editor, only for ratio↔pixel display conversion; not used in runtime resolution.</summary>
     public int RefWidth { get; set; } = 7680;
     public int RefHeight { get; set; } = 2160;
 
     public List<Zone> Zones { get; set; } = new();
 }
 
-/// <summary>放置规则:窗口所在屏命中 Monitor 过滤器时,执行 Kind。</summary>
+/// <summary>Placement rule: when the window's monitor matches the Monitor filter, perform Kind.</summary>
 public sealed class PlacementRule
 {
     public MonitorFilter Monitor { get; set; } = new();
@@ -88,28 +88,29 @@ public sealed class PlacementRule
     // Kind == CustomRect
     public RectPx? CustomRect { get; set; }
 
-    /// <summary>true = 以工作区(rcWork,避开任务栏)为基准;false = 整屏(rcMonitor)。</summary>
+    /// <summary>true = base on the work area (rcWork, avoiding the taskbar); false = the whole monitor (rcMonitor).</summary>
     public bool UseWorkArea { get; set; }
 
     /// <summary>
-    /// 只定位:把窗口左上角放到目标矩形左上角,保持窗口当前尺寸不变(不 resize)。
-    /// 用于"渲染分辨率钉死在注册表"的 Unity 游戏(见 <see cref="UnityResolutionPreset"/>):
-    /// resize 只会整张缩放(拉伸),所以这里只挪位置。与 KeepAspectRatio 冲突时 MoveOnly 优先。
+    /// Move only: place the window's top-left at the target rect's top-left, keeping the window's current
+    /// size unchanged (no resize). For Unity games with "render resolution pinned in the registry" (see
+    /// <see cref="UnityResolutionPreset"/>): a resize would just scale (stretch) the whole frame, so here we
+    /// only move it. When it conflicts with KeepAspectRatio, MoveOnly wins.
     /// </summary>
     public bool MoveOnly { get; set; }
 }
 
-/// <summary>Unity 游戏的启动分辨率预设:启动前把 Screenmanager 注册表写成目标值(原神等"渲染分辨率钉死在注册表"的游戏)。</summary>
+/// <summary>Unity game startup-resolution preset: before launch, write the Screenmanager registry values to the target (for games like Genshin that "pin render resolution in the registry").</summary>
 public sealed class UnityResolutionPreset
 {
     public bool Enabled { get; set; }
-    public string RegistryPath { get; set; } = "";  // 如 Software\miHoYo\原神(HKCU 下相对路径)
+    public string RegistryPath { get; set; } = "";  // e.g. Software\miHoYo\原神 (path relative to HKCU)
     public int Width { get; set; }
     public int Height { get; set; }
     public bool Windowed { get; set; } = true;       // Is Fullscreen mode = 0
 }
 
-/// <summary>一个游戏/应用的完整配置。</summary>
+/// <summary>The complete configuration for one game/app.</summary>
 public sealed class Profile
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -120,23 +121,24 @@ public sealed class Profile
     public string MatchValue { get; set; } = "";
 
     /// <summary>
-    /// 可执行文件完整路径(可空)。主要用作图标来源:反作弊保护的游戏(绝区零/原神等)
-    /// 读不到 MainModule,手动指定此路径后 IconCache 可直接从 exe 提取图标。将来也可用于启动。
+    /// Full path to the executable (nullable). Mainly used as an icon source: anti-cheat-protected games
+    /// (Zenless Zone Zero / Genshin etc.) expose no readable MainModule, so once this path is set IconCache
+    /// can extract the icon straight from the exe. May also be used to launch in the future.
     /// </summary>
     public string? ExePath { get; set; }
 
     public bool Borderless { get; set; } = true;
     public BorderlessMethod Method { get; set; } = BorderlessMethod.Win32;
 
-    /// <summary>检测到窗口后等待多久再处理(游戏启动期会重建窗口)。</summary>
+    /// <summary>How long to wait after detecting a window before acting on it (windows get rebuilt during a game's startup).</summary>
     public int DelayMs { get; set; } = 1000;
 
     public Offsets Offsets { get; set; } = new();
 
-    /// <summary>自上而下,第一条 Monitor 命中的规则生效。建议末尾放一条"任意屏"规则。</summary>
+    /// <summary>Top-down, the first rule whose Monitor matches wins. Recommended to put an "any monitor" rule last.</summary>
     public List<PlacementRule> Rules { get; set; } = new();
 
-    // ---- M3 预留开关(引擎逐步支持) ----
+    // ---- M3 reserved switches (engine support added incrementally) ----
     public bool Topmost { get; set; }
     public bool KeepAspectRatio { get; set; }
     public bool PreserveClientArea { get; set; }
@@ -144,12 +146,13 @@ public sealed class Profile
     public bool ClipCursor { get; set; }
 
     /// <summary>
-    /// Unity 启动分辨率预设(可空,默认无)。启用后引擎会在游戏未运行时把 Screenmanager
-    /// 注册表写成目标分辨率,使游戏按目标分辨率渲染,再配合 MoveOnly 规则只定位不缩放。
+    /// Unity startup-resolution preset (nullable, none by default). When enabled, the engine writes the
+    /// Screenmanager registry values to the target resolution while the game is not running, so the game
+    /// renders at the target resolution; combine with a MoveOnly rule to position without scaling.
     /// </summary>
     public UnityResolutionPreset? ResolutionPreset { get; set; }
 
-    /// <summary>启动命令(可空)。空则用 ExePath;支持启动器 URI(如 hoyoplay://)或任意可执行路径。</summary>
+    /// <summary>Launch command (nullable). Empty falls back to ExePath; supports launcher URIs (e.g. hoyoplay://) or any executable path.</summary>
     public string? LaunchCommand { get; set; }
 }
 
@@ -159,31 +162,34 @@ public sealed class AppConfig
     public int PollIntervalMs { get; set; } = 1500;
     public bool EngineEnabled { get; set; } = true;
 
-    /// <summary>按住修饰键(Shift)拖窗口时,显示分区覆盖层并在松手时吸附到分区(FancyZones 式)。</summary>
+    /// <summary>When dragging a window with the modifier (Shift) held, show the zone overlay and snap to a zone on release (FancyZones-style).</summary>
     public bool DragSnapEnabled { get; set; } = true;
 
-    /// <summary>主窗口背景材质。改即生效(经 ConfigService.Changed → MainWindow.ApplyBackdrop)。</summary>
+    /// <summary>Main-window backdrop material. Takes effect immediately (via ConfigService.Changed → MainWindow.ApplyBackdrop).</summary>
     public BackdropKind Backdrop { get; set; } = BackdropKind.Mica;
 
-    /// <summary>应用主题(夜间模式)。改即生效(经 ConfigService.Changed → MainWindow.ApplyTheme)。</summary>
+    /// <summary>Application theme (dark mode). Takes effect immediately (via ConfigService.Changed → MainWindow.ApplyTheme).</summary>
     public AppTheme Theme { get; set; } = AppTheme.System;
 
     /// <summary>
-    /// UI 显示语言。BCP-47 标签或 "system"。"system"(默认)= 跟随 Windows 显示语言;
-    /// "zh-CN" / "en-US" = 强制该语言(经 ApplicationLanguages.PrimaryLanguageOverride,App 启动早期设置)。
-    /// 切换后需重启应用生效(WinUI x:Uid 不可靠地热切换)。Core 不消费此字段——仅 UI 层(App/SettingsPage)读写。
+    /// UI display language. A BCP-47 tag or "system". "system" (default) = follow the Windows display
+    /// language; "zh-CN" / "en-US" = force that language (via ApplicationLanguages.PrimaryLanguageOverride,
+    /// set early in App startup). Changing it requires an app restart (WinUI does not hot-swap x:Uid
+    /// reliably). Core does not consume this field — only the UI layer (App/SettingsPage) reads/writes it.
     /// </summary>
     public string Language { get; set; } = "system";
 
     /// <summary>
-    /// SteamGridDB API key(可空)。配了才启用"在线图标"兜底:本地全失败时按游戏名联网取图标。
-    /// 免费申请:https://www.steamgriddb.com/profile/preferences/api 。空 = 该功能静默关闭。
+    /// SteamGridDB API key (nullable). Only when set does the "online icon" fallback kick in: when all local
+    /// sources fail, fetch an icon online by game name. Free signup:
+    /// https://www.steamgriddb.com/profile/preferences/api . Empty = the feature is silently disabled.
     /// </summary>
     public string? SteamGridDbApiKey { get; set; }
 
     /// <summary>
-    /// 热键绑定:动作 Id → 手势字符串(如 "Ctrl+Alt+B")。缺省项由 HotkeyService 用默认值补。
-    /// 动作 Id:ToggleBorderless / SendToZone1 / SendToZone2 / SendToZone3
+    /// Hotkey bindings: action Id → gesture string (e.g. "Ctrl+Alt+B"). Missing entries are filled with
+    /// defaults by HotkeyService.
+    /// Action Ids: ToggleBorderless / SendToZone1 / SendToZone2 / SendToZone3
     /// </summary>
     public Dictionary<string, string> Hotkeys { get; set; } = new();
 
@@ -191,13 +197,14 @@ public sealed class AppConfig
     public List<Profile> Profiles { get; set; } = new();
 
     /// <summary>
-    /// 用户自定义忽略的进程名(小写、不含 .exe)。命中者从左栏「运行中的窗口」正常列表里隐去
-    /// (可逆,在 UI 里取消忽略)。区别于写死的系统外壳黑名单(<see cref="WindowScanner.IsBlacklistedProcess"/>,不可逆)。
-    /// 对标 Borderless Gaming 的 winignore。
+    /// User-defined ignored process names (lowercase, without .exe). Matches are hidden from the left
+    /// column's normal "running windows" list (reversible — un-ignore in the UI). Distinct from the
+    /// hard-coded system-shell blacklist (<see cref="WindowScanner.IsBlacklistedProcess"/>, irreversible).
+    /// Mirrors Borderless Gaming's winignore.
     /// </summary>
     public List<string> IgnoredProcesses { get; set; } = new();
 
-    /// <summary>首次运行的默认配置:57″ 左游戏右副屏布局 + 三个米哈游游戏(本地套布局、其它屏铺满)。</summary>
+    /// <summary>First-run default config: a 57″ game-left/secondary-right layout + three miHoYo games (apply the layout locally, fill the screen elsewhere).</summary>
     public static AppConfig CreateDefault()
     {
         var layout = new Layout
@@ -207,8 +214,8 @@ public sealed class AppConfig
             RefHeight = 2160,
             Zones =
             {
-                new Zone { Name = "游戏区", X = 0,       Y = 0, W = 2.0 / 3, H = 1 }, // 5120 贴左
-                new Zone { Name = "副屏区", X = 2.0 / 3, Y = 0, W = 1.0 / 3, H = 1 }, // 2560 在右
+                new Zone { Name = "游戏区", X = 0,       Y = 0, W = 2.0 / 3, H = 1 }, // 5120, flush left
+                new Zone { Name = "副屏区", X = 2.0 / 3, Y = 0, W = 1.0 / 3, H = 1 }, // 2560, on the right
             }
         };
         var gameZone = layout.Zones[0];
@@ -220,7 +227,7 @@ public sealed class AppConfig
             MatchValue = val,
             Rules =
             {
-                new PlacementRule   // 本地 57″:套布局游戏区(避开任务栏)
+                new PlacementRule   // Local 57″: apply the layout's game zone (avoiding the taskbar)
                 {
                     Monitor = new MonitorFilter { Width = 7680, Height = 2160 },
                     Kind = PlacementKind.Zone,
@@ -228,7 +235,7 @@ public sealed class AppConfig
                     ZoneId = gameZone.Id,
                     UseWorkArea = true
                 },
-                new PlacementRule   // 其它任何屏(VDD 串流):铺满
+                new PlacementRule   // Any other monitor (VDD streaming): fill the screen
                 {
                     Monitor = new MonitorFilter(),
                     Kind = PlacementKind.Fullscreen

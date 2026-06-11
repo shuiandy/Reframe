@@ -9,7 +9,7 @@ using Reframe.Services;
 
 namespace Reframe.UI;
 
-/// <summary>列表行视图模型(只读展示用,真正的数据落在 Config.Profiles 上)。</summary>
+/// <summary>List-row view model (read-only display; the real data lives on Config.Profiles).</summary>
 public sealed partial class ProfileRow : System.ComponentModel.INotifyPropertyChanged
 {
     public string ProfileId { get; init; } = "";
@@ -18,11 +18,11 @@ public sealed partial class ProfileRow : System.ComponentModel.INotifyPropertyCh
     public string RulesSummary { get; init; } = "";
     public bool Enabled { get; set; }
 
-    /// <summary>有启动命令或可执行文件才可一键启动(否则「启动」按钮禁用)。</summary>
+    /// <summary>One-click launch is available only with a launch command or an executable (otherwise the Launch button is disabled).</summary>
     public bool CanLaunch { get; init; }
 
-    // MatchKind=Process 用 IconCache 取进程图标;其它匹配方式无进程可言 → 一律默认字形。
-    // 图标异步回填(Reload 时先 null,Task.Run 提取后切回 UI 线程 set),故用通知属性。
+    // MatchKind=Process fetches the process icon via IconCache; other match kinds have no process, so they always use the default glyph.
+    // The icon is filled in asynchronously (null first on Reload, then set on the UI thread after Task.Run extraction), hence the notify property.
     private ImageSource? _icon;
     public ImageSource? Icon
     {
@@ -37,7 +37,7 @@ public sealed partial class ProfileRow : System.ComponentModel.INotifyPropertyCh
         }
     }
 
-    /// <summary>进程匹配且需要尝试取图标时,存其进程名(不含 .exe);否则 null = 始终默认字形。</summary>
+    /// <summary>For a process match where an icon should be attempted, holds the process name (without .exe); otherwise null = always the default glyph.</summary>
     public string? ProcessNameForIcon { get; init; }
 
     public Visibility RealIconVisibility => Icon is null ? Visibility.Collapsed : Visibility.Visible;
@@ -47,17 +47,18 @@ public sealed partial class ProfileRow : System.ComponentModel.INotifyPropertyCh
 }
 
 /// <summary>
-/// 左栏「运行中的窗口」一行。按 Handle 复用(见 RefreshWindows 的 diff):身份字段(Handle/ProcessId)
-/// 不变,文本字段与 Icon 经 INotifyPropertyChanged 原地更新,既不重建集合也不闪图标。x:Bind 需要顶层 public 类。
+/// A row in the left-column "running windows" list. Reused by Handle (see the diff in RefreshWindows): identity fields
+/// (Handle/ProcessId) stay fixed, while text fields and Icon update in place via INotifyPropertyChanged — neither rebuilding the
+/// collection nor flickering the icon. x:Bind requires a top-level public class.
 /// </summary>
 public sealed partial class WindowRow : System.ComponentModel.INotifyPropertyChanged
 {
     public IntPtr Handle { get; init; }
     public uint ProcessId { get; init; }
-    public string ProcessName { get; init; } = "";   // 不含 .exe,小写;建 profile / 黑名单用
+    public string ProcessName { get; init; } = "";   // without .exe, lowercase; used for building profiles / the ignore list
 
-    // ---- 过滤状态(支持「显示已过滤」与忽略名单管理) ----
-    // Reason 由 WindowScanner.Classify 给出;原地更新(忽略/取消忽略后无需重扫)。
+    // ---- Filter state (backs "show filtered" and ignore-list management) ----
+    // Reason comes from WindowScanner.Classify; updated in place (no rescan needed after ignore / stop-ignoring).
     private FilterReason _reason = FilterReason.None;
     public FilterReason Reason
     {
@@ -78,31 +79,31 @@ public sealed partial class WindowRow : System.ComponentModel.INotifyPropertyCha
         }
     }
 
-    /// <summary>是否被过滤(非正常候选)。被过滤行置灰 + 显示原因小字。</summary>
+    /// <summary>Whether this row is filtered (not a normal candidate). Filtered rows are greyed out and show a reason caption.</summary>
     public bool IsFiltered => Reason != FilterReason.None;
 
-    /// <summary>是否因"用户忽略名单"被过滤(可逆,显示「取消忽略」)。</summary>
+    /// <summary>Whether it's filtered by the "user ignore list" (reversible; shows "Stop ignoring").</summary>
     public bool IsUserIgnored => Reason == FilterReason.UserIgnored;
 
-    /// <summary>能否被"忽略此进程"(系统外壳黑名单不可逆,已是用户忽略则给「取消忽略」)。有进程名才行。</summary>
+    /// <summary>Whether it can be acted on by "ignore this process" (the system-shell blacklist is irreversible; if already user-ignored, "Stop ignoring" is offered instead). Requires a process name.</summary>
     public bool CanIgnore => Reason != FilterReason.SystemShell && !string.IsNullOrEmpty(ProcessName);
 
-    /// <summary>被过滤行置灰。</summary>
+    /// <summary>Filtered rows are greyed out.</summary>
     public double RowOpacity => IsFiltered ? 0.45 : 1.0;
 
-    /// <summary>过滤原因小字("系统窗口"/"已忽略"/"已隐藏"/"过小")。正常候选为空。</summary>
+    /// <summary>Filter-reason caption (System window / Ignored / Hidden / Too small). Empty for normal candidates.</summary>
     public string ReasonLabel => Reason switch
     {
-        FilterReason.SystemShell => "系统窗口",
-        FilterReason.UserIgnored => "已忽略",
-        FilterReason.Cloaked     => "已隐藏",
-        FilterReason.TooSmall    => "过小",
+        FilterReason.SystemShell => Loc.T("ProfilesPage/ReasonSystemWindow"),
+        FilterReason.UserIgnored => Loc.T("ProfilesPage/ReasonIgnored"),
+        FilterReason.Cloaked     => Loc.T("ProfilesPage/ReasonHidden"),
+        FilterReason.TooSmall    => Loc.T("ProfilesPage/ReasonTooSmall"),
         _ => "",
     };
 
     public Visibility ReasonVisibility => IsFiltered ? Visibility.Visible : Visibility.Collapsed;
 
-    // 右键菜单两项显隐互斥:可忽略且尚未被用户忽略 → 显「忽略此进程」;已被用户忽略 → 显「取消忽略」。
+    // The two context-menu items are mutually exclusive: ignorable and not yet user-ignored -> show "Ignore this process"; already user-ignored -> show "Stop ignoring".
     public Visibility IgnoreItemVisibility
         => CanIgnore && !IsUserIgnored ? Visibility.Visible : Visibility.Collapsed;
     public Visibility UnignoreItemVisibility
@@ -115,7 +116,7 @@ public sealed partial class WindowRow : System.ComponentModel.INotifyPropertyCha
         set { if (_title != value) { _title = value; Raise(nameof(Title)); } }
     }
 
-    // 次要灰字:进程 exe 完整路径(取得到),否则回落 "进程名.exe"。
+    // Secondary grey text: the process exe's full path (when resolvable), otherwise falls back to "processname.exe".
     private string _pathLabel = "";
     public string PathLabel
     {
@@ -130,7 +131,7 @@ public sealed partial class WindowRow : System.ComponentModel.INotifyPropertyCha
         set { if (_sizeLabel != value) { _sizeLabel = value; Raise(nameof(SizeLabel)); } }
     }
 
-    // 同进程已有配置 → 行尾显示「已有配置」灰字。随配置增删原地更新。
+    // If the same process already has a profile -> show the "Has profile" grey tag at the end of the row. Updated in place as profiles are added/removed.
     private bool _hasProfile;
     public bool HasProfile
     {
@@ -140,7 +141,7 @@ public sealed partial class WindowRow : System.ComponentModel.INotifyPropertyCha
 
     public Visibility HasProfileVisibility => HasProfile ? Visibility.Visible : Visibility.Collapsed;
 
-    // 图标:同步命中(TryGetCached/ByProcessId)即刻设;未命中后台预热再回填(回填到复用的行对象上,此后不再闪)。
+    // Icon: set immediately on a synchronous hit (TryGetCached/ByProcessId); on a miss, prewarm in the background and fill in later (onto the reused row object, so it won't flicker again afterward).
     private ImageSource? _icon;
     public ImageSource? Icon
     {
@@ -164,18 +165,19 @@ public sealed partial class WindowRow : System.ComponentModel.INotifyPropertyCha
 
 public sealed partial class ProfilesPage : Page
 {
-    // Save() 会触发 Changed,Changed 又会重建列表 —— 用此标志吞掉自己引发的回声,避免列表抖动。
+    // Save() raises Changed, and Changed rebuilds the list — this flag swallows the echo we caused ourselves, avoiding list churn.
     private bool _suppressReload;
 
-    // 左栏窗口列表:_windows 是全量持久集合,按 Handle 复用做增量 diff(参考 DashboardPage),
-    // 行对象(WindowRow)身份稳定、Icon 不闪。_windowsView 是绑给 ListView 的"过滤视图",
-    // 只持有 _windows 里同一批行对象的引用子集(按搜索框命中);切换可见性靠增删视图成员而非容器可见性
-    // (容器可见性在虚拟化/未实现容器时不可靠,会误判空)。行对象共享 → 视图增删不重置 Icon。
+    // Left-column window list: _windows is the full persistent collection, reused by Handle for an incremental diff (cf. DashboardPage),
+    // so row objects (WindowRow) keep a stable identity and the Icon doesn't flicker. _windowsView is the "filter view" bound to the ListView,
+    // holding only a subset of references to the same row objects in _windows (per search-box hits); visibility toggling is done by adding/removing
+    // view members rather than container visibility (container visibility is unreliable under virtualization / unrealized containers and misreports empty).
+    // Because the row objects are shared, adding/removing from the view doesn't reset the Icon.
     private readonly List<WindowRow> _windows = new();
     private readonly System.Collections.ObjectModel.ObservableCollection<WindowRow> _windowsView = new();
     private readonly DispatcherTimer _windowTimer = new() { Interval = TimeSpan.FromSeconds(3) };
 
-    // 「显示已过滤」开关:关 = 只列正常候选(默认);开 = 被过滤的也列出(置灰 + 原因),兜底找回被误滤的游戏。
+    // "Show filtered" toggle: off = list only normal candidates (default); on = also list filtered ones (greyed + reason), a fallback for recovering games filtered by mistake.
     private bool _showFiltered;
 
     public ProfilesPage()
@@ -187,13 +189,30 @@ public sealed partial class ProfilesPage : Page
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
+        // Localize the named-element tooltips from code-behind (attached-property x:Uid is brittle in MRT Core).
+        ToolTipService.SetToolTip(ShowFilteredToggle, Loc.T("ProfilesPage/ShowFilteredToggle.ToolTip"));
+        ToolTipService.SetToolTip(RefreshButton, Loc.T("ProfilesPage/RefreshButton.ToolTip"));
+
         ConfigService.Instance.Changed += OnConfigChanged;
         Reload();
 
-        WindowList.ItemsSource = _windowsView; // 过滤视图,只设一次
+        WindowList.ItemsSource = _windowsView; // filter view, set once
         RefreshWindows();
         _windowTimer.Tick += WindowTimer_Tick;
         _windowTimer.Start();
+    }
+
+    // In-template button tooltips: realized per row, so they can't be named — set them as each button loads (Loc.T).
+    private void CreateFromWindowButton_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button b)
+            ToolTipService.SetToolTip(b, Loc.T("ProfilesPage/CreateFromWindowButton.ToolTip"));
+    }
+
+    private void LaunchButton_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button b)
+            ToolTipService.SetToolTip(b, Loc.T("ProfilesPage/LaunchButton.ToolTip"));
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
@@ -209,11 +228,11 @@ public sealed partial class ProfilesPage : Page
         DispatcherQueue.TryEnqueue(() =>
         {
             Reload();
-            ApplyWindowFilter(); // 配置增删 → 左栏「已有配置」标记需重算
+            ApplyWindowFilter(); // profiles added/removed -> the left-column "has profile" tags must be recomputed
         });
     }
 
-    // ======================== 右栏:配置列表 ========================
+    // ======================== Right column: profile list ========================
 
     private void Reload()
     {
@@ -231,8 +250,8 @@ public sealed partial class ProfilesPage : Page
         LoadIconsAsync(rows);
     }
 
-    // 图标加载(与仪表盘一致的优先级:ExePath → 内存快取 → 本地链路 → SteamGridDB 兜底)。
-    // 列表非定时重建(仅 Reload 时),无闪烁问题;但仍走"同步快取先取、未命中再异步"以即时显示已缓存图标。
+    // Icon loading (same priority as the dashboard: ExePath -> in-memory cache -> local chain -> SteamGridDB fallback).
+    // The list isn't rebuilt on a timer (only on Reload), so there's no flicker; but it still does "synchronous cache first, async on miss" to show cached icons immediately.
     private void LoadIconsAsync(List<ProfileRow> rows)
     {
         var cfg = ConfigService.Instance.Config;
@@ -243,7 +262,7 @@ public sealed partial class ProfilesPage : Page
             var profile = cfg.Profiles.FirstOrDefault(p => p.Id == row.ProfileId);
             if (profile is null) continue;
 
-            // 同步快取:已配 ExePath / 内存已命中 → 立即显示,不走异步。
+            // Synchronous cache: ExePath configured / in-memory hit -> show immediately, skip the async path.
             if (!string.IsNullOrWhiteSpace(profile.ExePath))
             {
                 var icon = IconCache.ByProfile(profile);
@@ -263,7 +282,7 @@ public sealed partial class ProfilesPage : Page
             {
                 IconCache.PrewarmByProcessName(proc);
                 DispatcherQueue.TryEnqueue(() => target.Icon ??= IconCache.ByProfile(profile));
-                // 本地全失败 → SteamGridDB 在线兜底(配了 key 才走),成功后回填。
+                // All local sources failed -> SteamGridDB online fallback (only if a key is set); fill in on success.
                 if (await IconCache.PrewarmFromSteamGridDbAsync(apiKey, profile).ConfigureAwait(false))
                     DispatcherQueue.TryEnqueue(() => target.Icon ??= IconCache.ByProfile(profile));
             });
@@ -273,10 +292,10 @@ public sealed partial class ProfilesPage : Page
     private static ProfileRow ToRow(Profile p) => new()
     {
         ProfileId = p.Id,
-        Name = string.IsNullOrWhiteSpace(p.Name) ? "未命名" : p.Name,
+        Name = string.IsNullOrWhiteSpace(p.Name) ? Loc.T("ProfilesPage/Unnamed") : p.Name,
         Enabled = p.Enabled,
         MatchSummary = MatchSummaryOf(p),
-        RulesSummary = $"{p.Rules.Count} 条规则",
+        RulesSummary = Loc.T("ProfilesPage/RulesCountFormat", p.Rules.Count),
         CanLaunch = !string.IsNullOrWhiteSpace(p.LaunchCommand) || !string.IsNullOrWhiteSpace(p.ExePath),
         ProcessNameForIcon = p.MatchKind == MatchKind.Process && !string.IsNullOrWhiteSpace(p.MatchValue)
             ? p.MatchValue
@@ -287,13 +306,13 @@ public sealed partial class ProfilesPage : Page
     {
         string label = p.MatchKind switch
         {
-            MatchKind.Process => "进程名",
-            MatchKind.Title => "标题包含",
-            MatchKind.TitleRegex => "标题正则",
-            _ => "匹配",
+            MatchKind.Process => Loc.T("ProfilesPage/MatchKindProcess"),
+            MatchKind.Title => Loc.T("ProfilesPage/MatchKindTitle"),
+            MatchKind.TitleRegex => Loc.T("ProfilesPage/MatchKindTitleRegex"),
+            _ => Loc.T("ProfilesPage/MatchKindGeneric"),
         };
-        string val = string.IsNullOrWhiteSpace(p.MatchValue) ? "(未设置)" : p.MatchValue;
-        return $"{label}: {val}";
+        string val = string.IsNullOrWhiteSpace(p.MatchValue) ? Loc.T("ProfilesPage/MatchValueUnset") : p.MatchValue;
+        return Loc.T("ProfilesPage/MatchSummaryFormat", label, val);
     }
 
     private void EnabledToggle_Toggled(object sender, RoutedEventArgs e)
@@ -304,7 +323,7 @@ public sealed partial class ProfilesPage : Page
 
         profile.Enabled = ts.IsOn;
 
-        // 禁用即还原:解除该 profile 接管的全部窗口(引擎契约 API),再落盘。
+        // Disable = restore: release all windows this profile took over (engine contract API), then persist.
         if (!ts.IsOn)
             Reframe.App.Engine.ReleaseProfile(profile.Id);
 
@@ -313,8 +332,8 @@ public sealed partial class ProfilesPage : Page
         _suppressReload = false;
     }
 
-    // 行内「启动」按钮:据 Tag(ProfileId)定位 Profile,调 GameLauncher.Launch。
-    // 失败(没配启动方式/文件不存在/已在运行/异常)用 ContentDialog 显示 error。
+    // In-row "Launch" button: locate the Profile by Tag (ProfileId) and call GameLauncher.Launch.
+    // On failure (no launch method configured / file missing / already running / exception) show the error in a ContentDialog.
     private async void LaunchButton_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button btn || btn.Tag is not string id) return;
@@ -325,9 +344,9 @@ public sealed partial class ProfilesPage : Page
 
         var dialog = new ContentDialog
         {
-            Title = "无法启动",
-            Content = error ?? "启动失败。",
-            CloseButtonText = "知道了",
+            Title = Loc.T("ProfilesPage/LaunchFailedTitle"),
+            Content = error ?? Loc.T("ProfilesPage/LaunchFailedFallback"),
+            CloseButtonText = Loc.T("ProfilesPage/LaunchFailedClose"),
             XamlRoot = XamlRoot,
         };
         await dialog.ShowAsync();
@@ -345,7 +364,7 @@ public sealed partial class ProfilesPage : Page
 
     private ProfileRow? SelectedRow => ProfileList.SelectedItem as ProfileRow;
 
-    // 双击 = 进入编辑器。点开关/启动按钮上的双击不应导航(它们有自己的行为)。
+    // Double-click = open the editor. A double-click on the toggle / launch button should not navigate (they have their own behavior).
     private void ProfileList_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
         if (IsWithinInteractiveControl(e.OriginalSource as DependencyObject)) return;
@@ -354,12 +373,12 @@ public sealed partial class ProfilesPage : Page
             Frame.Navigate(typeof(ProfileEditorPage), row.ProfileId);
     }
 
-    // 右键 = 在 ContextFlyout 打开前选中该行,使编辑/删除落到正确项;在开关/按钮上右键不弹菜单。
+    // Right-click = select the row before the ContextFlyout opens, so Edit/Delete act on the correct item; don't pop the menu when right-clicking the toggle/button.
     private void ProfileRow_ContextRequested(UIElement sender, ContextRequestedEventArgs e)
     {
         if (IsWithinInteractiveControl(e.OriginalSource as DependencyObject))
         {
-            e.Handled = true; // 吞掉,避免在开关/按钮上误弹行菜单
+            e.Handled = true; // swallow, to avoid wrongly popping the row menu over the toggle/button
             return;
         }
         if ((sender as FrameworkElement)?.DataContext is ProfileRow row)
@@ -372,7 +391,7 @@ public sealed partial class ProfilesPage : Page
             Frame.Navigate(typeof(ProfileEditorPage), row.ProfileId);
     }
 
-    // 行内交互控件(开关/按钮)上的双击/右键不应触发行级导航或菜单——它们各有行为。
+    // A double-click / right-click on in-row interactive controls (toggle/button) should not trigger row-level navigation or menus — each has its own behavior.
     private static bool IsWithinInteractiveControl(DependencyObject? src)
     {
         while (src is not null && src is not ListViewItem)
@@ -395,15 +414,15 @@ public sealed partial class ProfilesPage : Page
         var cfg = ConfigService.Instance.Config;
         var profile = new Profile
         {
-            Name = "新配置文件",
+            Name = Loc.T("ProfilesPage/NewProfileName"),
             MatchKind = MatchKind.Process,
             MatchValue = "",
             Rules =
             {
                 new PlacementRule
                 {
-                    Monitor = new MonitorFilter(),   // 任意屏
-                    Kind = PlacementKind.Fullscreen, // 铺满
+                    Monitor = new MonitorFilter(),   // any monitor
+                    Kind = PlacementKind.Fullscreen, // fill
                 },
             },
         };
@@ -423,20 +442,21 @@ public sealed partial class ProfilesPage : Page
         var profile = cfg.Profiles.FirstOrDefault(x => x.Id == row.ProfileId);
         if (profile is null) return;
 
+        string displayName = string.IsNullOrWhiteSpace(profile.Name) ? Loc.T("ProfilesPage/Unnamed") : profile.Name;
         var dialog = new ContentDialog
         {
-            Title = "删除配置文件",
-            Content = $"确定要删除“{(string.IsNullOrWhiteSpace(profile.Name) ? "未命名" : profile.Name)}”吗?此操作不可撤销。",
-            PrimaryButtonText = "删除",
-            CloseButtonText = "取消",
+            Title = Loc.T("ProfilesPage/DeleteDialogTitle"),
+            Content = Loc.T("ProfilesPage/DeleteDialogContentFormat", displayName),
+            PrimaryButtonText = Loc.T("Common/Delete"),
+            CloseButtonText = Loc.T("Common/Cancel"),
             DefaultButton = ContentDialogButton.Close,
             XamlRoot = XamlRoot,
         };
 
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
 
-        // 删除前先还原该 profile 名下全部接管窗口:否则 Remove 后引擎再也找不到这条规则,
-        // 已去框/置顶/Clip/Mute 的窗口将永久保持接管态(成为孤儿)。
+        // Restore all of this profile's taken-over windows before deleting: otherwise, after Remove the engine can no longer find this rule,
+        // and windows already made borderless / topmost / clipped / muted would stay taken over forever (orphaned).
         Reframe.App.Engine.ReleaseProfile(profile.Id);
 
         cfg.Profiles.Remove(profile);
@@ -444,10 +464,10 @@ public sealed partial class ProfilesPage : Page
         ConfigService.Instance.Save();
         _suppressReload = false;
         Reload();
-        ApplyWindowFilter(); // 左栏「已有配置」标记需重算
+        ApplyWindowFilter(); // the left-column "has profile" tags must be recomputed
     }
 
-    // ======================== 左栏:运行中的窗口 ========================
+    // ======================== Left column: running windows ========================
 
     private void WindowTimer_Tick(object? sender, object e) => RefreshWindows();
 
@@ -455,7 +475,7 @@ public sealed partial class ProfilesPage : Page
 
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyWindowFilter();
 
-    // 「显示已过滤」开关切换:不重扫,只改可见集(被过滤行已在 _windows 里)。
+    // "Show filtered" toggle change: no rescan, just change the visible set (filtered rows are already in _windows).
     private void ShowFilteredToggle_Toggled(object sender, RoutedEventArgs e)
     {
         _showFiltered = ShowFilteredToggle.IsChecked == true;
@@ -463,9 +483,9 @@ public sealed partial class ProfilesPage : Page
     }
 
     /// <summary>
-    /// 刷新左栏窗口列表:扫描全部顶层窗口并附过滤原因(系统外壳 / 用户忽略 / cloaked / 过小),按 Handle
-    /// 对 _windows 做增量 diff(消失的删、新增的加、仍在的原地更新),不整列重建避免闪烁。随后按搜索框 +
-    /// 「显示已过滤」开关过滤可见项。被过滤行也保留在 _windows 里,开关一开即可呈现(置灰 + 原因)。
+    /// Refresh the left-column window list: enumerate all top-level windows with their filter reason (system shell / user-ignored / cloaked / too small),
+    /// diff against _windows incrementally by Handle (remove gone, add new, update surviving in place), without rebuilding the whole list, to avoid flicker.
+    /// Then filter the visible items by the search box + the "show filtered" toggle. Filtered rows stay in _windows too, so flipping the toggle reveals them immediately (greyed + reason).
     /// </summary>
     private void RefreshWindows()
     {
@@ -473,7 +493,7 @@ public sealed partial class ProfilesPage : Page
         var scanned = WindowScanner.EnumerateAllWithReason(ignores);
         var live = new HashSet<IntPtr>(scanned.Select(s => s.Window.Handle));
 
-        // 删:已不在扫描结果中的句柄。
+        // Remove: handles no longer in the scan results.
         for (int i = _windows.Count - 1; i >= 0; i--)
             if (!live.Contains(_windows[i].Handle))
                 _windows.RemoveAt(i);
@@ -497,13 +517,13 @@ public sealed partial class ProfilesPage : Page
                     SizeLabel = sizeLabel,
                     HasProfile = hasProfile,
                     Reason = s.Reason,
-                    Icon = IconCache.ByProcessId(w.ProcessId), // 在跑的窗口优先用 pid 入口(精确且顺便学路径)
+                    Icon = IconCache.ByProcessId(w.ProcessId), // for a running window, prefer the pid entry (precise, and it learns the path along the way)
                 };
                 _windows.Add(row);
             }
             else
             {
-                // 原地更新会变的字段(标题/尺寸/已有配置标记/过滤原因);Icon 已有则保留不闪。
+                // Update the fields that can change in place (title / size / has-profile tag / filter reason); keep an existing Icon to avoid flicker.
                 existing.Title = w.Title;
                 existing.SizeLabel = sizeLabel;
                 existing.HasProfile = hasProfile;
@@ -517,8 +537,8 @@ public sealed partial class ProfilesPage : Page
     }
 
     /// <summary>
-    /// 按搜索框文本把 _windows 的命中子集同步进 _windowsView(原地增删,保持顺序)。
-    /// _windows 与 _windowsView 共享同一批 WindowRow 实例,故视图增删不重置 Icon/状态,不闪。
+    /// Sync the subset of _windows matching the search box into _windowsView (add/remove in place, preserving order).
+    /// _windows and _windowsView share the same WindowRow instances, so adding/removing from the view doesn't reset the Icon/state — no flicker.
     /// </summary>
     private void ApplyWindowFilter()
     {
@@ -527,11 +547,11 @@ public sealed partial class ProfilesPage : Page
 
         foreach (var row in _windows)
         {
-            // 同步「已有配置」标记(配置增删后调用,扫描间隔外也能即时反映)。
+            // Sync the "has profile" tag (called after profiles are added/removed, so it reflects immediately even between scans).
             row.HasProfile = HasProfileForProcess(row.ProcessName);
 
-            // 同步用户忽略状态(忽略/取消忽略或外部改名单后即时反映,无需等下次重扫)。
-            // 只在 None↔UserIgnored 间翻转;系统外壳 / cloaked / 过小由扫描决定,不在此动。
+            // Sync the user-ignore state (reflects immediately after ignore / stop-ignoring, or an external edit to the list, without waiting for the next rescan).
+            // Only flip between None <-> UserIgnored; system shell / cloaked / too small are decided by the scan and not touched here.
             bool ignored = WindowScanner.IsUserIgnored(row.ProcessName, ignores);
             if (ignored && row.Reason == FilterReason.None)
                 row.Reason = FilterReason.UserIgnored;
@@ -543,15 +563,15 @@ public sealed partial class ProfilesPage : Page
             || r.Title.Contains(q, StringComparison.OrdinalIgnoreCase)
             || (r.ProcessName + ".exe").Contains(q, StringComparison.OrdinalIgnoreCase);
 
-        // 关「显示已过滤」时,被过滤行不进可见集(留在 _windows 供开关后呈现)。
+        // When "show filtered" is off, filtered rows don't enter the visible set (they stay in _windows to be revealed when toggled on).
         var desired = _windows.Where(r => (_showFiltered || !r.IsFiltered) && Match(r)).ToList();
 
-        // 删:视图里已不该出现的。
+        // Remove: items that should no longer appear in the view.
         for (int i = _windowsView.Count - 1; i >= 0; i--)
             if (!desired.Contains(_windowsView[i]))
                 _windowsView.RemoveAt(i);
 
-        // 增/排序:按 desired 顺序就位(原地移动/插入,引用相等不动)。
+        // Add / reorder: place into the desired order (move/insert in place; leave alone when reference-equal).
         for (int i = 0; i < desired.Count; i++)
         {
             var row = desired[i];
@@ -565,15 +585,15 @@ public sealed partial class ProfilesPage : Page
         WindowList.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
     }
 
-    /// <summary>进程 exe 完整路径(取得到),否则回落 "进程名.exe";进程名也空则 "(未知进程)"。</summary>
+    /// <summary>The process exe's full path (when resolvable), otherwise "processname.exe"; if the process name is empty too, "(unknown process)".</summary>
     private static string PathLabelOf(WindowInfo w)
     {
         string? path = IconCache.TryResolveExePath(w.ProcessId);
         if (!string.IsNullOrEmpty(path)) return path;
-        return string.IsNullOrEmpty(w.ProcessName) ? "(未知进程)" : w.ProcessName + ".exe";
+        return string.IsNullOrEmpty(w.ProcessName) ? Loc.T("ProfilesPage/UnknownProcess") : w.ProcessName + ".exe";
     }
 
-    /// <summary>是否已有针对该进程名(MatchKind=Process)的配置。</summary>
+    /// <summary>Whether a profile already targets this process name (MatchKind=Process).</summary>
     private static bool HasProfileForProcess(string processName)
     {
         if (string.IsNullOrEmpty(processName)) return false;
@@ -585,19 +605,19 @@ public sealed partial class ProfilesPage : Page
     private static WindowRow? WindowRowFromSender(object sender)
         => (sender as FrameworkElement)?.DataContext as WindowRow;
 
-    // 「+ 创建配置」(行主按钮 / 右键菜单项):沿用对话框版逻辑——
-    // Name=标题截断、MatchKind=Process、预置任意屏→铺满规则、重复进程确认框、Save 后导航到编辑页。
+    // "+ Create profile" (row main button / context-menu item): same logic as the dialog version —
+    // Name = truncated title, MatchKind = Process, preset any-monitor -> fill rule, duplicate-process confirmation, navigate to the editor after Save.
     private async void CreateProfile_Click(object sender, RoutedEventArgs e)
     {
         if (WindowRowFromSender(sender) is not { } w) return;
 
         var cfg = ConfigService.Instance.Config;
 
-        // 进程名:WindowScanner 给的是不含 .exe 的小写;配置里统一存 .exe(与默认配置一致,匹配端会 StripExe)。
+        // Process name: WindowScanner gives lowercase without .exe; the config stores .exe consistently (matching the default config; the match side does StripExe).
         string proc = string.IsNullOrEmpty(w.ProcessName) ? "" : w.ProcessName;
         string matchValue = string.IsNullOrEmpty(proc) ? "" : proc + ".exe";
 
-        // 同进程名已有 profile → 确认是否再建一个。
+        // A profile already targets this process name -> confirm whether to create another.
         if (!string.IsNullOrEmpty(proc))
         {
             var dup = cfg.Profiles.FirstOrDefault(p =>
@@ -605,12 +625,13 @@ public sealed partial class ProfilesPage : Page
                 string.Equals(StripExe(p.MatchValue), proc, StringComparison.OrdinalIgnoreCase));
             if (dup is not null)
             {
+                string dupName = string.IsNullOrWhiteSpace(dup.Name) ? Loc.T("ProfilesPage/Unnamed") : dup.Name;
                 var confirm = new ContentDialog
                 {
-                    Title = "已有针对该进程的配置",
-                    Content = $"已有针对该进程的配置“{(string.IsNullOrWhiteSpace(dup.Name) ? "未命名" : dup.Name)}”,仍要再建一个吗?",
-                    PrimaryButtonText = "仍要新建",
-                    CloseButtonText = "取消",
+                    Title = Loc.T("ProfilesPage/DuplicateDialogTitle"),
+                    Content = Loc.T("ProfilesPage/DuplicateDialogContentFormat", dupName),
+                    PrimaryButtonText = Loc.T("ProfilesPage/DuplicateDialogPrimary"),
+                    CloseButtonText = Loc.T("Common/Cancel"),
                     DefaultButton = ContentDialogButton.Close,
                     XamlRoot = XamlRoot,
                 };
@@ -628,8 +649,8 @@ public sealed partial class ProfilesPage : Page
             {
                 new PlacementRule
                 {
-                    Monitor = new MonitorFilter(),   // 任意屏
-                    Kind = PlacementKind.Fullscreen, // 铺满
+                    Monitor = new MonitorFilter(),   // any monitor
+                    Kind = PlacementKind.Fullscreen, // fill
                 },
             },
         };
@@ -642,16 +663,16 @@ public sealed partial class ProfilesPage : Page
         Frame.Navigate(typeof(ProfileEditorPage), profile.Id);
     }
 
-    // 右键「忽略此进程」:把进程名加进 Config.IgnoredProcesses(小写、不含 .exe)+ Save。
-    // 正常模式下该进程的窗口随即从可见集消失;「显示已过滤」开则置灰显示「已忽略」+「取消忽略」。
-    // 系统外壳窗(CanIgnore=false)的菜单项已隐藏,不会走到这。
+    // Context-menu "Ignore this process": add the process name to Config.IgnoredProcesses (lowercase, without .exe) + Save.
+    // In normal mode the process's windows then disappear from the visible set; with "show filtered" on, they're greyed and show "Ignored" + "Stop ignoring".
+    // The menu item is hidden for system-shell windows (CanIgnore=false), so we never reach here for them.
     private void IgnoreProcess_Click(object sender, RoutedEventArgs e)
     {
         if (WindowRowFromSender(sender) is not { } w) return;
         if (string.IsNullOrEmpty(w.ProcessName)) return;
 
         var cfg = ConfigService.Instance.Config;
-        string proc = w.ProcessName; // WindowScanner 给的已是小写、不含 .exe
+        string proc = w.ProcessName; // WindowScanner already gives lowercase without .exe
         if (!cfg.IgnoredProcesses.Any(x =>
                 string.Equals(StripExe(x.Trim()), proc, StringComparison.OrdinalIgnoreCase)))
         {
@@ -661,11 +682,11 @@ public sealed partial class ProfilesPage : Page
             _suppressReload = false;
         }
 
-        // 即时反映(不等下次重扫):同进程的所有行翻成「已忽略」。
+        // Reflect immediately (don't wait for the next rescan): flip every row of this process to "Ignored".
         ApplyWindowFilter();
     }
 
-    // 右键「取消忽略」:把进程名移出 Config.IgnoredProcesses + Save,该进程窗口回到正常列表。
+    // Context-menu "Stop ignoring": remove the process name from Config.IgnoredProcesses + Save, returning its windows to the normal list.
     private void UnignoreProcess_Click(object sender, RoutedEventArgs e)
     {
         if (WindowRowFromSender(sender) is not { } w) return;
@@ -684,7 +705,7 @@ public sealed partial class ProfilesPage : Page
         ApplyWindowFilter();
     }
 
-    // 右键「立即去边框」:对该窗口句柄临时去边框(不入配置)。已被跟踪则还原(切换语义)。
+    // Context-menu "Make borderless now": temporarily make this window handle borderless (not stored in config). If already tracked, restore it (toggle semantics).
     private void QuickBorderless_Click(object sender, RoutedEventArgs e)
     {
         if (WindowRowFromSender(sender) is not { } w) return;
@@ -701,7 +722,7 @@ public sealed partial class ProfilesPage : Page
 
     private static string Truncate(string s, int max)
     {
-        s = string.IsNullOrWhiteSpace(s) ? "未命名" : s.Trim();
+        s = string.IsNullOrWhiteSpace(s) ? Loc.T("ProfilesPage/Unnamed") : s.Trim();
         return s.Length <= max ? s : s[..max];
     }
 }

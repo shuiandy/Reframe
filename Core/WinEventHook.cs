@@ -3,25 +3,26 @@ using Reframe.Interop;
 namespace Reframe.Core;
 
 /// <summary>
-/// SetWinEventHook 封装:窗口出现/标题变化/前台切换/位置变化 → 抛出 hwnd。
-/// 钩子回调要求线程有消息泵,故独占一个后台线程:装钩子 → GetMessage 循环;
-/// Dispose 时 PostThreadMessage(WM_QUIT) 让循环退出,再 Unhook。
-/// 调用方对 WindowEvent 自行防抖(同一窗口短时间会来多次)。
+/// SetWinEventHook wrapper: window shown / title change / foreground switch / location change → raises the hwnd.
+/// The hook callback requires the thread to have a message pump, so it owns a dedicated background thread:
+/// install the hook → GetMessage loop; on Dispose, PostThreadMessage(WM_QUIT) exits the loop, then Unhook.
+/// The caller debounces WindowEvent itself (the same window fires several times in quick succession).
 /// </summary>
 public sealed class WinEventHook : IDisposable
 {
     /// <summary>
-    /// 命中事件:(eventType, hwnd)。eventType 让消费方区分前台切换(EVENT_SYSTEM_FOREGROUND)
-    /// 与窗口出现/标题/位置变化。已过滤到窗口本身(idObject==OBJID_WINDOW)。后台线程触发。
+    /// The matched event: (eventType, hwnd). eventType lets the consumer distinguish a foreground switch
+    /// (EVENT_SYSTEM_FOREGROUND) from a window shown/title/location change. Already filtered to the window
+    /// itself (idObject==OBJID_WINDOW). Raised on a background thread.
     /// </summary>
     public event Action<uint, IntPtr>? WindowEvent;
 
-    // 委托必须保存为字段:OUT_OF_CONTEXT 下回调由系统跨线程调用,
-    // 局部变量会被 GC 回收导致回调地址失效(经典坑)。
+    // The delegate must be kept in a field: under OUT_OF_CONTEXT the callback is invoked cross-thread by the
+    // system, and a local variable would be GC'd, invalidating the callback address (a classic pitfall).
     private readonly NativeMethods.WinEventProc _proc;
 
     private Thread? _thread;
-    // volatile:钩子线程写、Start/Dispose 读;超时清理时要读到刚被钩子线程设上的值。
+    // volatile: written by the hook thread, read by Start/Dispose; timeout cleanup must read the value the hook thread just set.
     private volatile uint _threadId;
     private IntPtr _hook;
     private readonly ManualResetEventSlim _ready = new(false);
@@ -30,10 +31,11 @@ public sealed class WinEventHook : IDisposable
     public WinEventHook() => _proc = OnWinEvent;
 
     /// <summary>
-    /// 启一个独占线程装钩子并跑消息泵。返回是否启动成功。
-    /// <para>等待钩子线程就绪最多 2s。超时视为启动失败:尽力让该线程退出(PostThreadMessage(WM_QUIT) +
-    /// Join),清理状态并返回 false——而非"假装成功"留下一个可能没装上钩子、Dispose 也 Post 不到位的僵线程。
-    /// 调用方据此走兜底轮询(降级运行)。</para>
+    /// Start a dedicated thread that installs the hook and runs a message pump. Returns whether startup succeeded.
+    /// <para>Waits up to 2s for the hook thread to become ready. A timeout is treated as a startup failure:
+    /// make a best effort to exit the thread (PostThreadMessage(WM_QUIT) + Join), clean up state and return
+    /// false — rather than "pretending success" and leaving a zombie thread that may not have installed the
+    /// hook and that Dispose can't reliably Post to either. The caller falls back to polling (degraded mode).</para>
     /// </summary>
     public bool Start()
     {
@@ -48,10 +50,10 @@ public sealed class WinEventHook : IDisposable
         _thread = t;
         t.Start();
 
-        if (_ready.Wait(2000)) // 等钩子装好(拿到 threadId)再返回,保证 Dispose 能 Post 到位
+        if (_ready.Wait(2000)) // Wait until the hook is installed (threadId obtained) before returning, so Dispose can Post reliably
             return true;
 
-        // 超时:尽力收线程,别留僵线程。threadId 在 ThreadProc 首行即设,此处多半已可用。
+        // Timeout: make a best effort to collect the thread; don't leave a zombie. threadId is set on the first line of ThreadProc, so it's most likely available here.
         uint tid = _threadId;
         if (tid != 0)
             NativeMethods.PostThreadMessage(tid, NativeMethods.WM_QUIT, IntPtr.Zero, IntPtr.Zero);
@@ -65,8 +67,8 @@ public sealed class WinEventHook : IDisposable
     {
         _threadId = NativeMethods.GetCurrentThreadId();
 
-        // 一个钩子覆盖 SHOW..NAMECHANGE 的连续区间(0x8002..0x800C),
-        // 含 LOCATIONCHANGE(0x800B);FOREGROUND(0x0003)需单独一个钩子。
+        // One hook covers the contiguous SHOW..NAMECHANGE range (0x8002..0x800C), including LOCATIONCHANGE
+        // (0x800B); FOREGROUND (0x0003) needs a separate hook.
         _hook = NativeMethods.SetWinEventHook(
             NativeMethods.EVENT_OBJECT_SHOW, NativeMethods.EVENT_OBJECT_NAMECHANGE,
             IntPtr.Zero, _proc, 0, 0,
@@ -79,7 +81,7 @@ public sealed class WinEventHook : IDisposable
 
         _ready.Set();
 
-        // 消息泵:GetMessage 阻塞直到收到 WM_QUIT(返回 0)。
+        // Message pump: GetMessage blocks until WM_QUIT (returns 0).
         while (NativeMethods.GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0)
         {
             NativeMethods.TranslateMessage(in msg);
@@ -94,7 +96,7 @@ public sealed class WinEventHook : IDisposable
     private void OnWinEvent(IntPtr hWinEventHook, uint eventType, IntPtr hwnd,
         int idObject, int idChild, uint idEventThread, uint dwmsEventTime)
     {
-        // 只要窗口本身的事件:idObject==OBJID_WINDOW、idChild==0、hwnd 有效。
+        // Only window-itself events: idObject==OBJID_WINDOW, idChild==0, valid hwnd.
         if (hwnd == IntPtr.Zero) return;
         if (idObject != NativeMethods.OBJID_WINDOW || idChild != 0) return;
 

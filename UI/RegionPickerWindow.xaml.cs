@@ -12,8 +12,9 @@ using Windows.Graphics;
 namespace Reframe.UI;
 
 /// <summary>
-/// 截图式选区:在指定显示器上开全屏无边框置顶遮罩,拖拽出矩形。
-/// 返回相对该显示器左上角的物理像素矩形;Esc / 右键取消 → null。
+/// Screenshot-style region picker: opens a full-screen, borderless, always-on-top scrim over a given
+/// monitor and lets the user drag out a rectangle. Returns a physical-pixel rect relative to that
+/// monitor's top-left corner; Esc / right-click to cancel -> null.
 /// </summary>
 public sealed partial class RegionPickerWindow : Window
 {
@@ -21,7 +22,7 @@ public sealed partial class RegionPickerWindow : Window
     private readonly TaskCompletionSource<RectPx?> _tcs = new();
 
     private bool _dragging;
-    private Point _startDip;     // 起点(DIP,相对 Root)
+    private Point _startDip;     // start point (DIP, relative to Root)
     private Point _currentDip;
 
     private RegionPickerWindow(MonitorDesc monitor)
@@ -31,16 +32,16 @@ public sealed partial class RegionPickerWindow : Window
 
         ConfigureWindow();
 
-        // 十字光标。
+        // Crosshair cursor.
         Root.SetCursor(InputSystemCursor.Create(InputSystemCursorShape.Cross));
 
-        // 键盘:Esc 取消。需要焦点,Activated 后设。
+        // Keyboard: Esc cancels. Needs focus, so set it after Activated.
         Root.KeyDown += Root_KeyDown;
         Activated += OnActivated;
         Closed += OnClosed;
     }
 
-    /// <summary>在指定显示器上全屏遮罩拖拽选区。返回物理像素矩形;取消 → null。</summary>
+    /// <summary>Drag out a region on a full-screen scrim over the given monitor. Returns a physical-pixel rect; cancel -> null.</summary>
     public static Task<RectPx?> PickAsync(MonitorDesc monitor)
     {
         var win = new RegionPickerWindow(monitor);
@@ -52,7 +53,7 @@ public sealed partial class RegionPickerWindow : Window
     {
         var appWindow = AppWindow;
 
-        // 无边框 + 置顶 + 不可调。
+        // Borderless + always-on-top + non-resizable.
         if (appWindow.Presenter is OverlappedPresenter p)
         {
             p.SetBorderAndTitleBar(false, false);
@@ -62,25 +63,25 @@ public sealed partial class RegionPickerWindow : Window
             p.IsMinimizable = false;
         }
 
-        // 覆盖整块屏(物理像素 = MonitorDesc 的 rcMonitor)。
+        // Cover the whole monitor (physical pixels = the MonitorDesc's rcMonitor).
         appWindow.MoveAndResize(new RectInt32(_monitor.X, _monitor.Y, _monitor.Width, _monitor.Height));
     }
 
     private void OnActivated(object sender, WindowActivatedEventArgs args)
     {
-        // 确保能接收键盘事件。
+        // Ensure it can receive keyboard events.
         Root.Focus(FocusState.Programmatic);
     }
 
-    // 当前 DPI 缩放(DIP → 物理像素)。窗口覆盖整屏,Root 与窗口同尺寸,
-    // 所以 Root 内 DIP 偏移 × scale = 屏内物理像素偏移。
+    // Current DPI scale (DIP -> physical pixels). The window covers the whole monitor and Root is the
+    // same size as the window, so a DIP offset within Root x scale = the physical-pixel offset on screen.
     private double Scale => Root.XamlRoot?.RasterizationScale is double s and > 0 ? s : 1.0;
 
-    // ---------- 指针 ----------
+    // ---------- Pointer ----------
     private void Root_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
         var pt = e.GetCurrentPoint(Root);
-        // 仅左键开始框选(右键交给 RightTapped 取消)。
+        // Only the left button starts a selection (the right button is handled by RightTapped to cancel).
         if (pt.Properties.IsRightButtonPressed) return;
 
         _dragging = true;
@@ -107,7 +108,7 @@ public sealed partial class RegionPickerWindow : Window
         _currentDip = e.GetCurrentPoint(Root).Position;
 
         var result = ToPhysicalRect();
-        // 太小视为误触 → 取消。
+        // Too small is treated as a mis-click -> cancel.
         if (result is null || result.W < 2 || result.H < 2)
             Finish(null);
         else
@@ -125,7 +126,7 @@ public sealed partial class RegionPickerWindow : Window
         }
     }
 
-    // ---------- 视觉 ----------
+    // ---------- Visuals ----------
     private void UpdateSelectionVisual()
     {
         double x = Math.Min(_startDip.X, _currentDip.X);
@@ -138,13 +139,13 @@ public sealed partial class RegionPickerWindow : Window
         SelectionRect.Width = w;
         SelectionRect.Height = h;
 
-        // 徽标显示物理像素尺寸。
+        // The badge shows the physical-pixel size.
         double scale = Scale;
         int pw = (int)Math.Round(w * scale);
         int ph = (int)Math.Round(h * scale);
-        SizeText.Text = $"宽 {pw} × 高 {ph} px";
+        SizeText.Text = Loc.T("RegionPickerWindow/SizeBadgeFormat", pw, ph);
 
-        // 徽标跟随选区右下角(不出界)。
+        // The badge follows the selection's bottom-right corner (without going off-screen).
         SizeBadge.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
         double bx = x + w + 8;
         double by = y + h + 8;
@@ -155,7 +156,7 @@ public sealed partial class RegionPickerWindow : Window
         Canvas.SetTop(SizeBadge, Math.Max(0, by));
     }
 
-    // DIP 选区 → 物理像素矩形(相对该显示器左上角)。
+    // DIP selection -> physical-pixel rect (relative to the monitor's top-left corner).
     private RectPx? ToPhysicalRect()
     {
         double scale = Scale;
@@ -164,7 +165,7 @@ public sealed partial class RegionPickerWindow : Window
         double w = Math.Abs(_currentDip.X - _startDip.X);
         double h = Math.Abs(_currentDip.Y - _startDip.Y);
 
-        // 钳制在屏内(物理像素)。
+        // Clamp within the screen (physical pixels).
         int px = (int)Math.Round(x * scale);
         int py = (int)Math.Round(y * scale);
         int pw = (int)Math.Round(w * scale);
@@ -178,10 +179,10 @@ public sealed partial class RegionPickerWindow : Window
         return new RectPx { X = px, Y = py, W = pw, H = ph };
     }
 
-    // ---------- 收尾 ----------
+    // ---------- Teardown ----------
     private void Finish(RectPx? result)
     {
-        // 防重复(释放与按键可能并发)。
+        // Guard against double-fire (release and keypress can race).
         if (_tcs.Task.IsCompleted) { Close(); return; }
         _tcs.TrySetResult(result);
         Close();
@@ -189,7 +190,7 @@ public sealed partial class RegionPickerWindow : Window
 
     private void OnClosed(object sender, WindowEventArgs args)
     {
-        // 若未结果就关掉(例如外部 Close),按取消处理。
+        // If closed without a result (e.g. an external Close), treat it as a cancel.
         _tcs.TrySetResult(null);
     }
 }

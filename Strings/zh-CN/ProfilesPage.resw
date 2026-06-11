@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!--
+    ProfilesPage.resw (zh-CN) — 配置文件页(运行中的窗口 + 配置列表双栏)全部字符串。
+    静态 UI 文本在 XAML 用 x:Uid="/ProfilesPage/<键>"(键 "Title" → data name "Title.Text")。
+    运行时/代码字符串(状态行、对话框、过滤原因胶囊、匹配摘要)经 Loc.T("ProfilesPage/<键>") 取。
+    占位符用 .NET 复合格式索引({0}),供 Loc.T(key, args) 做 string.Format。
+    详见 docs/dev/I18N.md。
+  -->
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- 页标题 -->
+  <data name="Title.Text" xml:space="preserve">
+    <value>配置文件</value>
+  </data>
+
+  <!-- ===== 左栏:运行中的窗口 ===== -->
+  <data name="RunningWindowsHeader.Text" xml:space="preserve">
+    <value>运行中的窗口</value>
+  </data>
+  <data name="SearchBox.PlaceholderText" xml:space="preserve">
+    <value>按标题或进程名筛选…</value>
+  </data>
+  <!-- ShowFilteredToggle(ToggleButton)内部的标签,设到内层 TextBlock,故用 .Text -->
+  <data name="ShowFilteredLabel.Text" xml:space="preserve">
+    <value>显示已过滤</value>
+  </data>
+  <!-- ShowFilteredToggle 的 tooltip(经代码后置 ToolTipService 设;见 ProfilesPage.xaml.cs) -->
+  <data name="ShowFilteredToggle.ToolTip" xml:space="preserve">
+    <value>显示被过滤掉的窗口(系统/已忽略/已隐藏/过小)</value>
+  </data>
+  <data name="RefreshButton.ToolTip" xml:space="preserve">
+    <value>刷新窗口列表</value>
+  </data>
+  <data name="WindowEmptyHint.Text" xml:space="preserve">
+    <value>没有可选的窗口。</value>
+  </data>
+
+  <!-- 左栏行尾标记 + 行尾「+」按钮提示 -->
+  <data name="HasProfileTag.Text" xml:space="preserve">
+    <value>已有配置</value>
+  </data>
+  <data name="CreateFromWindowButton.ToolTip" xml:space="preserve">
+    <value>据此窗口创建配置</value>
+  </data>
+
+  <!-- 左栏右键菜单 -->
+  <data name="MenuCreateProfile.Text" xml:space="preserve">
+    <value>创建配置</value>
+  </data>
+  <data name="MenuQuickBorderless.Text" xml:space="preserve">
+    <value>立即去边框</value>
+  </data>
+  <data name="MenuIgnoreProcess.Text" xml:space="preserve">
+    <value>忽略此进程</value>
+  </data>
+  <data name="MenuUnignoreProcess.Text" xml:space="preserve">
+    <value>取消忽略</value>
+  </data>
+
+  <!-- 过滤原因胶囊(代码后置;按 FilterReason 取) -->
+  <data name="ReasonSystemWindow" xml:space="preserve">
+    <value>系统窗口</value>
+  </data>
+  <data name="ReasonIgnored" xml:space="preserve">
+    <value>已忽略</value>
+  </data>
+  <data name="ReasonHidden" xml:space="preserve">
+    <value>已隐藏</value>
+  </data>
+  <data name="ReasonTooSmall" xml:space="preserve">
+    <value>过小</value>
+  </data>
+
+  <!-- ===== 右栏:配置列表 ===== -->
+  <data name="ProfileListHeader.Text" xml:space="preserve">
+    <value>配置列表</value>
+  </data>
+  <data name="NewButton.Label" xml:space="preserve">
+    <value>新建</value>
+  </data>
+  <data name="EditButton.Label" xml:space="preserve">
+    <value>编辑</value>
+  </data>
+  <data name="DeleteButton.Label" xml:space="preserve">
+    <value>删除</value>
+  </data>
+  <data name="LaunchButton.ToolTip" xml:space="preserve">
+    <value>启动</value>
+  </data>
+  <data name="EmptyHint.Text" xml:space="preserve">
+    <value>还没有配置文件,点击上方“新建”或从左栏窗口创建一个。</value>
+  </data>
+
+  <!-- 右栏行右键菜单 -->
+  <data name="MenuEdit.Text" xml:space="preserve">
+    <value>编辑</value>
+  </data>
+  <data name="MenuDelete.Text" xml:space="preserve">
+    <value>删除</value>
+  </data>
+
+  <!-- ===== 代码后置动态字符串 ===== -->
+  <!-- 配置行展示 -->
+  <data name="Unnamed" xml:space="preserve">
+    <value>未命名</value>
+  </data>
+  <data name="RulesCountFormat" xml:space="preserve">
+    <value>{0} 条规则</value>
+  </data>
+  <!-- 匹配摘要:类型标签 + 值(如「进程名: StarRail.exe」) -->
+  <data name="MatchKindProcess" xml:space="preserve">
+    <value>进程名</value>
+  </data>
+  <data name="MatchKindTitle" xml:space="preserve">
+    <value>标题包含</value>
+  </data>
+  <data name="MatchKindTitleRegex" xml:space="preserve">
+    <value>标题正则</value>
+  </data>
+  <data name="MatchKindGeneric" xml:space="preserve">
+    <value>匹配</value>
+  </data>
+  <data name="MatchSummaryFormat" xml:space="preserve">
+    <value>{0}: {1}</value>
+  </data>
+  <data name="MatchValueUnset" xml:space="preserve">
+    <value>(未设置)</value>
+  </data>
+  <data name="UnknownProcess" xml:space="preserve">
+    <value>(未知进程)</value>
+  </data>
+
+  <!-- 启动失败对话框 -->
+  <data name="LaunchFailedTitle" xml:space="preserve">
+    <value>无法启动</value>
+  </data>
+  <data name="LaunchFailedFallback" xml:space="preserve">
+    <value>启动失败。</value>
+  </data>
+  <data name="LaunchFailedClose" xml:space="preserve">
+    <value>知道了</value>
+  </data>
+
+  <!-- 新建配置默认名 -->
+  <data name="NewProfileName" xml:space="preserve">
+    <value>新配置文件</value>
+  </data>
+
+  <!-- 删除确认对话框 -->
+  <data name="DeleteDialogTitle" xml:space="preserve">
+    <value>删除配置文件</value>
+  </data>
+  <data name="DeleteDialogContentFormat" xml:space="preserve">
+    <value>确定要删除“{0}”吗?此操作不可撤销。</value>
+  </data>
+
+  <!-- 重复进程确认对话框 -->
+  <data name="DuplicateDialogTitle" xml:space="preserve">
+    <value>已有针对该进程的配置</value>
+  </data>
+  <data name="DuplicateDialogContentFormat" xml:space="preserve">
+    <value>已有针对该进程的配置“{0}”,仍要再建一个吗?</value>
+  </data>
+  <data name="DuplicateDialogPrimary" xml:space="preserve">
+    <value>仍要新建</value>
+  </data>
+</root>

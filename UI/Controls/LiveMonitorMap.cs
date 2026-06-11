@@ -11,15 +11,21 @@ using Reframe.Services;
 namespace Reframe.UI.Controls;
 
 /// <summary>
-/// 实时屏幕小地图:把所有显示器按虚拟桌面相对位置/比例画成圆角矩形,叠加
-/// (1) 相关分区(启用 profile 的 Zone 规则命中该屏分辨率)半透明虚线框,
-/// (2) 被接管窗口的实时矩形实心色块。纯代码绘制,页面定时调 <see cref="Refresh"/> 驱动。
-/// 坐标:显示器/窗口均为虚拟桌面物理像素;先求所有屏的并集包围盒,等比缩放<b>铺满控件宽</b>,
-/// 同一 WorldToCanvas 变换同时作用于屏、分区、窗口,保证三者对齐。
+/// Live monitor mini-map: draws every display as a rounded rectangle at its relative virtual-desktop
+/// position/scale, overlaid with
+/// (1) relevant zones (an enabled profile's Zone rule that matches this monitor's resolution) as
+///     semi-transparent dashed boxes, and
+/// (2) taken windows as solid live-rect blocks.
+/// Pure code drawing; the page drives it by calling <see cref="Refresh"/> on a timer.
+/// Coordinates: monitors and windows are both virtual-desktop physical pixels; we first compute the
+/// union bounding box of all displays, scale it to <b>fill the control width</b>, and apply the same
+/// WorldToCanvas transform to monitors, zones, and windows so all three stay aligned.
 /// <para>
-/// 尺寸自适应(学 LayoutEditorPage.RecomputeCanvasSize):控件占满可用宽,<b>高度跟随内容</b>
-/// = 宽 / 包围盒宽高比(再夹 <see cref="MaxHeight"/>),消除 32:9 等超宽桌面 letterbox 后两侧/上下的大片空白
-/// ——否则用户会把控件边缘当成屏幕边缘,觉得贴最左的游戏"悬在中间"。
+/// Height auto-fit (modeled on LayoutEditorPage.RecomputeCanvasSize): the control fills the available
+/// width and its <b>height follows the content</b> = width / bounding-box aspect (then clamped to
+/// <see cref="MaxHeight"/>). This removes the large letterbox margins around ultra-wide (e.g. 32:9)
+/// desktops — otherwise users mistake the control edge for the screen edge and think a window snapped
+/// to the far left is "floating in the middle".
 /// </para>
 /// </summary>
 public sealed class LiveMonitorMap : ContentControl
@@ -27,22 +33,24 @@ public sealed class LiveMonitorMap : ContentControl
     private readonly Canvas _canvas = new();
     private readonly Border _frame;
 
-    // 上次 Refresh 传入的快照,SizeChanged 时用其重绘。
+    // The last snapshot passed to Refresh, reused to redraw on SizeChanged.
     private IReadOnlyList<MonitorDesc> _monitors = Array.Empty<MonitorDesc>();
     private IReadOnlyList<(IntPtr Handle, string ProfileId)> _taken =
         Array.Empty<(IntPtr, string)>();
     private AppConfig? _cfg;
 
-    // 控件高度自适应:内边距 + 当前据包围盒算出的高度(避免反复 set Height 触发布局抖动)。
-    private const double Pad = 6;          // 画布四周留白(DIP),防边框贴边裁切
-    private double _appliedHeight = -1;    // 最近一次写入的 Height,去抖用
+    // Height auto-fit: padding + the height most recently computed from the bounding box (cached to
+    // avoid repeatedly setting Height and thrashing layout).
+    private const double Pad = 6;          // canvas padding (DIP) so the border isn't clipped at the edge
+    private double _appliedHeight = -1;    // the last Height we wrote, for debouncing
 
     public LiveMonitorMap()
     {
         _frame = new Border
         {
-            // 控件背景(虚拟桌面之外的"非桌面"区域):比显示器面更暗、更"空",
-            // 配合显示器矩形的明显边框+圆角,让用户一眼分清控件边缘 vs. 屏幕边缘。
+            // Control background (the "non-desktop" area outside the virtual desktop): darker and
+            // emptier than the monitor faces, which — together with the monitors' clear borders and
+            // rounded corners — lets users tell the control edge from a screen edge at a glance.
             Background = new SolidColorBrush(Color.FromArgb(0x66, 0x0A, 0x0C, 0x10)),
             BorderBrush = new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)),
             BorderThickness = new Thickness(1),
@@ -54,14 +62,16 @@ public sealed class LiveMonitorMap : ContentControl
         Content = _frame;
         HorizontalContentAlignment = HorizontalAlignment.Stretch;
         VerticalContentAlignment = VerticalAlignment.Stretch;
-        // 高度由内容(包围盒宽高比)决定,但夹在合理区间:超宽桌面别太扁,竖排桌面别太高。
+        // Height is driven by content (bounding-box aspect) but clamped to a sane range: ultra-wide
+        // desktops shouldn't get too flat, stacked-portrait desktops shouldn't get too tall.
         MinHeight = 90;
         MaxHeight = 320;
 
         _canvas.SizeChanged += (_, _) => Render();
     }
 
-    /// <summary>页面定时调用:传入最新显示器/接管窗口快照与配置后重绘。轻量,读快照即可。</summary>
+    /// <summary>Called by the page on a timer: redraw after passing the latest monitor/taken-window
+    /// snapshot and config. Lightweight — just reads snapshots.</summary>
     public void Refresh(IReadOnlyList<MonitorDesc> monitors,
         IReadOnlyList<(IntPtr Handle, string ProfileId)> taken, AppConfig cfg)
     {
@@ -72,20 +82,22 @@ public sealed class LiveMonitorMap : ContentControl
     }
 
     /// <summary>
-    /// 据包围盒宽高比和给定内容宽,算控件目标高(= 内容高 + 上下留白 + 边框),夹到 [MinHeight, MaxHeight],
-    /// 仅当与上次写入值差异显著时才 set Height(去抖,防 set→relayout→Render→set 的死循环/抖动)。
+    /// From the bounding-box aspect and a given content width, compute the target control height
+    /// (= content height + vertical padding + border), clamp to [MinHeight, MaxHeight], and only set
+    /// Height when it differs meaningfully from the last value (debounce to avoid a
+    /// set -> relayout -> Render -> set loop / jitter).
     /// </summary>
     private void ApplyHeightFor(double worldW, double worldH, double contentWidth)
     {
         if (contentWidth <= 0) return;
 
         double availW = Math.Max(1, contentWidth - Pad * 2);
-        double drawH = availW * worldH / worldW;        // 宽撑满后内容高
+        double drawH = availW * worldH / worldW;        // content height once width is filled
         double border = _frame.BorderThickness.Top + _frame.BorderThickness.Bottom;
-        double target = drawH + Pad * 2 + border;        // 加上下留白与边框
+        double target = drawH + Pad * 2 + border;        // add vertical padding and border
         target = Math.Clamp(target, MinHeight, MaxHeight);
 
-        if (Math.Abs(target - _appliedHeight) < 0.5) return; // 已是该高度,别重复 set
+        if (Math.Abs(target - _appliedHeight) < 0.5) return; // already at this height, don't re-set
         _appliedHeight = target;
         Height = target;
     }
@@ -95,7 +107,7 @@ public sealed class LiveMonitorMap : ContentControl
         var mons = _monitors;
         if (mons.Count == 0) return;
 
-        // 1) 虚拟桌面并集包围盒(物理像素,可含负坐标)。
+        // 1) Union bounding box of the virtual desktop (physical pixels, may include negative coords).
         int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
         foreach (var m in mons)
         {
@@ -107,13 +119,16 @@ public sealed class LiveMonitorMap : ContentControl
         double worldW = Math.Max(1, maxX - minX);
         double worldH = Math.Max(1, maxY - minY);
 
-        // 2) 高度跟随内容:用满可用宽,高 = 内容高 + 上下留白,再夹到 [MinHeight, MaxHeight]。
-        //    可用宽取自画布实测宽(控件宽随父容器 Stretch);画布尚无宽时这一轮先跳过,
-        //    设 Height 会触发重新布局,canvas SizeChanged 会再次 Render(此时已有宽)。
+        // 2) Height follows content: fill the available width, height = content height + vertical
+        //    padding, then clamp to [MinHeight, MaxHeight].
+        //    Available width comes from the measured canvas width (the control stretches with its
+        //    parent); if the canvas has no width yet, skip this round — setting Height triggers a
+        //    relayout and the canvas SizeChanged re-runs Render (with a width by then).
         double cw = _canvas.ActualWidth;
         if (cw <= 0)
         {
-            // 控件宽度还没量出来:先按整体控件宽估一个高度,促成一次布局,稍后精确重绘。
+            // Control width isn't measured yet: estimate a height from the overall control width to
+            // force a layout pass, then redraw precisely later.
             ApplyHeightFor(worldW, worldH, ActualWidth);
             return;
         }
@@ -124,22 +139,24 @@ public sealed class LiveMonitorMap : ContentControl
         _canvas.Children.Clear();
 
         double ch = _canvas.ActualHeight;
-        if (ch <= 0) return; // 高度尚未生效,等下一轮(set Height 触发的 SizeChanged)
+        if (ch <= 0) return; // height not in effect yet, wait for the next round (SizeChanged from set Height)
         double availH = Math.Max(1, ch - Pad * 2);
 
-        // 宽度优先铺满;高度超出可用高(被 MaxHeight 夹住的超高桌面)时回退按高约束,避免溢出。
+        // Fill width first; if the height exceeds the available height (an over-tall desktop clamped by
+        // MaxHeight), fall back to the height constraint to avoid overflow.
         double scale = availW / worldW;
         if (worldH * scale > availH) scale = availH / worldH;
 
         double drawW = worldW * scale, drawH = worldH * scale;
-        // 水平:铺满宽时 ox≈Pad;被高约束时居中。垂直:据实际高居中(正常贴满则≈Pad)。
+        // Horizontal: when width-filled, ox ≈ Pad; when height-constrained, center. Vertical: center on
+        // the actual height (≈ Pad when normally filled).
         double ox = (cw - drawW) / 2, oy = (ch - drawH) / 2;
 
-        // 世界(虚拟桌面物理像素)→ 画布 DIP。
+        // World (virtual-desktop physical pixels) -> canvas DIP.
         double WX(double x) => ox + (x - minX) * scale;
         double WY(double y) => oy + (y - minY) * scale;
 
-        // 3) 画每块显示器。
+        // 3) Draw each display.
         for (int mi = 0; mi < mons.Count; mi++)
         {
             var m = mons[mi];
@@ -150,7 +167,8 @@ public sealed class LiveMonitorMap : ContentControl
             {
                 Width = w,
                 Height = h,
-                // 显示器面比"非桌面"背景明显更亮,加清晰边框+圆角,让桌面区域一眼可辨。
+                // The monitor face is clearly brighter than the "non-desktop" background, with a crisp
+                // border and rounded corners, so the desktop area reads at a glance.
                 Fill = new SolidColorBrush(Color.FromArgb(0x40, 0x5A, 0x66, 0x78)),
                 Stroke = new SolidColorBrush(m.IsPrimary
                     ? Color.FromArgb(0xFF, 0x9E, 0xC8, 0xFF)
@@ -163,12 +181,12 @@ public sealed class LiveMonitorMap : ContentControl
             Canvas.SetTop(rect, top);
             _canvas.Children.Add(rect);
 
-            // 分辨率标注(放左上角,空间不足则省略)。
+            // Resolution label (top-left corner, omitted when there isn't room).
             if (w > 56 && h > 22)
             {
                 var resLabel = new TextBlock
                 {
-                    Text = $"{m.Width}×{m.Height}" + (m.IsPrimary ? " (主)" : ""),
+                    Text = $"{m.Width}×{m.Height}" + (m.IsPrimary ? Loc.T("DashboardPage/PrimaryMonitorSuffix") : ""),
                     FontSize = 11,
                     Opacity = 0.75,
                     Foreground = new SolidColorBrush(Microsoft.UI.Colors.White),
@@ -178,22 +196,24 @@ public sealed class LiveMonitorMap : ContentControl
                 _canvas.Children.Add(resLabel);
             }
 
-            // 4) 相关分区:启用 profile 的规则中 Monitor 命中本屏分辨率且 Kind=Zone 的,画虚线框。
+            // 4) Relevant zones: enabled profiles whose rules target this monitor's resolution with
+            //    Kind=Zone are drawn as dashed boxes.
             DrawRelevantZones(m, WX, WY, scale);
         }
 
-        // 5) 被接管窗口(在所有屏之上,实心色块)。
+        // 5) Taken windows (above all displays, as solid blocks).
         DrawTakenWindows(WX, WY, scale);
     }
 
-    /// <summary>该屏分辨率下,所有启用 profile 命中的 Zone(同一 zone 去重),画半透明虚线框 + 名字。</summary>
+    /// <summary>For this monitor's resolution, draw every Zone matched by an enabled profile (deduped per
+    /// zone) as a semi-transparent dashed box + its name.</summary>
     private void DrawRelevantZones(MonitorDesc m,
         Func<double, double> WX, Func<double, double> WY, double scale)
     {
         var cfg = _cfg;
         if (cfg is null) return;
 
-        // 同一 (layoutId, zoneId) 去重;调色板索引按出现顺序稳定。
+        // Dedupe by (layoutId, zoneId); the palette index is stable in order of appearance.
         var seen = new HashSet<string>();
         int colorIdx = 0;
 
@@ -213,7 +233,8 @@ public sealed class LiveMonitorMap : ContentControl
                 var zone = layout?.Zones.FirstOrDefault(z => z.Id == r.ZoneId);
                 if (zone is null) continue;
 
-                // Zone 比例相对该屏 rcMonitor / rcWork。基准与引擎一致(UseWorkArea)。
+                // Zone ratios are relative to this monitor's rcMonitor / rcWork. The basis matches the
+                // engine (UseWorkArea).
                 int bx = r.UseWorkArea ? m.WorkX : m.X;
                 int by = r.UseWorkArea ? m.WorkY : m.Y;
                 int bw = r.UseWorkArea ? m.WorkW : m.Width;
@@ -261,13 +282,14 @@ public sealed class LiveMonitorMap : ContentControl
         }
     }
 
-    /// <summary>被接管窗口:实时 GetWindowRect → 同一变换映射 → 实心半透明色块 + profile 名。</summary>
+    /// <summary>Taken windows: live GetWindowRect -> the same transform -> a solid semi-transparent block
+    /// + the profile name.</summary>
     private void DrawTakenWindows(Func<double, double> WX, Func<double, double> WY, double scale)
     {
         var cfg = _cfg;
         if (cfg is null) return;
 
-        // profile 名按出现顺序取一个稳定颜色;profileId → (颜色索引, 名字)。
+        // Give each profile name a stable color in order of appearance; profileId -> color index.
         var profileColor = new Dictionary<string, int>();
         int next = 0;
 
@@ -299,7 +321,8 @@ public sealed class LiveMonitorMap : ContentControl
             Canvas.SetTop(block, top);
             _canvas.Children.Add(block);
 
-            string name = cfg.Profiles.FirstOrDefault(p => p.Id == t.ProfileId)?.Name ?? "?";
+            string name = cfg.Profiles.FirstOrDefault(p => p.Id == t.ProfileId)?.Name
+                ?? Loc.T("DashboardPage/UnknownProfile");
             if (w > 36 && h > 16)
             {
                 var lbl = new TextBlock

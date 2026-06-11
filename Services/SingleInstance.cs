@@ -4,41 +4,45 @@ using System.Threading;
 namespace Reframe.Services;
 
 /// <summary>
-/// 单实例守卫(自包含 P/Invoke)。命名互斥量抢占;抢不到说明已有实例在跑,
-/// 按窗口标题找到已有主窗口并唤起到前台,然后本进程退出。
+/// Single-instance guard (self-contained P/Invoke). Acquires a named mutex; failing to acquire it
+/// means an instance is already running, so find the existing main window by title, bring it to the
+/// foreground, and exit this process.
 ///
-/// 用法:App 构造/OnLaunched 最先调 <see cref="EnsureSingle"/>;返回 false 时立即 return
-/// (内部已 Environment.Exit,正常不会走到 return 之后)。
+/// Usage: call <see cref="EnsureSingle"/> first thing in App construction / OnLaunched; on a false
+/// return, return immediately (it has already Environment.Exit'd internally, so normally control
+/// never reaches past the return).
 /// </summary>
 public static class SingleInstance
 {
     private const string MutexName = @"Global\Reframe.SingleInstance";
-    private const string MainWindowTitle = "Reframe"; // MainWindow.xaml 的 Title,FindWindow 据此找
+    private const string MainWindowTitle = "Reframe"; // MainWindow.xaml's Title; FindWindow matches on it
 
-    // 静态持有:进程存活期间一直占着这把锁,别让 GC 回收导致提前释放。
+    // Held statically: keep this lock for the process lifetime; don't let the GC collect it and release it early.
     private static Mutex? _mutex;
 
-    /// <summary>抢锁。已有实例 → 唤起它并 Environment.Exit(0)(本调用不返回);否则返回 true。</summary>
+    /// <summary>Acquire the lock. If an instance already exists → bring it to the front and Environment.Exit(0) (this call does not return); otherwise return true.</summary>
     public static bool EnsureSingle()
     {
         _mutex = new Mutex(initiallyOwned: true, MutexName, out bool createdNew);
         if (createdNew) return true;
 
-        // 已有实例:按窗口标题找到它的主窗口并唤前台。
-        // 局限:FindWindow 按可见标题匹配——若用户改了标题、或恰有同名标题的别家窗口,可能找错/找不到;
-        // 但互斥量已保证不会重复启动,最坏情形只是"没把已有窗口顶到前台",可接受(不值得上 class-name/IPC 方案)。
+        // An instance already exists: find its main window by title and bring it to the front.
+        // Limitation: FindWindow matches on the visible title — if the user changed the title, or another
+        // window happens to share the title, it may match the wrong one / not find it; but the mutex already
+        // guarantees no duplicate launch, so the worst case is just "didn't raise the existing window to the
+        // front", which is acceptable (not worth a class-name/IPC scheme).
         IntPtr hwnd = FindWindow(null, MainWindowTitle);
         if (hwnd != IntPtr.Zero)
         {
             if (IsIconic(hwnd))
                 ShowWindow(hwnd, SW_RESTORE);
             else
-                ShowWindow(hwnd, SW_SHOW); // 可能被隐藏到托盘,显示出来
+                ShowWindow(hwnd, SW_SHOW); // it may be hidden to the tray; show it
             SetForegroundWindow(hwnd);
         }
 
         Environment.Exit(0);
-        return false; // 不会到达
+        return false; // unreachable
     }
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]

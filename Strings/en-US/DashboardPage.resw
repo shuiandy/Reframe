@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!--
+    DashboardPage.resw (en-US) — all user-visible strings for the dashboard page + UI/Controls.
+    Static UI text uses x:Uid="/DashboardPage/<Key>" in XAML (e.g. Key "Title" -> data name "Title.Text").
+    Runtime/code strings (summary line, card placeholders, ToggleSwitch On/Off, tooltip) are fetched via Loc.T("DashboardPage/<Key>").
+    Placeholders use .NET composite-format indices ({0}) so Loc.T(key, args) can string.Format them.
+    Note: zone/profile names drawn by LiveMonitorMap come from user data and are NOT localized here; only literals live here.
+    See docs/dev/I18N.md.
+  -->
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- Page title + engine toggle -->
+  <data name="Title.Text" xml:space="preserve">
+    <value>Dashboard</value>
+  </data>
+  <data name="EngineLabel.Text" xml:space="preserve">
+    <value>Engine</value>
+  </data>
+
+  <!-- Active-windows section -->
+  <data name="TakenHeader.Text" xml:space="preserve">
+    <value>Active windows</value>
+  </data>
+  <data name="RestoreButton.Content" xml:space="preserve">
+    <value>Restore</value>
+  </data>
+  <data name="RescanButton.Content" xml:space="preserve">
+    <value>Rescan</value>
+  </data>
+
+  <!-- Log section -->
+  <data name="LogHeader.Text" xml:space="preserve">
+    <value>Log</value>
+  </data>
+
+  <!-- ===== Code-behind dynamic strings ===== -->
+  <!-- Engine toggle OnContent/OffContent (set from code; x:Uid for On/OffContent is unreliable) -->
+  <data name="EngineOn" xml:space="preserve">
+    <value>Running</value>
+  </data>
+  <data name="EngineOff" xml:space="preserve">
+    <value>Stopped</value>
+  </data>
+
+  <!-- Rescan button tooltip (set from code on the templated button; see DashboardPage.xaml.cs RescanButton_Loaded) -->
+  <data name="RescanTooltip" xml:space="preserve">
+    <value>Trigger a full scan and apply right now (affects all windows, not just this card)</value>
+  </data>
+
+  <!-- Summary line: profile count + layout count. {0}=profiles, {1}=layouts -->
+  <data name="SummaryFormat" xml:space="preserve">
+    <value>{0} profiles &#xB7; {1} layouts</value>
+  </data>
+
+  <!-- Active-card placeholder text (set directly via XAML x:Uid .Text) -->
+  <data name="TakenEmptyLabel.Text" xml:space="preserve">
+    <value>No windows are being managed</value>
+  </data>
+
+  <!-- Card field fallbacks -->
+  <data name="ProfileDeleted" xml:space="preserve">
+    <value>(deleted)</value>
+  </data>
+  <data name="WindowNoTitle" xml:space="preserve">
+    <value>(no title)</value>
+  </data>
+  <data name="RectUnavailable" xml:space="preserve">
+    <value>(rect unavailable)</value>
+  </data>
+  <!-- Card sub-info line: joined when title and process name both exist and differ. {0}=window title, {1}=process exe name -->
+  <data name="SubInfoFormat" xml:space="preserve">
+    <value>{0} &#xB7; {1}</value>
+  </data>
+
+  <!-- ===== LiveMonitorMap mini-map literals ===== -->
+  <!-- Primary-monitor label suffix (appended after the resolution, e.g. "3840×2160 (primary)") -->
+  <data name="PrimaryMonitorSuffix" xml:space="preserve">
+    <value> (primary)</value>
+  </data>
+  <!-- Fallback label when a taken window's profile name can't be resolved -->
+  <data name="UnknownProfile" xml:space="preserve">
+    <value>?</value>
+  </data>
+</root>

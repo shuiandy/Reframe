@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!--
+    LayoutEditorPage.resw (en-US) — all strings for the layout editor.
+    Static UI text uses x:Uid="/LayoutEditorPage/<Key>" in XAML (key "Title" -> data name "Title.Text").
+    Runtime/code strings (reference-resolution combo items, ratio text, new/preset zone default names)
+    are fetched via Loc.T("LayoutEditorPage/<Key>"). Placeholders use .NET composite-format indices
+    ({0}) for Loc.T(key, args) -> string.Format.
+    ZoneNameNew / ZonePreset* are seed names written into user data: generated once in the current
+    language at creation time and never re-translated afterwards (see docs/dev/I18N.md section 8).
+  -->
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- Page title -->
+  <data name="Title.Text" xml:space="preserve">
+    <value>Edit Layout</value>
+  </data>
+
+  <!-- Toolbar: name / reference resolution / width / height -->
+  <data name="NameLabel.Text" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="RefResLabel.Text" xml:space="preserve">
+    <value>Reference resolution</value>
+  </data>
+  <data name="MonitorCombo.PlaceholderText" xml:space="preserve">
+    <value>Pick a monitor or type</value>
+  </data>
+  <data name="WidthLabel.Text" xml:space="preserve">
+    <value>Width</value>
+  </data>
+  <data name="HeightLabel.Text" xml:space="preserve">
+    <value>Height</value>
+  </data>
+
+  <!-- Preset template buttons -->
+  <data name="PresetLabel.Text" xml:space="preserve">
+    <value>Presets:</value>
+  </data>
+  <data name="PresetHalf.Content" xml:space="preserve">
+    <value>Halves</value>
+  </data>
+  <data name="PresetThirds.Content" xml:space="preserve">
+    <value>Thirds</value>
+  </data>
+  <data name="PresetTwoThirds.Content" xml:space="preserve">
+    <value>Left ⅔ + Right ⅓</value>
+  </data>
+  <data name="PresetCenter169.Content" xml:space="preserve">
+    <value>16:9 Centered</value>
+  </data>
+  <data name="PresetLeft219.Content" xml:space="preserve">
+    <value>21:9 Left</value>
+  </data>
+
+  <!-- Add zone -->
+  <data name="AddZoneButton.Content" xml:space="preserve">
+    <value>Add zone</value>
+  </data>
+  <data name="AddZoneTip.Text" xml:space="preserve">
+    <value>Add a new zone in the center of the canvas</value>
+  </data>
+
+  <!-- Zone property panel -->
+  <data name="PropHeader.Text" xml:space="preserve">
+    <value>Zone properties</value>
+  </data>
+  <data name="ZoneNameLabel.Text" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="ZoneXLabel.Text" xml:space="preserve">
+    <value>X (px)</value>
+  </data>
+  <data name="ZoneYLabel.Text" xml:space="preserve">
+    <value>Y (px)</value>
+  </data>
+  <data name="ZoneWLabel.Text" xml:space="preserve">
+    <value>Width (px)</value>
+  </data>
+  <data name="ZoneHLabel.Text" xml:space="preserve">
+    <value>Height (px)</value>
+  </data>
+  <data name="DeleteZoneButton.Content" xml:space="preserve">
+    <value>Delete this zone</value>
+  </data>
+  <data name="NoSelHint.Text" xml:space="preserve">
+    <value>Select a zone on the canvas to edit its properties.</value>
+  </data>
+
+  <!-- Bottom buttons -->
+  <data name="CancelButton.Content" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="SaveButton.Content" xml:space="preserve">
+    <value>Save</value>
+  </data>
+
+  <!-- ===== Code-behind dynamic strings ===== -->
+  <!-- Reference-resolution combo item: {0}=width, {1}=height -->
+  <data name="MonitorItemFormat" xml:space="preserve">
+    <value>{0}×{1}</value>
+  </data>
+  <!-- Primary-monitor suffix (appended after MonitorItemFormat, includes a leading space) -->
+  <data name="MonitorPrimarySuffix" xml:space="preserve">
+    <value> (primary)</value>
+  </data>
+  <!-- Custom item when nothing matches a monitor: {0}=width, {1}=height -->
+  <data name="MonitorCustomFormat" xml:space="preserve">
+    <value>{0}×{1} (custom)</value>
+  </data>
+  <!-- Property-panel ratio text: {0}=X {1}=Y {2}=W {3}=H (all 0..1 ratios, 3 decimals) -->
+  <data name="ZoneRatioFormat" xml:space="preserve">
+    <value>Ratio X={0} Y={1} W={2} H={3}</value>
+  </data>
+
+  <!-- Seed names written into user data (generated once in the current language, never re-translated) -->
+  <!-- "Add zone" default name: {0}=ordinal -->
+  <data name="ZoneNameNew" xml:space="preserve">
+    <value>Zone {0}</value>
+  </data>
+  <data name="ZonePresetLeft" xml:space="preserve">
+    <value>Left</value>
+  </data>
+  <data name="ZonePresetRight" xml:space="preserve">
+    <value>Right</value>
+  </data>
+  <data name="ZonePresetCenter" xml:space="preserve">
+    <value>Center</value>
+  </data>
+  <data name="ZonePresetGame" xml:space="preserve">
+    <value>Game</value>
+  </data>
+  <data name="ZonePresetSecondary" xml:space="preserve">
+    <value>Secondary</value>
+  </data>
+</root>

@@ -4,8 +4,8 @@ using Microsoft.UI.Xaml.Controls;
 namespace Reframe.UI.Controls;
 
 /// <summary>
-/// 仅为暴露光标设置而存在的最小 Grid 子类:UIElement.ProtectedCursor 是 protected,
-/// 子类里转成公开方法,供 RegionPicker 设置十字光标。
+/// A minimal Grid subclass that exists only to expose cursor setting: UIElement.ProtectedCursor is
+/// protected, so this subclass surfaces it as a public method for RegionPicker to set the crosshair cursor.
 /// </summary>
 public sealed partial class CursorGrid : Grid
 {

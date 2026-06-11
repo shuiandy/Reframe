@@ -9,17 +9,33 @@ namespace Reframe.UI;
 
 public sealed partial class ProfileEditorPage : Page
 {
-    // 「点保存才生效」:进入时对真实 Profile 做深拷贝,全部编辑落在 _work 副本上;
-    // 保存时把 _work 字段写回真实对象(保留其引用,不替换列表元素),再 Save()。
-    // 引擎读的是真实对象,未保存的副本改动对其不可见。
-    private string? _realId;     // 真实 Profile 的 Id(保存时定位写回目标)
-    private Profile? _work;      // 编辑副本,所有 UI 事件只动它
-    // 加载阶段抑制控件事件回写,避免初始化 SelectedIndex/Text 时污染模型。
+    // "Takes effect only on Save": on entry, deep-copy the real Profile and apply all edits to the _work copy;
+    // on save, write _work's fields back onto the real object (keeping its reference, not replacing the list element), then Save().
+    // The engine reads the real object, so unsaved copy edits are invisible to it.
+    private string? _realId;     // the real Profile's Id (used to locate the write-back target on save)
+    private Profile? _work;      // the editing copy; all UI events touch only this
+    // Suppress control event write-backs during loading, so initializing SelectedIndex/Text doesn't pollute the model.
     private bool _loading;
 
     public ProfileEditorPage()
     {
         InitializeComponent();
+        Loaded += OnLoaded;
+    }
+
+    private void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        // Localize the back-button tooltip from code-behind (attached-property x:Uid is brittle in MRT Core).
+        ToolTipService.SetToolTip(BackButton, Loc.T("ProfileEditorPage/BackButton.ToolTip"));
+
+        // ToggleSwitch On/OffContent are set in code (per the i18n spec they aren't reliable via x:Uid); reuse the shared Common/On|Off words.
+        string on = Loc.T("Common/On");
+        string off = Loc.T("Common/Off");
+        foreach (var ts in new[] { ResEnabledToggle, BorderlessToggle, TopmostToggle, AspectToggle, MuteToggle, ClipToggle, ClientToggle })
+        {
+            ts.OnContent = on;
+            ts.OffContent = off;
+        }
     }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
@@ -40,11 +56,11 @@ public sealed partial class ProfileEditorPage : Page
         }
 
         _realId = real.Id;
-        _work = Clone(real);     // 深拷贝:编辑只动副本
+        _work = Clone(real);     // deep copy: editing touches only the copy
         LoadFromModel(_work);
     }
 
-    // ---------- 深拷贝(Id 全部保持不变,引用关系靠 Id) ----------
+    // ---------- Deep copy (all Ids preserved; references are keyed by Id) ----------
     private static Profile Clone(Profile src) => new()
     {
         Id = src.Id,
@@ -129,7 +145,7 @@ public sealed partial class ProfileEditorPage : Page
         MuteToggle.IsOn = p.MuteInBackground;
         ClipToggle.IsOn = p.ClipCursor;
 
-        // 启动分辨率预设(可空:无则显示默认禁用态)
+        // Startup resolution preset (nullable: when absent, show the default disabled state)
         var rp = p.ResolutionPreset;
         ResEnabledToggle.IsOn = rp?.Enabled ?? false;
         ResPathBox.Text = rp?.RegistryPath ?? "";
@@ -143,9 +159,9 @@ public sealed partial class ProfileEditorPage : Page
         RebuildRules();
     }
 
-    // ---------- 启动分辨率预设(Unity) ----------
+    // ---------- Startup resolution preset (Unity) ----------
 
-    /// <summary>确保 _work.ResolutionPreset 存在(任一字段被编辑时按需创建)。</summary>
+    /// <summary>Ensure _work.ResolutionPreset exists (created on demand when any of its fields is edited).</summary>
     private UnityResolutionPreset EnsurePreset()
         => _work!.ResolutionPreset ??= new UnityResolutionPreset();
 
@@ -175,7 +191,7 @@ public sealed partial class ProfileEditorPage : Page
         EnsurePreset().Windowed = ResWindowedCheck.IsChecked == true;
     }
 
-    // ---------- 基本区 ----------
+    // ---------- Basic section ----------
 
     private void NameBox_TextChanged(object sender, TextChangedEventArgs e)
     {
@@ -199,9 +215,9 @@ public sealed partial class ProfileEditorPage : Page
     {
         MatchValueBox.PlaceholderText = MatchKindBox.SelectedIndex switch
         {
-            0 => "例如 StarRail.exe",
-            1 => "例如 原神",
-            2 => "例如 ^崩坏",
+            0 => Loc.T("ProfileEditorPage/MatchPlaceholderProcess"),
+            1 => Loc.T("ProfileEditorPage/MatchPlaceholderTitle"),
+            2 => Loc.T("ProfileEditorPage/MatchPlaceholderTitleRegex"),
             _ => "",
         };
     }
@@ -215,7 +231,7 @@ public sealed partial class ProfileEditorPage : Page
     private void ExePathBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (_loading || _work is null) return;
-        // 空串归一为 null(避免存盘出现空字符串与"未设置"两种态)。
+        // Normalize an empty string to null (to avoid both an empty-string and a "not set" state on disk).
         string v = ExePathBox.Text?.Trim() ?? "";
         _work.ExePath = string.IsNullOrEmpty(v) ? null : v;
     }
@@ -223,12 +239,12 @@ public sealed partial class ProfileEditorPage : Page
     private void LaunchCommandBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (_loading || _work is null) return;
-        // 空串归一为 null(空表示"直接运行可执行文件",与未设置同义)。
+        // Normalize an empty string to null (empty means "run the executable directly", synonymous with not set).
         string v = LaunchCommandBox.Text?.Trim() ?? "";
         _work.LaunchCommand = string.IsNullOrEmpty(v) ? null : v;
     }
 
-    // 浏览 .exe:WinUI3 桌面下 FileOpenPicker 必须 InitializeWithWindow 绑主窗口句柄(否则抛 COM 异常)。
+    // Browse for an .exe: on WinUI 3 desktop, FileOpenPicker must InitializeWithWindow against the main window handle (otherwise it throws a COM exception).
     private async void BrowseExe_Click(object sender, RoutedEventArgs e)
     {
         if (_work is null) return;
@@ -249,9 +265,9 @@ public sealed partial class ProfileEditorPage : Page
             var file = await picker.PickSingleFileAsync();
             if (file is null) return;
 
-            ExePathBox.Text = file.Path; // 触发 ExePathBox_TextChanged → 写入 _work.ExePath
+            ExePathBox.Text = file.Path; // triggers ExePathBox_TextChanged -> writes _work.ExePath
         }
-        catch { /* 选取失败/取消:忽略 */ }
+        catch { /* pick failed / cancelled: ignore */ }
     }
 
     private void BorderlessToggle_Toggled(object sender, RoutedEventArgs e)
@@ -267,7 +283,7 @@ public sealed partial class ProfileEditorPage : Page
             _work.DelayMs = (int)args.NewValue;
     }
 
-    // ---------- 高级区 ----------
+    // ---------- Advanced section ----------
 
     private void Offset_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
     {
@@ -289,7 +305,7 @@ public sealed partial class ProfileEditorPage : Page
         _work.ClipCursor = ClipToggle.IsOn;
     }
 
-    // ---------- 规则表 ----------
+    // ---------- Rules list ----------
 
     private void RebuildRules()
     {
@@ -312,30 +328,30 @@ public sealed partial class ProfileEditorPage : Page
 
     private FrameworkElement BuildRuleRow(PlacementRule rule, int index)
     {
-        // 整行用一个 Border 卡片包裹;内部一个垂直 StackPanel。
+        // Wrap the whole row in a Border card; inside it, a vertical StackPanel.
         var body = new StackPanel { Spacing = 10 };
 
-        // —— 头部:序号 + 上移/下移/删除 ——
+        // -- Header: index + move up/down/delete --
         var header = new Grid();
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var title = new TextBlock
         {
-            Text = $"规则 {index + 1}",
+            Text = Loc.T("ProfileEditorPage/RuleTitleFormat", index + 1),
             VerticalAlignment = VerticalAlignment.Center,
         };
         title.Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"];
         Grid.SetColumn(title, 0);
 
         var ops = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
-        var upBtn = IconButton("", "上移");
+        var upBtn = IconButton("", Loc.T("ProfileEditorPage/RuleMoveUp"));
         upBtn.IsEnabled = index > 0;
         upBtn.Click += (_, _) => MoveRule(index, -1);
-        var downBtn = IconButton("", "下移");
+        var downBtn = IconButton("", Loc.T("ProfileEditorPage/RuleMoveDown"));
         downBtn.IsEnabled = _work is not null && index < _work.Rules.Count - 1;
         downBtn.Click += (_, _) => MoveRule(index, +1);
-        var delBtn = IconButton("", "删除");
+        var delBtn = IconButton("", Loc.T("ProfileEditorPage/RuleDelete"));
         delBtn.Click += (_, _) => RemoveRule(index);
         ops.Children.Add(upBtn);
         ops.Children.Add(downBtn);
@@ -346,30 +362,29 @@ public sealed partial class ProfileEditorPage : Page
         header.Children.Add(ops);
         body.Children.Add(header);
 
-        // —— 显示器条件 ——
+        // -- Monitor condition --
         body.Children.Add(BuildMonitorSection(rule));
 
-        // —— 动作 ——
+        // -- Action --
         body.Children.Add(BuildActionSection(rule));
 
-        // —— 避开任务栏 ——
+        // -- Avoid the taskbar --
         var workAreaCheck = new CheckBox
         {
-            Content = "避开任务栏(使用工作区)",
+            Content = Loc.T("ProfileEditorPage/UseWorkAreaCheck"),
             IsChecked = rule.UseWorkArea,
         };
         workAreaCheck.Checked += (_, _) => rule.UseWorkArea = true;
         workAreaCheck.Unchecked += (_, _) => rule.UseWorkArea = false;
         body.Children.Add(workAreaCheck);
 
-        // —— 只定位(不调尺寸):用于渲染分辨率钉死在注册表的 Unity 游戏 ——
+        // -- Position only (don't resize): for Unity games whose render resolution is pinned in the registry --
         var moveOnlyCheck = new CheckBox
         {
-            Content = "只定位(不调尺寸)",
+            Content = Loc.T("ProfileEditorPage/MoveOnlyCheck"),
             IsChecked = rule.MoveOnly,
         };
-        ToolTipService.SetToolTip(moveOnlyCheck,
-            "只把窗口左上角移到目标位置,保持游戏自身尺寸不变(避免拉伸)。配合启动分辨率预设使用。");
+        ToolTipService.SetToolTip(moveOnlyCheck, Loc.T("ProfileEditorPage/MoveOnlyTooltip"));
         moveOnlyCheck.Checked += (_, _) => rule.MoveOnly = true;
         moveOnlyCheck.Unchecked += (_, _) => rule.MoveOnly = false;
         body.Children.Add(moveOnlyCheck);
@@ -385,14 +400,14 @@ public sealed partial class ProfileEditorPage : Page
         };
     }
 
-    // 显示器条件:任意 / 指定分辨率(W、H + 从当前显示器选)
+    // Monitor condition: any / specific resolution (W, H + pick from a connected monitor)
     private FrameworkElement BuildMonitorSection(PlacementRule rule)
     {
         var panel = new StackPanel { Spacing = 8 };
 
-        var modeBox = new ComboBox { Header = "显示器条件", MinWidth = 200 };
-        modeBox.Items.Add("任意显示器");
-        modeBox.Items.Add("指定分辨率");
+        var modeBox = new ComboBox { Header = Loc.T("ProfileEditorPage/MonitorConditionHeader"), MinWidth = 200 };
+        modeBox.Items.Add(Loc.T("ProfileEditorPage/MonitorAny"));
+        modeBox.Items.Add(Loc.T("ProfileEditorPage/MonitorSpecific"));
         bool specific = rule.Monitor.Width != 0 || rule.Monitor.Height != 0;
         modeBox.SelectedIndex = specific ? 1 : 0;
 
@@ -405,7 +420,7 @@ public sealed partial class ProfileEditorPage : Page
 
         var wBox = new NumberBox
         {
-            Header = "宽",
+            Header = Loc.T("ProfileEditorPage/MonitorWidth"),
             Width = 130,
             Minimum = 0,
             Value = rule.Monitor.Width,
@@ -418,7 +433,7 @@ public sealed partial class ProfileEditorPage : Page
 
         var hBox = new NumberBox
         {
-            Header = "高",
+            Header = Loc.T("ProfileEditorPage/MonitorHeight"),
             Width = 130,
             Minimum = 0,
             Value = rule.Monitor.Height,
@@ -429,7 +444,7 @@ public sealed partial class ProfileEditorPage : Page
             if (!double.IsNaN(a.NewValue)) rule.Monitor.Height = (int)a.NewValue;
         };
 
-        var pickBox = new ComboBox { Header = "从当前显示器选", MinWidth = 220 };
+        var pickBox = new ComboBox { Header = Loc.T("ProfileEditorPage/MonitorPickHeader"), MinWidth = 220 };
         PopulateMonitorPicker(pickBox);
         pickBox.SelectionChanged += (s, a) =>
         {
@@ -467,16 +482,16 @@ public sealed partial class ProfileEditorPage : Page
         return panel;
     }
 
-    // 动作:不动几何 / 铺满 / 套布局分区 / 自定义矩形
+    // Action: leave geometry as-is / fill / snap to layout zone / custom rectangle
     private FrameworkElement BuildActionSection(PlacementRule rule)
     {
         var panel = new StackPanel { Spacing = 8 };
 
-        var kindBox = new ComboBox { Header = "动作", MinWidth = 200 };
-        kindBox.Items.Add("不动几何");
-        kindBox.Items.Add("铺满");
-        kindBox.Items.Add("套布局分区");
-        kindBox.Items.Add("自定义矩形");
+        var kindBox = new ComboBox { Header = Loc.T("ProfileEditorPage/ActionHeader"), MinWidth = 200 };
+        kindBox.Items.Add(Loc.T("ProfileEditorPage/ActionNone"));
+        kindBox.Items.Add(Loc.T("ProfileEditorPage/ActionFullscreen"));
+        kindBox.Items.Add(Loc.T("ProfileEditorPage/ActionZone"));
+        kindBox.Items.Add(Loc.T("ProfileEditorPage/ActionCustomRect"));
         kindBox.SelectedIndex = rule.Kind switch
         {
             PlacementKind.None => 0,
@@ -486,9 +501,9 @@ public sealed partial class ProfileEditorPage : Page
             _ => 1,
         };
 
-        // Zone 子区
+        // Zone subsection
         var zonePanel = BuildZonePanel(rule);
-        // CustomRect 子区
+        // CustomRect subsection
         var rectPanel = BuildRectPanel(rule);
 
         void Sync()
@@ -522,8 +537,8 @@ public sealed partial class ProfileEditorPage : Page
     {
         var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
 
-        var layoutBox = new ComboBox { Header = "布局", MinWidth = 200 };
-        var zoneBox = new ComboBox { Header = "分区", MinWidth = 200 };
+        var layoutBox = new ComboBox { Header = Loc.T("ProfileEditorPage/ZoneLayoutHeader"), MinWidth = 200 };
+        var zoneBox = new ComboBox { Header = Loc.T("ProfileEditorPage/ZoneHeader"), MinWidth = 200 };
 
         var layouts = ConfigService.Instance.Config.Layouts;
         foreach (var l in layouts)
@@ -547,7 +562,7 @@ public sealed partial class ProfileEditorPage : Page
             if (zoneBox.Items.Count > 0) zoneBox.SelectedIndex = 0;
         }
 
-        // 初始选中
+        // Initial selection
         Layout? current = layouts.FirstOrDefault(l => l.Id == rule.LayoutId);
         if (current is not null)
         {
@@ -574,7 +589,7 @@ public sealed partial class ProfileEditorPage : Page
                 rule.LayoutId = lc.Layout.Id;
                 rule.ZoneId = null;
                 LoadZones(lc.Layout, null);
-                // LoadZones 会自动选中首个分区,下面同步 ZoneId
+                // LoadZones auto-selects the first zone; sync ZoneId below.
                 if (zoneBox.SelectedItem is ZoneChoice zc0) rule.ZoneId = zc0.Zone.Id;
             }
         };
@@ -589,7 +604,7 @@ public sealed partial class ProfileEditorPage : Page
         {
             var hint = new TextBlock
             {
-                Text = "尚未创建任何布局,请先到“布局”页面新建。",
+                Text = Loc.T("ProfileEditorPage/NoLayoutsHint"),
                 Opacity = 0.7,
                 VerticalAlignment = VerticalAlignment.Bottom,
             };
@@ -605,10 +620,10 @@ public sealed partial class ProfileEditorPage : Page
 
     private FrameworkElement BuildRectPanel(PlacementRule rule)
     {
-        // 不在此预分配 CustomRect:本面板对每条规则都会构建(仅按 Kind 显隐),
-        // 若无条件 ??= new RectPx() 会给非 CustomRect 规则也塞上空矩形,落盘留噪声。
-        // 显示值从既有 CustomRect 读(无则 0);仅在用户真正编辑时才按需补建。
-        // (切到「自定义矩形」动作时 BuildActionSection 已先行补建,这里的 Ensure 兜底覆盖可视化选择等路径。)
+        // Don't preallocate CustomRect here: this panel is built for every rule (only shown/hidden by Kind),
+        // so an unconditional ??= new RectPx() would also stamp an empty rectangle onto non-CustomRect rules, leaving noise on disk.
+        // Display values are read from the existing CustomRect (0 if absent); it's only created on demand when the user actually edits.
+        // (Switching to the "custom rectangle" action already creates it in BuildActionSection; the Ensure here is a fallback covering paths like visual picking.)
         RectPx Ensure() => rule.CustomRect ??= new RectPx();
         var rect = rule.CustomRect;
 
@@ -631,16 +646,16 @@ public sealed partial class ProfileEditorPage : Page
             return nb;
         }
 
-        var xBox = Field("X", rect?.X ?? 0, v => Ensure().X = v);
-        var yBox = Field("Y", rect?.Y ?? 0, v => Ensure().Y = v);
-        var wBox = Field("宽", rect?.W ?? 0, v => Ensure().W = v);
-        var hBox = Field("高", rect?.H ?? 0, v => Ensure().H = v);
+        var xBox = Field(Loc.T("ProfileEditorPage/RectX"), rect?.X ?? 0, v => Ensure().X = v);
+        var yBox = Field(Loc.T("ProfileEditorPage/RectY"), rect?.Y ?? 0, v => Ensure().Y = v);
+        var wBox = Field(Loc.T("ProfileEditorPage/RectW"), rect?.W ?? 0, v => Ensure().W = v);
+        var hBox = Field(Loc.T("ProfileEditorPage/RectH"), rect?.H ?? 0, v => Ensure().H = v);
         row.Children.Add(xBox);
         row.Children.Add(yBox);
         row.Children.Add(wBox);
         row.Children.Add(hBox);
 
-        var pickBtn = new Button { Content = "可视化选择…", HorizontalAlignment = HorizontalAlignment.Left };
+        var pickBtn = new Button { Content = Loc.T("ProfileEditorPage/PickRegionButton"), HorizontalAlignment = HorizontalAlignment.Left };
         pickBtn.Click += async (_, _) =>
         {
             var monitor = await PickMonitorAsync();
@@ -663,7 +678,7 @@ public sealed partial class ProfileEditorPage : Page
         return outer;
     }
 
-    // ---------- 规则重排 ----------
+    // ---------- Rule reordering ----------
 
     private void MoveRule(int index, int delta)
     {
@@ -684,7 +699,7 @@ public sealed partial class ProfileEditorPage : Page
         RebuildRules();
     }
 
-    // ---------- 显示器辅助 ----------
+    // ---------- Monitor helpers ----------
 
     private static void PopulateMonitorPicker(ComboBox box)
     {
@@ -693,7 +708,7 @@ public sealed partial class ProfileEditorPage : Page
             box.Items.Add(new MonitorChoice(m));
     }
 
-    // 自定义矩形“可视化选择”前先选一块显示器(多屏时弹对话框,单屏直接用)。
+    // Before the custom rectangle's "visual pick", choose a monitor first (show a dialog when multi-monitor; use it directly when single).
     private async Task<MonitorDesc?> PickMonitorAsync()
     {
         var monitors = MonitorService.GetMonitors();
@@ -707,10 +722,10 @@ public sealed partial class ProfileEditorPage : Page
 
         var dialog = new ContentDialog
         {
-            Title = "选择显示器",
+            Title = Loc.T("ProfileEditorPage/PickMonitorTitle"),
             Content = combo,
-            PrimaryButtonText = "确定",
-            CloseButtonText = "取消",
+            PrimaryButtonText = Loc.T("ProfileEditorPage/PickMonitorPrimary"),
+            CloseButtonText = Loc.T("ProfileEditorPage/PickMonitorClose"),
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = XamlRoot,
         };
@@ -718,7 +733,7 @@ public sealed partial class ProfileEditorPage : Page
         return combo.SelectedItem is MonitorChoice mc ? mc.Monitor : null;
     }
 
-    // ---------- 底部操作 ----------
+    // ---------- Bottom actions ----------
 
     private void Save_Click(object sender, RoutedEventArgs e)
     {
@@ -728,7 +743,7 @@ public sealed partial class ProfileEditorPage : Page
             return;
         }
 
-        // 写回真实对象:保留其引用与列表实例不被替换(只改内容),引擎正在持有它。
+        // Write back onto the real object: keep its reference and its list element from being replaced (only change the contents), since the engine is holding it.
         var real = ConfigService.Instance.Config.Profiles.FirstOrDefault(p => p.Id == _realId);
         if (real is not null)
         {
@@ -750,15 +765,15 @@ public sealed partial class ProfileEditorPage : Page
             real.PreserveClientArea = _work.PreserveClientArea;
             real.MuteInBackground = _work.MuteInBackground;
             real.ClipCursor = _work.ClipCursor;
-            // 启动分辨率预设:整体克隆写回(可空)。
+            // Startup resolution preset: clone the whole thing back (nullable).
             real.ResolutionPreset = ClonePreset(_work.ResolutionPreset);
-            // 规则整列替换为副本规则的再克隆(避免把副本对象漏给真实模型造成后续共享)。
+            // Replace the whole rules list with a re-clone of the copy's rules (to avoid leaking copy objects into the real model and sharing them afterward).
             real.Rules = _work.Rules.Select(CloneRule).ToList();
             ConfigService.Instance.Save();
 
-            // 按新规则重新接管:先还原该 profile 名下全部窗口(去框/置顶/Clip/Mute 全复位),
-            // 引擎下个 tick 会用刚写回的新规则重新接管仍命中的窗口。否则旧矩形/旧 Clip 会一直留着,
-            // 直到窗口重建——保存即释放,语义干净(短暂闪一下可接受)。
+            // Re-apply under the new rules: first restore all of this profile's windows (reset borderless / topmost / Clip / Mute),
+            // and the engine will re-take over still-matching windows on its next tick using the rules just written back. Otherwise the old rectangle / old Clip
+            // would linger until the window is rebuilt — saving releases, which keeps the semantics clean (a brief flicker is acceptable).
             Reframe.App.Engine.ReleaseProfile(real.Id);
         }
 
@@ -767,7 +782,7 @@ public sealed partial class ProfileEditorPage : Page
 
     private void Cancel_Click(object sender, RoutedEventArgs e)
     {
-        // 取消:丢弃副本,不写回、不保存。
+        // Cancel: discard the copy; no write-back, no save.
         if (Frame.CanGoBack) Frame.GoBack();
     }
 
@@ -776,14 +791,14 @@ public sealed partial class ProfileEditorPage : Page
         if (Frame.CanGoBack) Frame.GoBack();
     }
 
-    // ---------- 下拉项包装 ----------
+    // ---------- Dropdown item wrappers ----------
 
     private sealed class MonitorChoice
     {
         public MonitorDesc Monitor { get; }
         public MonitorChoice(MonitorDesc m) => Monitor = m;
         public override string ToString()
-            => $"{Monitor.Width}×{Monitor.Height}{(Monitor.IsPrimary ? " (主屏)" : "")}";
+            => $"{Monitor.Width}×{Monitor.Height}{(Monitor.IsPrimary ? Loc.T("ProfileEditorPage/MonitorPrimarySuffix") : "")}";
     }
 
     private sealed class LayoutChoice
@@ -791,7 +806,7 @@ public sealed partial class ProfileEditorPage : Page
         public Layout Layout { get; }
         public LayoutChoice(Layout l) => Layout = l;
         public override string ToString()
-            => string.IsNullOrWhiteSpace(Layout.Name) ? "未命名布局" : Layout.Name;
+            => string.IsNullOrWhiteSpace(Layout.Name) ? Loc.T("ProfileEditorPage/UnnamedLayout") : Layout.Name;
     }
 
     private sealed class ZoneChoice
@@ -799,7 +814,7 @@ public sealed partial class ProfileEditorPage : Page
         public Zone Zone { get; }
         public ZoneChoice(Zone z) => Zone = z;
         public override string ToString()
-            => string.IsNullOrWhiteSpace(Zone.Name) ? "未命名分区" : Zone.Name;
+            => string.IsNullOrWhiteSpace(Zone.Name) ? Loc.T("ProfileEditorPage/UnnamedZone") : Zone.Name;
     }
 
     private static Button IconButton(string glyph, string tooltip)

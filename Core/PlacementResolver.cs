@@ -5,7 +5,7 @@ using Reframe.Interop;
 
 namespace Reframe.Core;
 
-/// <summary>匹配:窗口 ↔ profile。</summary>
+/// <summary>Matching: window ↔ profile.</summary>
 public static class MatchEngine
 {
     public static bool Matches(WindowInfo w, Profile p)
@@ -24,20 +24,23 @@ public static class MatchEngine
         => s.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? s[..^4] : s;
 
     /// <summary>
-    /// 每个 pattern 编译一次缓存的 <see cref="Regex"/>(<see cref="MatchKind.TitleRegex"/> 每 tick 高频调用,
-    /// Compiled 值得;非法 pattern 缓存 null 防反复抛构造异常)。
+    /// A cached <see cref="Regex"/> compiled once per pattern (<see cref="MatchKind.TitleRegex"/> is called
+    /// at high frequency every tick, so Compiled pays off; an invalid pattern caches null to avoid repeatedly
+    /// throwing on construction).
     /// </summary>
     private static readonly ConcurrentDictionary<string, Regex?> _regexCache = new();
 
     /// <summary>
-    /// 用户正则的匹配超时上限:灾难性回溯(如 <c>(a+)+$</c> 配长串 a)会在 .NET 正则引擎里指数爆炸,
-    /// 没有超时会把整个扫描 tick(乃至引擎)挂死。限 100ms,超时按"不匹配"处理。
+    /// Match-timeout cap for user regexes: catastrophic backtracking (e.g. <c>(a+)+$</c> against a long run of
+    /// a's) blows up exponentially in the .NET regex engine; without a timeout it would hang the whole scan
+    /// tick (and the engine). Capped at 100ms; a timeout is treated as "no match".
     /// </summary>
     private static readonly TimeSpan RegexMatchTimeout = TimeSpan.FromMilliseconds(100);
 
     private static bool SafeRegex(string pattern, string input)
     {
-        // 取/建缓存的 Regex 实例:非法 pattern → 缓存 null,后续直接判不匹配,不再反复构造抛异常。
+        // Get/create the cached Regex instance: an invalid pattern → cache null, then just report no match
+        // thereafter without repeatedly constructing and throwing.
         var re = _regexCache.GetOrAdd(pattern, static pat =>
         {
             try
@@ -46,7 +49,7 @@ public static class MatchEngine
             }
             catch
             {
-                return null; // 非法表达式:缓存为 null
+                return null; // Invalid expression: cache null
             }
         });
 
@@ -58,28 +61,28 @@ public static class MatchEngine
         }
         catch (RegexMatchTimeoutException)
         {
-            // 灾难性回溯超时:按不匹配处理,不让单个坏 pattern 拖垮扫描。
+            // Catastrophic-backtracking timeout: treat as no match, don't let one bad pattern drag down the scan.
             return false;
         }
         catch
         {
-            // 兜底:任何其它运行期异常都按不匹配,绝不向上抛(MatchEngine 在每 tick 热路径)。
+            // Fallback: treat any other runtime exception as no match; never throw upward (MatchEngine is on the per-tick hot path).
             return false;
         }
     }
 }
 
-/// <summary>解析:窗口当前所在显示器 + profile 规则表 → 目标几何。</summary>
+/// <summary>Resolution: the monitor the window is currently on + the profile's rule table → target geometry.</summary>
 public static class PlacementResolver
 {
     /// <summary>
-    /// 解析结果。Rect 为 null 表示不动几何;Topmost 由 WindowOps 转成 HWND_TOPMOST/NOTOPMOST。
+    /// Resolution result. A null Rect means "leave geometry alone"; Topmost is turned into HWND_TOPMOST/NOTOPMOST by WindowOps.
     /// </summary>
     public readonly record struct Target(bool MakeBorderless, NativeMethods.RECT? Rect, bool Topmost);
 
     /// <summary>
-    /// 取屏幕信息 + 窗口当前矩形,委托给纯函数 <see cref="ResolveRect"/>。
-    /// 这是唯一碰 Win32 的入口;几何计算全部在 ResolveRect 里(可单测)。
+    /// Fetch monitor info + the window's current rect, then delegate to the pure function <see cref="ResolveRect"/>.
+    /// This is the only entry point that touches Win32; all geometry math lives in ResolveRect (unit-testable).
     /// </summary>
     public static Target Resolve(WindowInfo w, Profile p, AppConfig cfg)
     {
@@ -88,8 +91,9 @@ public static class PlacementResolver
         if (!NativeMethods.GetMonitorInfo(hMon, ref mi))
             return new Target(p.Borderless, null, p.Topmost);
 
-        // GetWindowRect 失败(句柄刚失效等):不要拿零矩形去算 MoveOnly/letterbox(会产出垃圾矩形,
-        // 进而被 ClipCursor 夹住)。失败时只保留去边框/置顶意图,几何返回 null(不动)。
+        // If GetWindowRect fails (handle just went invalid, etc.): don't feed a zero rect into MoveOnly/letterbox
+        // (it would produce a garbage rect that ClipCursor then clamps to). On failure, keep only the
+        // border-strip/topmost intent and return null geometry (leave it alone).
         if (!NativeMethods.GetWindowRect(w.Handle, out var cur))
             return new Target(p.Borderless, null, p.Topmost);
 
@@ -98,14 +102,15 @@ public static class PlacementResolver
     }
 
     /// <summary>
-    /// 纯几何核(不碰 Win32,单元测试靶点)。返回目标矩形(物理像素,虚拟桌面坐标),
-    /// null = 该屏无命中规则或规则不产出矩形,调用方据此"不动几何"。
+    /// The pure geometry core (no Win32; the unit-test target). Returns the target rect (physical pixels,
+    /// virtual-desktop coordinates); null = no rule matched this monitor or the rule produces no rect, so the
+    /// caller "leaves geometry alone".
     /// </summary>
-    /// <param name="rcMonitor">窗口所在屏整块矩形(含任务栏)。</param>
-    /// <param name="rcWork">该屏工作区(不含任务栏)。</param>
-    /// <param name="currentWindowRect">窗口当前矩形;仅 KeepAspectRatio 用其宽高比做 letterbox。</param>
-    /// <param name="p">profile(规则表、Offsets、KeepAspectRatio)。</param>
-    /// <param name="cfg">用于按 LayoutId/ZoneId 查 Zone 比例。</param>
+    /// <param name="rcMonitor">The whole rect of the window's monitor (including the taskbar).</param>
+    /// <param name="rcWork">That monitor's work area (excluding the taskbar).</param>
+    /// <param name="currentWindowRect">The window's current rect; only KeepAspectRatio uses its aspect ratio for letterboxing.</param>
+    /// <param name="p">The profile (rule table, Offsets, KeepAspectRatio).</param>
+    /// <param name="cfg">Used to look up a Zone's ratios by LayoutId/ZoneId.</param>
     public static NativeMethods.RECT? ResolveRect(
         NativeMethods.RECT rcMonitor, NativeMethods.RECT rcWork,
         NativeMethods.RECT currentWindowRect, Profile p, AppConfig cfg)
@@ -113,7 +118,7 @@ public static class PlacementResolver
         int monW = rcMonitor.Right - rcMonitor.Left;
         int monH = rcMonitor.Bottom - rcMonitor.Top;
 
-        // 自上而下,第一条 Monitor 命中的规则生效(按整屏分辨率匹配)
+        // Top-down, the first rule whose Monitor matches wins (matched on the whole-monitor resolution).
         PlacementRule? rule = null;
         foreach (var r in p.Rules)
         {
@@ -144,7 +149,7 @@ public static class PlacementResolver
 
         if (target is not { } t) return null;
 
-        // 四边偏移
+        // Per-edge offsets
         var o = p.Offsets;
         t = new NativeMethods.RECT
         {
@@ -154,16 +159,18 @@ public static class PlacementResolver
             Bottom = t.Bottom + o.Bottom
         };
 
-        // 当前窗口矩形宽/高非法(GetWindowRect 失败给了零矩形、或合成的占位 WindowInfo):
-        // MoveOnly / letterbox 都依赖它,拿垃圾尺寸会算出垃圾矩形。此时退回纯目标矩形 t
-        // (该定位的照常定位,只是不按"当前尺寸/宽高比"二次加工)。
+        // The current window rect's width/height is invalid (GetWindowRect failed and gave a zero rect, or a
+        // synthesized placeholder WindowInfo): both MoveOnly and letterbox depend on it, and a garbage size
+        // yields a garbage rect. Fall back to the plain target rect t (still positioned as intended, just
+        // without the secondary "current size / aspect ratio" processing).
         int cw = currentWindowRect.Right - currentWindowRect.Left;
         int ch = currentWindowRect.Bottom - currentWindowRect.Top;
         bool curValid = cw > 0 && ch > 0;
 
-        // 只定位(MoveOnly):把窗口左上角放到目标矩形左上角,保持窗口当前尺寸不变。
-        // 用于渲染分辨率钉死在注册表的 Unity 游戏——resize 只会整张拉伸。
-        // MoveOnly 与 KeepAspectRatio 互斥时 MoveOnly 优先(letterbox 在固定渲染分辨率下没意义)。
+        // Move only (MoveOnly): place the window's top-left at the target rect's top-left, keeping the
+        // window's current size. For Unity games with render resolution pinned in the registry — a resize
+        // would just stretch the whole frame. When MoveOnly and KeepAspectRatio conflict, MoveOnly wins
+        // (letterboxing is meaningless at a fixed render resolution).
         if (rule.MoveOnly)
         {
             if (!curValid) return t;
@@ -176,7 +183,7 @@ public static class PlacementResolver
             };
         }
 
-        // 保持宽高比:以 currentWindowRect 的宽高比,在目标矩形内等比最大化并居中(letterbox)。
+        // Keep aspect ratio: using currentWindowRect's aspect ratio, maximize proportionally within the target rect and center (letterbox).
         if (p.KeepAspectRatio && curValid)
             t = Letterbox(t, currentWindowRect);
 
@@ -184,12 +191,13 @@ public static class PlacementResolver
     }
 
     /// <summary>
-    /// zone 比例(0..1,相对 <paramref name="basis"/>)→ 绝对矩形(virtual-desktop 物理像素)。
-    /// <c>basis.Left + Round(z.X·bw)</c> 等,语义与 <see cref="ResolveRect"/> 的 Zone 分支一致。
-    /// 纯函数,供 ResolveRect、<see cref="DragSnapService"/>、HotkeyService 共用,保证三处取整口径统一。
+    /// Zone ratios (0..1, relative to <paramref name="basis"/>) → an absolute rect (virtual-desktop physical
+    /// pixels). <c>basis.Left + Round(z.X·bw)</c> etc., semantics identical to the Zone branch of
+    /// <see cref="ResolveRect"/>. A pure function shared by ResolveRect, <see cref="DragSnapService"/> and
+    /// HotkeyService, keeping the rounding consistent across all three.
     /// </summary>
-    /// <param name="z">分区(比例坐标)。</param>
-    /// <param name="basis">投射基准矩形:整屏(rcMonitor)或工作区(rcWork)。</param>
+    /// <param name="z">The zone (ratio coordinates).</param>
+    /// <param name="basis">The projection basis rect: the whole monitor (rcMonitor) or the work area (rcWork).</param>
     public static NativeMethods.RECT ZoneToRect(Zone z, NativeMethods.RECT basis)
     {
         int bw = basis.Right - basis.Left, bh = basis.Bottom - basis.Top;
@@ -203,7 +211,7 @@ public static class PlacementResolver
     }
 
     /// <summary>
-    /// 把内容按 content 的宽高比塞进 outer,等比最大化后居中。content 宽高非法(0)时原样返回 outer。
+    /// Fit content into outer at content's aspect ratio, maximizing proportionally and centering. If content's width/height is invalid (0), return outer unchanged.
     /// </summary>
     private static NativeMethods.RECT Letterbox(NativeMethods.RECT outer, NativeMethods.RECT content)
     {
@@ -211,21 +219,21 @@ public static class PlacementResolver
         int cw = content.Right - content.Left, ch = content.Bottom - content.Top;
         if (ow <= 0 || oh <= 0 || cw <= 0 || ch <= 0) return outer;
 
-        // 比较 content 与 outer 的宽高比:用受限的一边定缩放,另一边留黑边。
-        // cw/ch ?= ow/oh  →  cw*oh ?= ow*ch,避免浮点。
+        // Compare content's and outer's aspect ratios: the constrained side sets the scale, the other gets black bars.
+        // cw/ch ?= ow/oh  →  cw*oh ?= ow*ch, avoiding floating point.
         long contentWide = (long)cw * oh;
         long outerWide = (long)ow * ch;
 
         int w, h;
         if (contentWide > outerWide)
         {
-            // content 比 outer 更"宽":宽度顶满,高度按比例缩。
+            // content is "wider" than outer: width fills, height scales proportionally.
             w = ow;
             h = (int)Math.Round((double)w * ch / cw);
         }
         else
         {
-            // content 更"高"(或同比):高度顶满,宽度按比例缩。
+            // content is "taller" (or same ratio): height fills, width scales proportionally.
             h = oh;
             w = (int)Math.Round((double)h * cw / ch);
         }

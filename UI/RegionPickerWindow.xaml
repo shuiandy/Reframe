@@ -13,10 +13,10 @@
           PointerReleased="Root_PointerReleased"
           RightTapped="Root_RightTapped">
 
-        <!-- 深色遮罩 -->
+        <!-- Dark scrim -->
         <Grid Background="#80000000"/>
 
-        <!-- 选区:用 Canvas 放一个亮边框矩形 + 尺寸徽标 -->
+        <!-- Selection: a Canvas holding a bright-bordered rectangle + a size badge -->
         <Canvas x:Name="OverlayCanvas">
             <Rectangle x:Name="SelectionRect"
                        Visibility="Collapsed"
@@ -37,14 +37,14 @@
             </Border>
         </Canvas>
 
-        <!-- 提示语 -->
+        <!-- Hint -->
         <Border VerticalAlignment="Top" HorizontalAlignment="Center"
                 Margin="0,24,0,0"
                 Background="#B0101418"
                 CornerRadius="6"
                 Padding="14,8">
-            <TextBlock Foreground="#E0FFFFFF" FontSize="13"
-                       Text="拖拽框选区域 · 松开确认 · Esc 或右键取消"/>
+            <TextBlock x:Uid="/RegionPickerWindow/Hint"
+                       Foreground="#E0FFFFFF" FontSize="13"/>
         </Border>
     </ctrl:CursorGrid>
 </Window>

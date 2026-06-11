@@ -5,8 +5,9 @@ using Reframe.Interop;
 namespace Reframe.Core;
 
 /// <summary>
-/// 后台守护(见 DESIGN.md §3):WinEvent 钩子事件驱动为主 + 低频兜底轮询。
-/// 命中的窗口去边框/定位;游戏改回去会被重新糊上(带防拉锯上限)。
+/// Background watcher (see DESIGN.md §3): primarily WinEvent-hook-driven, with a low-frequency
+/// fallback poll. Matched windows are stripped of their border and positioned; if the game reverts
+/// them, they are reapplied (subject to an anti-thrash cap).
 /// </summary>
 public sealed class Watcher : IDisposable
 {
@@ -15,32 +16,36 @@ public sealed class Watcher : IDisposable
     private WinEventHook? _hook;
     private CancellationTokenSource? _cts;
     private Task? _pollLoop;
-    // 防抖 Timer 建一次、用 Change() 重排,不每事件 new/Dispose(见 ScheduleTick)。
+    // The debounce Timer is created once and re-armed via Change(); not new/Dispose'd per event (see ScheduleTick).
     private Timer? _debounce;
-    // 前台 Clip/Mute 的独立短防抖(50ms):钩子泵线程只重排它,COM/ClipCursor 不在钩子回调里同步做。
+    // Separate short debounce (50ms) for foreground Clip/Mute: the hook pump thread only re-arms it;
+    // the COM/ClipCursor work is never done synchronously inside the hook callback.
     private Timer? _fgDebounce;
     private readonly object _gate = new();
 
-    // Tick 重入闸:轮询线程 / 防抖 Timer / Poke 可能并发,已在跑就直接跳过(不排队)。
+    // Tick re-entrancy guard: the poll thread / debounce Timer / Poke may race; if one is already
+    // running, just skip (no queueing).
     private int _ticking;
 
     /// <summary>
-    /// 给 UI 的日志回调(后台线程触发,UI 侧自行切线程)。
-    /// 传入的字符串已带 <c>[HH:mm:ss]</c> 时间戳前缀(由 <see cref="Emit"/> 统一加),
-    /// UI 直接显示即可,不要再加时间戳。
+    /// Log callback for the UI (raised on a background thread; the UI marshals to its own thread).
+    /// The string already carries an <c>[HH:mm:ss]</c> timestamp prefix (added uniformly by
+    /// <see cref="Emit"/>), so the UI can display it as-is without adding another timestamp.
     /// </summary>
     public event Action<string>? Log;
 
-    // ---- 日志环形缓冲:最近 N 条(带时间戳),线程安全 ----
-    // 引擎在 App.OnLaunched 即启动并接管已运行的游戏,"引擎已启动/接管「×××」"都发生在
-    // DashboardPage 订阅 Log 之前,事件错过即丢。缓冲让页面订阅时能回放最近历史。
+    // ---- Log ring buffer: the most recent N lines (timestamped), thread-safe ----
+    // The engine starts in App.OnLaunched and takes over already-running games, so "Engine started" /
+    // "Managing ..." all fire before DashboardPage subscribes to Log; a missed event is lost. The
+    // buffer lets the page replay recent history when it subscribes.
     private const int LogBufferCapacity = 100;
     private readonly object _logGate = new();
     private readonly LinkedList<string> _logBuffer = new();
 
     /// <summary>
-    /// 统一日志出口:加 <c>[HH:mm:ss]</c> 时间戳、压入环形缓冲(最多 <see cref="LogBufferCapacity"/> 条)、
-    /// 再触发 <see cref="Log"/> 事件。任意线程可调,缓冲读写在 <see cref="_logGate"/> 下串行化。
+    /// Unified log sink: prepends an <c>[HH:mm:ss]</c> timestamp, pushes into the ring buffer (at most
+    /// <see cref="LogBufferCapacity"/> lines), then raises the <see cref="Log"/> event. Callable from any
+    /// thread; buffer reads/writes are serialized under <see cref="_logGate"/>.
     /// </summary>
     private void Emit(string message)
     {
@@ -55,15 +60,17 @@ public sealed class Watcher : IDisposable
     }
 
     /// <summary>
-    /// 外部组件(如 <see cref="Services.HotkeyService"/>)向仪表盘日志推一条消息。
-    /// 走与引擎内部同一出口(带时间戳 + 入环形缓冲 + 触发 <see cref="Log"/>),
-    /// 使订阅前发生的消息(启动期热键注册失败)也能被 DashboardPage 回放看到。任意线程可调。
+    /// Lets an external component (e.g. <see cref="Services.HotkeyService"/>) push a message to the
+    /// dashboard log. Goes through the same sink as the engine's own logs (timestamp + ring buffer +
+    /// <see cref="Log"/> event), so messages emitted before the UI subscribes (e.g. a startup hotkey
+    /// registration failure) are still replayable by DashboardPage. Callable from any thread.
     /// </summary>
     public void LogExternal(string message) => Emit(message);
 
     /// <summary>
-    /// 最近日志快照(旧→新,已含时间戳)。UI 订阅 <see cref="Log"/> 前先调此回放历史,
-    /// 弥补订阅前已发生的事件(如启动期接管)。返回独立拷贝,调用方可安全持有。
+    /// Snapshot of recent log lines (oldest→newest, already timestamped). The UI calls this to replay
+    /// history before subscribing to <see cref="Log"/>, covering events that already happened (e.g.
+    /// startup takeovers). Returns an independent copy the caller can safely retain.
     /// </summary>
     public IReadOnlyList<string> GetRecentLog()
     {
@@ -74,21 +81,22 @@ public sealed class Watcher : IDisposable
     private volatile bool _running;
     public bool Running => _running;
 
-    // ---- 事件防抖:多个 WinEvent 合并成一次 Tick ----
+    // ---- Event debounce: coalesce multiple WinEvents into a single Tick ----
     private const int DebounceMs = 300;
-    // 兜底轮询下限:事件驱动已覆盖绝大多数,轮询只兜底漏网,降频到 5s 起。
+    // Fallback poll floor: event-driven covers the vast majority; polling only catches what slips
+    // through, so throttle it to 5s minimum.
     private const int MinPollMs = 5000;
 
-    // 防拉锯参数(10s 窗口 / 3 次上限 / 2 条告警 / 5min 衰减)集中在 Core/ThrashPolicy.cs。
+    // Anti-thrash parameters (10s window / cap of 3 / 2 warnings / 5min decay) live in Core/ThrashPolicy.cs.
 
     public Watcher(Func<AppConfig> getConfig) => _getConfig = getConfig;
 
-    // ---- M4 仪表盘契约:被接管窗口快照 + 主动重新调度 ----
+    // ---- M4 dashboard contract: snapshot of managed windows + on-demand reschedule ----
 
-    /// <summary>当前被接管的一个窗口:句柄 + 接管它的 profileId。</summary>
+    /// <summary>One currently-managed window: its handle + the profileId that manages it.</summary>
     public sealed record TakenWindow(IntPtr Handle, string ProfileId);
 
-    /// <summary>当前被接管窗口的快照(读 _takeover 字典,过滤已销毁句柄)。</summary>
+    /// <summary>Snapshot of currently-managed windows (reads the _takeover map, filtering out destroyed handles).</summary>
     public IReadOnlyList<TakenWindow> GetTakenWindows()
     {
         var list = new List<TakenWindow>();
@@ -98,7 +106,7 @@ public sealed class Watcher : IDisposable
         return list;
     }
 
-    /// <summary>立即调度一次扫描(重新应用)。引擎未运行时无副作用。</summary>
+    /// <summary>Schedule an immediate scan (reapply). No-op when the engine is not running.</summary>
     public void Poke() => ScheduleTick();
 
     public void Start()
@@ -110,8 +118,9 @@ public sealed class Watcher : IDisposable
         _hook.WindowEvent += OnWindowEvent;
         if (!_hook.Start())
         {
-            // 钩子没装上:事件驱动失效,但兜底轮询仍在,引擎降级运行(只是响应慢些)。
-            Emit("事件钩子启动失败,降级为定时轮询(响应可能变慢)");
+            // Hook failed to install: event-driven detection is lost, but the fallback poll remains,
+            // so the engine runs in degraded mode (just slower to react).
+            Emit("Event hook failed to start; falling back to periodic polling (responsiveness may degrade)");
             _hook.WindowEvent -= OnWindowEvent;
             _hook.Dispose();
             _hook = null;
@@ -120,41 +129,44 @@ public sealed class Watcher : IDisposable
         _cts = new CancellationTokenSource();
         _pollLoop = Task.Run(() => PollLoopAsync(_cts.Token));
 
-        // 防抖 Timer 建一次,后续只用 Change() 重排(见 ScheduleTick / ScheduleForegroundRefresh)。
+        // Create the debounce Timers once; from here on only re-arm via Change() (see ScheduleTick / ScheduleForegroundRefresh).
         lock (_gate)
         {
             _debounce ??= new Timer(_ => SafeTick(), null, Timeout.Infinite, Timeout.Infinite);
             _fgDebounce ??= new Timer(_ => ForegroundRefreshTick(), null, Timeout.Infinite, Timeout.Infinite);
         }
 
-        Emit("引擎已启动");
+        Emit("Engine started");
 
-        // 启动即把所有启用的 Unity 分辨率预设写一次(不分 MatchKind):游戏多半还没起,写了立即生效。
+        // On startup, write every enabled Unity resolution preset once (regardless of MatchKind): the
+        // game is usually not running yet, so the write takes effect immediately.
         ApplyResolutionPresets(forceAllKinds: true);
 
-        ScheduleTick(); // 启动即先扫一遍现有窗口
+        ScheduleTick(); // On startup, do an initial scan of existing windows
     }
 
     /// <summary>
-    /// 配置变化时调用(App 订阅 ConfigService.Changed):把所有启用的 Unity 分辨率预设写一次。
-    /// 与启动同口径,不分 MatchKind——用户刚改完配置,通常游戏未运行,写了即生效。
-    /// <para>另外排一次 Tick:让引擎开关的 true↔false 边沿被 <see cref="SafeTick"/> 及时检测
-    /// (~300ms 防抖,而非等下一轮 5s 兜底轮询)——关引擎即时还原、开引擎即时重新接管。</para>
+    /// Called on config changes (App subscribes to ConfigService.Changed): writes every enabled Unity
+    /// resolution preset once. Same policy as startup, ignoring MatchKind — the user just edited config
+    /// and the game is usually not running, so the write takes effect immediately.
+    /// <para>Also schedules a Tick so that an EngineEnabled true↔false edge is detected promptly by
+    /// <see cref="SafeTick"/> (~300ms debounce, instead of waiting for the next 5s fallback poll) —
+    /// turning the engine off restores immediately, turning it on re-takes-over immediately.</para>
     /// </summary>
     public void OnConfigChanged()
     {
         if (!_running) return;
         ApplyResolutionPresets(forceAllKinds: true);
-        ScheduleTick(); // 及时检测 EngineEnabled 边沿(暂停→还原 / 恢复→重新接管)
+        ScheduleTick(); // Promptly detect the EngineEnabled edge (pause→restore / resume→re-take-over)
     }
 
-    /// <param name="restoreWindows">停止时是否把接管过的窗口还原。</param>
+    /// <param name="restoreWindows">Whether to restore the windows we took over when stopping.</param>
     public void Stop(bool restoreWindows = true)
     {
         if (!_running) return;
         _running = false;
 
-        // 停钩子线程
+        // Stop the hook thread
         if (_hook != null)
         {
             _hook.WindowEvent -= OnWindowEvent;
@@ -162,7 +174,7 @@ public sealed class Watcher : IDisposable
             _hook = null;
         }
 
-        // 停轮询
+        // Stop the poll loop
         _cts?.Cancel();
         try { _pollLoop?.Wait(2000); } catch { /* ignore */ }
         _pollLoop = null;
@@ -176,22 +188,23 @@ public sealed class Watcher : IDisposable
             _debounce = null;
             _fgDebounce?.Dispose();
             _fgDebounce = null;
-            ReleaseClipLocked();            // 引擎停止必须解除光标限制
-            toUnmute = DrainMutedLocked();  // 锁内只取差集,COM 出锁后做
+            ReleaseClipLocked();            // Stopping the engine must release the cursor clip
+            toUnmute = DrainMutedLocked();  // Under the lock, only take the diff; do the COM work after releasing it
         }
-        UnmuteOutsideLock(toUnmute);        // 引擎停止必须取消所有静音(COM 不在锁内)
+        UnmuteOutsideLock(toUnmute);        // Stopping the engine must unmute everything (COM not under the lock)
 
         if (restoreWindows)
         {
             WindowOps.RestoreAll();
             _takeover.Clear();
-            Emit("已还原全部接管窗口");
+            Emit("All managed windows restored");
         }
-        Emit("引擎已停止");
+        Emit("Engine stopped");
     }
 
-    // 钩子回调里只做防抖,真正扫描留给计时器,避免在系统回调里干重活。
-    // 前台切换的 Clip/Mute(含 COM)不在钩子泵线程同步做,改排一个 50ms 短防抖,出回调再处理。
+    // The hook callback only debounces; the actual scan is left to the timer, to avoid heavy work in a
+    // system callback. Foreground-switch Clip/Mute (which involves COM) is not done synchronously on the
+    // hook pump thread; instead a 50ms short debounce is armed and the work happens after the callback returns.
     private void OnWindowEvent(uint eventType, IntPtr hwnd)
     {
         if (eventType == NativeMethods.EVENT_SYSTEM_FOREGROUND)
@@ -199,7 +212,8 @@ public sealed class Watcher : IDisposable
         ScheduleTick();
     }
 
-    // 前台 Clip/Mute 防抖间隔:前台切换会连发,短攒一下;又要够灵敏(夹光标/恢复声音)。
+    // Foreground Clip/Mute debounce interval: foreground switches arrive in bursts, so coalesce briefly;
+    // but it must stay responsive (clipping the cursor / restoring sound).
     private const int ForegroundDebounceMs = 50;
 
     private void ScheduleTick()
@@ -207,12 +221,12 @@ public sealed class Watcher : IDisposable
         lock (_gate)
         {
             if (!_running || _debounce is null) return;
-            // 复用同一 Timer,重排 due 时间(不每事件 new/Dispose)。
+            // Reuse the same Timer, re-arming its due time (no new/Dispose per event).
             _debounce.Change(DebounceMs, Timeout.Infinite);
         }
     }
 
-    /// <summary>排一次前台 Clip/Mute 刷新(50ms 防抖)。钩子泵线程只调这,COM/ClipCursor 留给 Timer 线程。</summary>
+    /// <summary>Schedule a foreground Clip/Mute refresh (50ms debounce). The hook pump thread only calls this; the COM/ClipCursor work is left to the Timer thread.</summary>
     private void ScheduleForegroundRefresh()
     {
         lock (_gate)
@@ -222,13 +236,14 @@ public sealed class Watcher : IDisposable
         }
     }
 
-    /// <summary>前台防抖到点:读当前前台窗口,刷新光标限制与后台静音(均在 Timer 线程,不在钩子回调)。</summary>
+    /// <summary>Foreground debounce fires: read the current foreground window and refresh the cursor clip and background mute (all on the Timer thread, not the hook callback).</summary>
     private void ForegroundRefreshTick()
     {
         if (!_running) return;
 
-        // 引擎暂停(EngineEnabled=false)时,前台事件不得再施加 Clip/Mute——只解除已有的。
-        // (SafeTick 的边沿检测已在翻 false 时 ReleaseAll 过一次;此处兜住暂停期间到来的前台事件。)
+        // While the engine is paused (EngineEnabled=false), foreground events must not apply new Clip/Mute —
+        // only release existing ones. (SafeTick's edge detection already called ReleaseAll once when it
+        // flipped to false; this catches foreground events that arrive during the paused period.)
         if (!_getConfig().EngineEnabled)
         {
             List<uint> toUnmute;
@@ -260,66 +275,72 @@ public sealed class Watcher : IDisposable
     }
 
     /// <summary>
-    /// 上一次 SafeTick 观察到的 EngineEnabled。用于检测 true→false 边沿:翻 false 那一刻调
-    /// <see cref="ReleaseAll"/> 还原全部接管窗口。只在 _ticking 闸内读写(SafeTick 串行化),无需 volatile。
-    /// 初值 true:引擎启动默认 EngineEnabled=true,若用户启动前就关了,首 tick 即视为一次 true→false 并还原(无副作用)。
+    /// The EngineEnabled value observed by the previous SafeTick. Used to detect the true→false edge: the
+    /// moment it flips false, call <see cref="ReleaseAll"/> to restore every managed window. Only read/written
+    /// inside the _ticking guard (SafeTick is serialized), so no volatile needed.
+    /// Initial value true: the engine defaults to EngineEnabled=true, so if the user turned it off before
+    /// startup, the first tick treats it as a true→false edge and restores (a no-op).
     /// </summary>
     private bool _lastEngineEnabled = true;
 
     private void SafeTick()
     {
         if (!_running) return;
-        // 重入闸:轮询线程 / 防抖 Timer / Poke 可能同时触发,已有一次在跑就直接跳过(不排队、不堆积)。
+        // Re-entrancy guard: the poll thread / debounce Timer / Poke may fire concurrently; if one is
+        // already running, just skip (no queueing, no pileup).
         if (Interlocked.CompareExchange(ref _ticking, 1, 0) != 0) return;
         try
         {
             if (!_running) return;
             var cfg = _getConfig();
 
-            // 引擎开关边沿检测:true→false 那一刻释放全部接管(去框/置顶/Clip/Mute 全还原),
-            // 之后照常早退。引擎只是暂停,钩子/轮询仍在,再开 EngineEnabled 时下个 tick 会重新接管。
+            // Engine toggle edge detection: the moment it goes true→false, release every takeover
+            // (restore border/topmost/Clip/Mute) and then early-out as usual. The engine is merely
+            // paused — hook/poll stay alive — so when EngineEnabled is turned back on the next tick re-takes-over.
             bool enabled = cfg.EngineEnabled;
             if (_lastEngineEnabled && !enabled)
             {
                 _lastEngineEnabled = false;
                 try { ReleaseAll(); }
-                catch (Exception ex) { Emit("暂停还原异常: " + ex.Message); }
-                Emit("引擎已暂停,已还原全部接管窗口");
+                catch (Exception ex) { Emit("Error restoring windows on pause: " + ex.Message); }
+                Emit("Engine paused; all managed windows restored");
                 return;
             }
             _lastEngineEnabled = enabled;
 
             if (!enabled) return;
             try { Tick(cfg); }
-            catch (Exception ex) { Emit("扫描异常: " + ex.Message); }
+            catch (Exception ex) { Emit("Scan error: " + ex.Message); }
         }
         finally { Interlocked.Exchange(ref _ticking, 0); }
     }
 
-    /// <summary>首次见到 (窗口,profile) 的时间,用于 DelayMs(游戏启动期窗口会重建)。</summary>
+    /// <summary>Time each (window, profile) was first seen, used for DelayMs (windows get rebuilt during a game's startup).</summary>
     private readonly ConcurrentDictionary<(IntPtr, string), DateTime> _firstSeen = new();
 
     /// <summary>
-    /// 接管映射:窗口句柄 → 接管它的 profileId。既做"宣告一次"去重,也供 ReleaseProfile
-    /// 按 profile 找回名下窗口、供 ClipCursor 判断前台是否属于某 ClipCursor profile。
+    /// Takeover map: window handle → the profileId that manages it. Doubles as the "announce once"
+    /// dedupe set, and serves ReleaseProfile (to find a profile's windows) and ClipCursor (to tell
+    /// whether the foreground window belongs to a ClipCursor profile).
     /// </summary>
     private readonly ConcurrentDictionary<IntPtr, string> _takeover = new();
 
-    /// <summary>已就(窗口,profile)报过一次"无权限"的去重集合(值占位),防每 tick 刷屏。死窗口清理时一并剔除。</summary>
+    /// <summary>Dedupe set of (window, profile) pairs already reported as "no permission" (value is a placeholder), to avoid spamming every tick. Pruned alongside dead-window cleanup.</summary>
     private readonly ConcurrentDictionary<(IntPtr, string), byte> _noPermLogged = new();
 
-    /// <summary>当前被夹住光标的窗口句柄;IntPtr.Zero = 未夹。仅 _gate 下读写。</summary>
+    /// <summary>Handle of the window whose cursor is currently clipped; IntPtr.Zero = none. Read/written only under _gate.</summary>
     private IntPtr _clippedHwnd = IntPtr.Zero;
 
-    /// <summary>当前被我们静音的进程 PID 集合(MuteInBackground)。仅 _gate 下读写。</summary>
+    /// <summary>Set of process PIDs we currently mute (MuteInBackground). Read/written only under _gate.</summary>
     private readonly HashSet<uint> _mutedPids = new();
 
-    /// <summary>防拉锯:每个已接管窗口的节流状态(判定逻辑见 <see cref="ThrashPolicy"/>)。</summary>
+    /// <summary>Anti-thrash: per-managed-window throttle state (decision logic lives in <see cref="ThrashPolicy"/>).</summary>
     private readonly ConcurrentDictionary<IntPtr, ThrashState> _thrash = new();
 
     private void Tick(AppConfig cfg)
     {
-        // 进程未运行时纠正注册表预设(进程在跑写了也没用——游戏退出会写回)。
+        // Correct the registry presets while the process is not running (writing while it runs is
+        // pointless — the game writes the current values back on exit).
         ApplyResolutionPresets(forceAllKinds: false);
 
         var windows = WindowScanner.EnumerateTopLevel();
@@ -329,12 +350,13 @@ public sealed class Watcher : IDisposable
             {
                 if (!MatchEngine.Matches(w, p)) continue;
 
-                // 无边框延迟:第一眼先记时间,到点才动手
+                // Borderless delay: record the time on first sight, only act once it elapses.
                 var key = (w.Handle, p.Id);
                 var first = _firstSeen.GetOrAdd(key, DateTime.UtcNow);
                 if ((DateTime.UtcNow - first).TotalMilliseconds < p.DelayMs) break;
 
-                // 已接管窗口:限制单位时间内的重应用次数,防止和游戏自身窗口管理打架死循环
+                // Already-managed window: cap reapplies per unit time to avoid a fight-to-the-death loop
+                // with the game's own window management.
                 if (WindowOps.IsTracked(w.Handle) && !AllowReapply(w.Handle, p))
                     break;
 
@@ -343,34 +365,37 @@ public sealed class Watcher : IDisposable
 
                 if (outcome == ApplyOutcome.Failed)
                 {
-                    // 受保护/UWP 窗口动不了:不登记接管,按 DESIGN §8 承诺明确报"无权限"。
-                    // 每窗口每 profile 只报一次(借 _firstSeen 已存在的 key 去重——再报会刷屏)。
+                    // Protected/UWP window we can't touch: don't register a takeover; report "no permission"
+                    // explicitly per the DESIGN §8 promise. Report once per (window, profile) — dedupe via the
+                    // key (re-reporting would spam the log).
                     if (_noPermLogged.TryAdd((w.Handle, p.Id), 0))
-                        Emit($"无权限,无法接管「{p.Name}」: {w.Title}");
+                        Emit($"No permission to manage \"{p.Name}\": {w.Title}");
                     break;
                 }
 
-                // 记录接管映射(供 ReleaseProfile / ClipCursor);首次记录时宣告一次
+                // Record the takeover map (for ReleaseProfile / ClipCursor); announce once on first record.
                 if (_takeover.TryAdd(w.Handle, p.Id))
                 {
-                    if (outcome == ApplyOutcome.Changed) Emit($"接管「{p.Name}」: {w.Title}");
+                    if (outcome == ApplyOutcome.Changed) Emit($"Managing \"{p.Name}\": {w.Title}");
                 }
 
-                break; // 一个窗口只吃第一个命中的 profile
+                break; // A window only takes the first matching profile
             }
         }
 
         CleanupDeadWindows();
 
-        // 当前前台若是某 ClipCursor profile 接管的窗口(刚被摆好),即时夹上;否则维持/解除。
+        // If the current foreground window is one managed by a ClipCursor profile (just placed), clip it
+        // immediately; otherwise keep/release.
         var fg = NativeMethods.GetForegroundWindow();
         UpdateClip(fg);
         UpdateMute(fg);
     }
 
     /// <summary>
-    /// 已接管窗口的重应用节流:薄壳,逻辑全在 <see cref="ThrashPolicy.Evaluate"/>
-    /// (10s 窗口 / 3 次上限 / 2 条告警 / 5min 衰减)。本处只把"该告警"翻译成一条日志。
+    /// Reapply throttle for an already-managed window: a thin shell — all the logic lives in
+    /// <see cref="ThrashPolicy.Evaluate"/> (10s window / cap of 3 / 2 warnings / 5min decay). Here we
+    /// only turn a "should warn" signal into a log line.
     /// </summary>
     private bool AllowReapply(IntPtr hWnd, Profile p)
     {
@@ -384,17 +409,20 @@ public sealed class Watcher : IDisposable
         }
         if (warn)
         {
-            string tail = finalWarn ? "(后续相同冲突不再提示,直到窗口重建或引擎重启)" : "";
-            Emit($"「{p.Name}」反复被改回,本轮放过(疑似与游戏窗口管理冲突){tail}");
+            string tail = finalWarn ? " (further identical conflicts will be silenced until the window is rebuilt or the engine restarts)" : "";
+            Emit($"\"{p.Name}\" keeps reverting; backing off this round (likely fighting the game's own window management){tail}");
         }
         return allow;
     }
 
     /// <summary>
-    /// 应用 Unity 启动分辨率预设(见 <see cref="UnityPreset"/>)。
-    /// <para><paramref name="forceAllKinds"/>=true(引擎启动 / 配置变化):写所有启用的预设,不分 MatchKind、不做进程判定。</para>
-    /// <para>false(每次 Tick):只对 MatchKind=Process 的 profile,且其进程**不在运行**、注册表当前值≠目标时才纠正
-    /// (读比较很便宜;进程在跑就跳过,因为游戏退出时会把当前值写回)。其它 MatchKind 不在 tick 纠正(无可靠进程判定)。</para>
+    /// Apply Unity startup resolution presets (see <see cref="UnityPreset"/>).
+    /// <para><paramref name="forceAllKinds"/>=true (engine start / config change): write every enabled preset,
+    /// regardless of MatchKind and without any process check.</para>
+    /// <para>false (every Tick): correct only profiles with MatchKind=Process whose process is **not running**
+    /// and whose current registry value ≠ target (the read-compare is cheap; skip if the process is running,
+    /// since the game writes the current values back on exit). Other MatchKinds aren't corrected on tick
+    /// (no reliable process check).</para>
     /// </summary>
     private void ApplyResolutionPresets(bool forceAllKinds)
     {
@@ -407,10 +435,10 @@ public sealed class Watcher : IDisposable
 
             if (!forceAllKinds)
             {
-                // Tick 纠正:只处理进程匹配,且仅当进程不在运行时
+                // Tick correction: only handle process matches, and only while the process is not running.
                 if (p.MatchKind != MatchKind.Process) continue;
                 if (IsProcessRunning(p.MatchValue)) continue;
-                // 已经是目标值就别重复写
+                // Don't rewrite if it's already the target value.
                 if (UnityPreset.AlreadyMatches(preset.RegistryPath, preset.Width, preset.Height, preset.Windowed))
                     continue;
             }
@@ -419,18 +447,18 @@ public sealed class Watcher : IDisposable
             {
                 bool wrote = UnityPreset.Write(preset.RegistryPath, preset.Width, preset.Height, preset.Windowed);
                 if (wrote)
-                    Emit($"已写入分辨率预设 {preset.Width}×{preset.Height} → {preset.RegistryPath}");
+                    Emit($"Wrote resolution preset {preset.Width}×{preset.Height} → {preset.RegistryPath}");
                 else
-                    Emit($"分辨率预设未写入:注册表路径或键值不存在 → HKCU\\{preset.RegistryPath}(未安装该游戏或路径填错?)");
+                    Emit($"Resolution preset not written: registry path or values not found → HKCU\\{preset.RegistryPath} (game not installed or wrong path?)");
             }
             catch (Exception ex)
             {
-                Emit("写入分辨率预设异常: " + ex.Message);
+                Emit("Error writing resolution preset: " + ex.Message);
             }
         }
     }
 
-    /// <summary>按进程名(忽略 .exe、大小写)判断是否有该进程在运行。</summary>
+    /// <summary>Whether a process with the given name is running (ignores .exe and case).</summary>
     private static bool IsProcessRunning(string matchValue)
     {
         if (string.IsNullOrWhiteSpace(matchValue)) return false;
@@ -446,7 +474,7 @@ public sealed class Watcher : IDisposable
         catch { return false; }
     }
 
-    /// <summary>句柄已失效的条目从各字典剔除,防止无限增长 + 防句柄复用时脏快照污染新窗口。</summary>
+    /// <summary>Prune entries with dead handles from every dictionary, to prevent unbounded growth and to stop a stale snapshot from polluting a new window when a handle is reused.</summary>
     private void CleanupDeadWindows()
     {
         foreach (var key in _firstSeen.Keys)
@@ -465,11 +493,12 @@ public sealed class Watcher : IDisposable
             if (!NativeMethods.IsWindow(key.Item1))
                 _noPermLogged.TryRemove(key, out _);
 
-        // WindowOps 的原始快照同步清理:句柄会被系统复用,旧窗口销毁后若快照不清,
-        // 新窗口拿到同一 HWND 时建快照会被旧值挡住,还原会写回上一个窗口的样式/位置。
+        // Prune WindowOps' raw snapshots in lockstep: handles get reused, so if a destroyed window's
+        // snapshot isn't cleared, a new window grabbing the same HWND would have its EnsureSnapshot blocked
+        // by the stale value, and restore would write back the previous window's style/position.
         WindowOps.ForgetDead(NativeMethods.IsWindow);
 
-        // 被夹光标的窗口若已销毁,立即解除限制
+        // If the clipped window has been destroyed, release the clip immediately.
         lock (_gate)
         {
             if (_clippedHwnd != IntPtr.Zero && !NativeMethods.IsWindow(_clippedHwnd))
@@ -477,11 +506,12 @@ public sealed class Watcher : IDisposable
         }
     }
 
-    // ---- ClipCursor 生命周期:前台才夹,失焦/销毁/停止即放 ----
+    // ---- ClipCursor lifecycle: clip only when foreground; release on blur/destroy/stop ----
 
     /// <summary>
-    /// 按当前前台窗口刷新光标限制。前台是某 ClipCursor=true profile 接管的窗口 → 夹到其目标矩形;
-    /// 否则解除。多处调用(前台事件、Tick 末尾),用 _gate 串行化。
+    /// Refresh the cursor clip for the current foreground window. If the foreground window is managed by a
+    /// ClipCursor=true profile → clip to its target rect; otherwise release. Called from several places
+    /// (foreground events, end of Tick), serialized under _gate.
     /// </summary>
     private void UpdateClip(IntPtr foreground)
     {
@@ -506,12 +536,12 @@ public sealed class Watcher : IDisposable
                 }
             }
 
-            // 前台不是 clip 窗口(或解析不出矩形):若之前夹着,解除
+            // Foreground isn't a clip window (or no rect could be resolved): release if we were clipping.
             ReleaseClipLocked();
         }
     }
 
-    /// <summary>取该 profile 对该窗口的目标矩形;解析不出(如 Kind=None)则退回窗口当前矩形。</summary>
+    /// <summary>Get this profile's target rect for this window; if none resolves (e.g. Kind=None), fall back to the window's current rect.</summary>
     private static NativeMethods.RECT? ResolveClipRect(IntPtr hwnd, Profile p, AppConfig cfg)
     {
         var w = new WindowInfo { Handle = hwnd };
@@ -520,7 +550,7 @@ public sealed class Watcher : IDisposable
         return NativeMethods.GetWindowRect(hwnd, out var cur) ? cur : null;
     }
 
-    /// <summary>解除光标限制(若有)。须在 _gate 下调用。</summary>
+    /// <summary>Release the cursor clip (if any). Must be called under _gate.</summary>
     private void ReleaseClipLocked()
     {
         if (_clippedHwnd == IntPtr.Zero) return;
@@ -531,20 +561,22 @@ public sealed class Watcher : IDisposable
     private static Profile? FindProfile(AppConfig cfg, string id)
         => cfg.Profiles.FirstOrDefault(p => p.Id == id);
 
-    // ---- MuteInBackground 生命周期:前台=它→取消静音,前台≠它且开关开→静音;销毁/停止→取消静音 ----
+    // ---- MuteInBackground lifecycle: foreground==it → unmute, foreground!=it and switch on → mute; destroy/stop → unmute ----
 
     /// <summary>
-    /// 按当前前台窗口刷新"后台静音":遍历所有接管窗口,其 profile 开了 MuteInBackground 的——
-    /// 该窗口在前台 → 取消静音;不在前台 → 静音。
-    /// <para>线程模型(本次评审修复):COM(AudioMute)不能在 <see cref="_gate"/> 锁内、也不该跑在钩子泵线程。
-    /// 故锁内只算"要静音/取消静音的 pid 差集"并即时更新 <see cref="_mutedPids"/>(决策串行化、不会重复下发),
-    /// 出锁后才执行实际的 COM 调用。本方法的调用者(Tick / 50ms 前台防抖 / ReleaseProfile)均不在钩子回调里。</para>
+    /// Refresh "background mute" for the current foreground window: walk all managed windows whose profile
+    /// has MuteInBackground on — that window in the foreground → unmute; not in the foreground → mute.
+    /// <para>Thread model (fixed in review): COM (AudioMute) must not run under the <see cref="_gate"/> lock,
+    /// nor on the hook pump thread. So under the lock we only compute the diff of pids to mute/unmute and
+    /// update <see cref="_mutedPids"/> immediately (serialized decision, no duplicate dispatch); the actual
+    /// COM calls happen after releasing the lock. This method's callers (Tick / 50ms foreground debounce /
+    /// ReleaseProfile) are all off the hook callback.</para>
     /// </summary>
     private void UpdateMute(IntPtr foreground)
     {
         var cfg = _getConfig();
-        // hwnd → 是否应静音 汇总;同一 pid 多窗口时,只要有一个窗口在前台就算前台(=不静音)。
-        var want = new Dictionary<uint, bool>(); // pid → 应静音?
+        // Aggregate hwnd → should-mute; for one pid with multiple windows, any window in the foreground counts as foreground (= don't mute).
+        var want = new Dictionary<uint, bool>(); // pid → should mute?
         foreach (var kv in _takeover)
         {
             var p = FindProfile(cfg, kv.Value);
@@ -561,7 +593,7 @@ public sealed class Watcher : IDisposable
                 want[pid] = !isForeground;
         }
 
-        // 锁内:只算差集 + 更新 _mutedPids;COM 留到出锁后。
+        // Under the lock: only compute the diff + update _mutedPids; leave COM until after releasing it.
         var toMute = new List<uint>();
         var toUnmute = new List<uint>();
         lock (_gate)
@@ -575,7 +607,7 @@ public sealed class Watcher : IDisposable
                     if (shouldMute && !currentlyMuted) { toMute.Add(pid); _mutedPids.Add(pid); }
                     else if (!shouldMute && currentlyMuted) { toUnmute.Add(pid); _mutedPids.Remove(pid); }
                 }
-                // 已不再被任何 MuteInBackground 窗口跟踪的 pid(窗口销毁 / profile 释放):取消静音
+                // Pids no longer tracked by any MuteInBackground window (window destroyed / profile released): unmute.
                 foreach (var pid in _mutedPids.Where(p => !want.ContainsKey(p)).ToList())
                 {
                     toUnmute.Add(pid);
@@ -588,7 +620,7 @@ public sealed class Watcher : IDisposable
         foreach (var pid in toUnmute) AudioMute.SetMuteByPid(pid, false);
     }
 
-    /// <summary>取出当前所有被我们静音的 pid 并清空 _mutedPids(须在 _gate 下调用);COM 取消静音由调用方出锁后做。</summary>
+    /// <summary>Take all pids we currently mute and clear _mutedPids (must be called under _gate); the caller does the COM unmute after releasing the lock.</summary>
     private List<uint> DrainMutedLocked()
     {
         var list = _mutedPids.ToList();
@@ -596,19 +628,19 @@ public sealed class Watcher : IDisposable
         return list;
     }
 
-    /// <summary>对一组 pid 取消静音(COM,不持锁)。</summary>
+    /// <summary>Unmute a set of pids (COM, no lock held).</summary>
     private static void UnmuteOutsideLock(List<uint> pids)
     {
         foreach (var pid in pids) AudioMute.SetMuteByPid(pid, false);
     }
 
     /// <summary>
-    /// 还原该 profile 接管的全部窗口并解除跟踪(UI 禁用 profile 时调)。
-    /// 逐窗口 Restore + 从各字典剔除;若被夹的窗口属于它,解除光标限制。
+    /// Restore every window managed by this profile and drop tracking (called when the UI disables a profile).
+    /// Restore each window + prune it from every dictionary; if the clipped window belongs to it, release the clip.
     /// </summary>
     public void ReleaseProfile(string profileId)
     {
-        // 找出该 profile 名下的窗口
+        // Find the windows managed by this profile.
         var hwnds = _takeover.Where(kv => kv.Value == profileId).Select(kv => kv.Key).ToList();
 
         foreach (var h in hwnds)
@@ -617,7 +649,7 @@ public sealed class Watcher : IDisposable
             _takeover.TryRemove(h, out _);
             _thrash.TryRemove(h, out _);
 
-            // _firstSeen / _noPermLogged 以 (hwnd, profileId) 为键,精确剔除这一对
+            // _firstSeen / _noPermLogged are keyed by (hwnd, profileId); prune exactly this pair.
             _firstSeen.TryRemove((h, profileId), out _);
             _noPermLogged.TryRemove((h, profileId), out _);
 
@@ -627,22 +659,23 @@ public sealed class Watcher : IDisposable
             }
         }
 
-        if (hwnds.Count > 0) Emit($"已释放 profile({profileId}) 的 {hwnds.Count} 个窗口");
+        if (hwnds.Count > 0) Emit($"Released {hwnds.Count} window(s) of profile ({profileId})");
 
-        // 这些窗口已不再被跟踪:刷新静音状态,把不再属于任何 MuteInBackground 窗口的 pid 取消静音
+        // These windows are no longer tracked: refresh mute state, unmuting any pid no longer belonging to a MuteInBackground window.
         UpdateMute(NativeMethods.GetForegroundWindow());
     }
 
     /// <summary>
-    /// 释放全部接管状态:还原所有被接管的窗口(去框/置顶恢复)、解除 ClipCursor、取消全部静音,
-    /// 并清空 _takeover/_firstSeen/_thrash/_noPermLogged。
-    /// <para><b>不停</b>钩子线程 / 轮询线程——这是"引擎暂停"语义(EngineEnabled=false),
-    /// 与 <see cref="Stop"/>(真正停服、拆钩子)不同。再次启用(EngineEnabled=true)后,
-    /// 下一个 tick 会按规则重新接管仍命中的窗口。供 SafeTick 检测到引擎被关时调用。</para>
+    /// Release all takeover state: restore every managed window (border/topmost restored), release ClipCursor,
+    /// unmute everything, and clear _takeover/_firstSeen/_thrash/_noPermLogged.
+    /// <para><b>Does not stop</b> the hook thread / poll loop — this is the "engine paused" semantics
+    /// (EngineEnabled=false), distinct from <see cref="Stop"/> (which truly stops the service and tears down
+    /// the hook). After it's re-enabled (EngineEnabled=true), the next tick re-takes-over any still-matching
+    /// windows per the rules. Called by SafeTick when it detects the engine was turned off.</para>
     /// </summary>
     public void ReleaseAll()
     {
-        // 还原所有引擎接管的窗口(只动 _takeover 名下的;手动 quick-borderless 不在此列)。
+        // Restore every engine-managed window (only those under _takeover; manual quick-borderless is not included).
         var hwnds = _takeover.Keys.ToList();
         foreach (var h in hwnds)
             WindowOps.Restore(h);
@@ -652,7 +685,7 @@ public sealed class Watcher : IDisposable
         _thrash.Clear();
         _noPermLogged.Clear();
 
-        // 解除光标限制 + 取出待取消静音的 pid(COM 出锁后做)。
+        // Release the cursor clip + collect the pids to unmute (COM done after releasing the lock).
         List<uint> toUnmute;
         lock (_gate)
         {
@@ -661,7 +694,7 @@ public sealed class Watcher : IDisposable
         }
         UnmuteOutsideLock(toUnmute);
 
-        // 注意:不动 _hook / _pollLoop / _running —— 引擎暂停不是停服。
+        // Note: don't touch _hook / _pollLoop / _running — pausing the engine is not stopping the service.
     }
 
     public void Dispose() => Stop();

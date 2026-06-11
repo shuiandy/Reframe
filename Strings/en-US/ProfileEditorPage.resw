@@ -1,0 +1,343 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!--
+    ProfileEditorPage.resw (en-US) — all strings for the profile editor page.
+    Static UI text uses x:Uid="/ProfileEditorPage/<Key>" in XAML (key "BasicHeader" -> data name "BasicHeader.Text").
+    The code-generated rule-row UI (the BuildRuleRow family) and dialogs are fetched via Loc.T("ProfileEditorPage/<Key>");
+    dynamic strings (e.g. "Rule N") use .NET composite-format indices ({0}) for Loc.T(key, args) -> string.Format.
+    See docs/dev/I18N.md.
+  -->
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- ===== Title bar ===== -->
+  <data name="BackButton.ToolTip" xml:space="preserve">
+    <value>Back</value>
+  </data>
+  <data name="Title.Text" xml:space="preserve">
+    <value>Edit profile</value>
+  </data>
+
+  <!-- ===== Basic section ===== -->
+  <data name="BasicHeader.Text" xml:space="preserve">
+    <value>Basics</value>
+  </data>
+  <data name="NameBox.Header" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="MatchKindBox.Header" xml:space="preserve">
+    <value>Match type</value>
+  </data>
+  <data name="MatchKindProcess.Content" xml:space="preserve">
+    <value>Process name</value>
+  </data>
+  <data name="MatchKindTitle.Content" xml:space="preserve">
+    <value>Window title (contains)</value>
+  </data>
+  <data name="MatchKindTitleRegex.Content" xml:space="preserve">
+    <value>Title regex</value>
+  </data>
+  <data name="MatchValueBox.Header" xml:space="preserve">
+    <value>Match text</value>
+  </data>
+  <data name="ExePathBox.Header" xml:space="preserve">
+    <value>Executable (icon source)</value>
+  </data>
+  <data name="ExePathBox.PlaceholderText" xml:space="preserve">
+    <value>e.g. D:\Games\Zenless Zone Zero\ZenlessZoneZero.exe</value>
+  </data>
+  <data name="BrowseExeButton.Content" xml:space="preserve">
+    <value>Browse…</value>
+  </data>
+  <data name="ExePathHint.Text" xml:space="preserve">
+    <value>Anti-cheat-protected games (Zenless Zone Zero, Genshin Impact, etc.) may not expose an icon. You can point to an .exe here to use as the icon source.</value>
+  </data>
+  <data name="LaunchCommandBox.Header" xml:space="preserve">
+    <value>Launch command (optional)</value>
+  </data>
+  <data name="LaunchCommandBox.PlaceholderText" xml:space="preserve">
+    <value>Leave empty to run the executable directly; or enter a launcher command or URI</value>
+  </data>
+
+  <!-- ===== Startup resolution preset (Unity) ===== -->
+  <data name="ResolutionExpander.Header" xml:space="preserve">
+    <value>Startup resolution preset (Unity)</value>
+  </data>
+  <data name="ResolutionDesc.Text" xml:space="preserve">
+    <value>For Unity games whose render resolution is pinned in the registry (e.g. Genshin Impact). Applied before the game launches; changes while it's running have no effect.</value>
+  </data>
+  <data name="ResEnabledToggle.Header" xml:space="preserve">
+    <value>Enable startup resolution preset</value>
+  </data>
+  <data name="ResPathBox.Header" xml:space="preserve">
+    <value>Registry path (relative under HKCU)</value>
+  </data>
+  <data name="ResPathBox.PlaceholderText" xml:space="preserve">
+    <value>Software\miHoYo\Genshin Impact</value>
+  </data>
+  <data name="ResWidthBox.Header" xml:space="preserve">
+    <value>Width</value>
+  </data>
+  <data name="ResHeightBox.Header" xml:space="preserve">
+    <value>Height</value>
+  </data>
+  <data name="ResWindowedCheck.Content" xml:space="preserve">
+    <value>Windowed (Is Fullscreen mode = 0)</value>
+  </data>
+
+  <!-- ===== Borderless section ===== -->
+  <data name="BorderlessHeader.Text" xml:space="preserve">
+    <value>Borderless</value>
+  </data>
+  <data name="BorderlessToggle.Header" xml:space="preserve">
+    <value>Remove window border</value>
+  </data>
+  <data name="DelayBox.Header" xml:space="preserve">
+    <value>Processing delay (ms)</value>
+  </data>
+  <data name="DelayBox.Description" xml:space="preserve">
+    <value>Games rebuild their window during startup; 1000 is recommended</value>
+  </data>
+
+  <!-- ===== Rules section (header) ===== -->
+  <data name="RulesHeader.Text" xml:space="preserve">
+    <value>Rules</value>
+  </data>
+  <data name="RulesHint.Text" xml:space="preserve">
+    <value>(top to bottom; the first rule that matches the current monitor wins)</value>
+  </data>
+  <data name="AddRuleButton.Text" xml:space="preserve">
+    <value>Add rule</value>
+  </data>
+
+  <!-- ===== Advanced section ===== -->
+  <data name="AdvancedExpander.Header" xml:space="preserve">
+    <value>Advanced</value>
+  </data>
+  <data name="OffsetsHeader.Text" xml:space="preserve">
+    <value>Edge offsets (pixels)</value>
+  </data>
+  <data name="OffsetsDesc.Text" xml:space="preserve">
+    <value>Fine-tuning applied to the final rectangle.</value>
+  </data>
+  <data name="OffLeftBox.Header" xml:space="preserve">
+    <value>Left</value>
+  </data>
+  <data name="OffTopBox.Header" xml:space="preserve">
+    <value>Top</value>
+  </data>
+  <data name="OffRightBox.Header" xml:space="preserve">
+    <value>Right</value>
+  </data>
+  <data name="OffBottomBox.Header" xml:space="preserve">
+    <value>Bottom</value>
+  </data>
+  <data name="ExtraBehaviorHeader.Text" xml:space="preserve">
+    <value>Extra behavior</value>
+  </data>
+  <data name="TopmostToggle.Header" xml:space="preserve">
+    <value>Always on top</value>
+  </data>
+  <data name="AspectToggle.Header" xml:space="preserve">
+    <value>Keep aspect ratio</value>
+  </data>
+  <data name="MuteToggle.Header" xml:space="preserve">
+    <value>Mute in background</value>
+  </data>
+  <data name="ClipToggle.Header" xml:space="preserve">
+    <value>Confine cursor to window</value>
+  </data>
+  <data name="ClientToggle.Header" xml:space="preserve">
+    <value>Keep client-area size (not yet implemented)</value>
+  </data>
+
+  <!-- ===== Bottom action bar ===== -->
+  <data name="MissingHint.Text" xml:space="preserve">
+    <value>Profile not found.</value>
+  </data>
+  <data name="CancelButton.Content" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="SaveButton.Content" xml:space="preserve">
+    <value>Save</value>
+  </data>
+
+  <!-- ===== Match-text placeholders (code-behind; switch with match type) ===== -->
+  <data name="MatchPlaceholderProcess" xml:space="preserve">
+    <value>e.g. StarRail.exe</value>
+  </data>
+  <data name="MatchPlaceholderTitle" xml:space="preserve">
+    <value>e.g. Genshin Impact</value>
+  </data>
+  <data name="MatchPlaceholderTitleRegex" xml:space="preserve">
+    <value>e.g. ^Honkai</value>
+  </data>
+
+  <!-- ===== Rule row (code-generated BuildRuleRow) ===== -->
+  <data name="RuleTitleFormat" xml:space="preserve">
+    <value>Rule {0}</value>
+  </data>
+  <data name="RuleMoveUp" xml:space="preserve">
+    <value>Move up</value>
+  </data>
+  <data name="RuleMoveDown" xml:space="preserve">
+    <value>Move down</value>
+  </data>
+  <data name="RuleDelete" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+
+  <!-- Monitor condition subsection -->
+  <data name="MonitorConditionHeader" xml:space="preserve">
+    <value>Monitor condition</value>
+  </data>
+  <data name="MonitorAny" xml:space="preserve">
+    <value>Any monitor</value>
+  </data>
+  <data name="MonitorSpecific" xml:space="preserve">
+    <value>Specific resolution</value>
+  </data>
+  <data name="MonitorWidth" xml:space="preserve">
+    <value>Width</value>
+  </data>
+  <data name="MonitorHeight" xml:space="preserve">
+    <value>Height</value>
+  </data>
+  <data name="MonitorPickHeader" xml:space="preserve">
+    <value>Pick from a connected monitor</value>
+  </data>
+
+  <!-- Action subsection -->
+  <data name="ActionHeader" xml:space="preserve">
+    <value>Action</value>
+  </data>
+  <data name="ActionNone" xml:space="preserve">
+    <value>Leave geometry as-is</value>
+  </data>
+  <data name="ActionFullscreen" xml:space="preserve">
+    <value>Fill</value>
+  </data>
+  <data name="ActionZone" xml:space="preserve">
+    <value>Snap to layout zone</value>
+  </data>
+  <data name="ActionCustomRect" xml:space="preserve">
+    <value>Custom rectangle</value>
+  </data>
+
+  <!-- Zone subsection -->
+  <data name="ZoneLayoutHeader" xml:space="preserve">
+    <value>Layout</value>
+  </data>
+  <data name="ZoneHeader" xml:space="preserve">
+    <value>Zone</value>
+  </data>
+  <data name="NoLayoutsHint" xml:space="preserve">
+    <value>No layouts yet. Create one on the “Layouts” page first.</value>
+  </data>
+
+  <!-- Custom-rectangle subsection -->
+  <data name="RectX" xml:space="preserve">
+    <value>X</value>
+  </data>
+  <data name="RectY" xml:space="preserve">
+    <value>Y</value>
+  </data>
+  <data name="RectW" xml:space="preserve">
+    <value>Width</value>
+  </data>
+  <data name="RectH" xml:space="preserve">
+    <value>Height</value>
+  </data>
+  <data name="PickRegionButton" xml:space="preserve">
+    <value>Pick visually…</value>
+  </data>
+
+  <!-- Row-level toggles -->
+  <data name="UseWorkAreaCheck" xml:space="preserve">
+    <value>Avoid the taskbar (use work area)</value>
+  </data>
+  <data name="MoveOnlyCheck" xml:space="preserve">
+    <value>Position only (don't resize)</value>
+  </data>
+  <data name="MoveOnlyTooltip" xml:space="preserve">
+    <value>Move only the window's top-left corner to the target, keeping the game's own size (avoids stretching). Use together with the startup resolution preset.</value>
+  </data>
+
+  <!-- ===== Pick-monitor dialog (before visual picking) ===== -->
+  <data name="PickMonitorTitle" xml:space="preserve">
+    <value>Pick a monitor</value>
+  </data>
+  <data name="PickMonitorPrimary" xml:space="preserve">
+    <value>OK</value>
+  </data>
+  <data name="PickMonitorClose" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+
+  <!-- ===== Dropdown item wrappers (ToString) ===== -->
+  <data name="MonitorPrimarySuffix" xml:space="preserve">
+    <value> (primary)</value>
+  </data>
+  <data name="UnnamedLayout" xml:space="preserve">
+    <value>Untitled layout</value>
+  </data>
+  <data name="UnnamedZone" xml:space="preserve">
+    <value>Untitled zone</value>
+  </data>
+</root>

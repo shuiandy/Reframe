@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!--
+    LayoutsPage.resw (zh-CN) — 布局列表页全部字符串。
+    静态 UI 文本在 XAML 用 x:Uid="/LayoutsPage/<键>"(键 "Title" → data name "Title.Text")。
+    运行时/代码字符串(摘要行、删除确认对话框、新建/复制默认名)经 Loc.T("LayoutsPage/<键>") 取。
+    占位符用 .NET 复合格式索引({0}),供 Loc.T(key, args) 做 string.Format。
+    NewLayoutName / DefaultZoneName / DuplicateSuffix 是生成时写入用户数据的种子名:
+    按当前语言生成一次即可,已存在的用户数据不再翻译(见 docs/dev/I18N.md §8)。
+  -->
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- 页标题 -->
+  <data name="Title.Text" xml:space="preserve">
+    <value>布局</value>
+  </data>
+
+  <!-- 命令栏 -->
+  <data name="NewButton.Label" xml:space="preserve">
+    <value>新建</value>
+  </data>
+  <data name="DuplicateButton.Label" xml:space="preserve">
+    <value>复制</value>
+  </data>
+  <data name="EditButton.Label" xml:space="preserve">
+    <value>编辑</value>
+  </data>
+  <data name="DeleteButton.Label" xml:space="preserve">
+    <value>删除</value>
+  </data>
+
+  <!-- 卡片右键菜单 -->
+  <data name="MenuEdit.Text" xml:space="preserve">
+    <value>编辑</value>
+  </data>
+  <data name="MenuDuplicate.Text" xml:space="preserve">
+    <value>复制</value>
+  </data>
+  <data name="MenuDelete.Text" xml:space="preserve">
+    <value>删除</value>
+  </data>
+
+  <!-- 空列表提示 -->
+  <data name="EmptyHintText.Text" xml:space="preserve">
+    <value>还没有布局,点击「新建」创建第一个。</value>
+  </data>
+
+  <!-- ===== 代码后置动态字符串 ===== -->
+  <!-- 卡片摘要行:{0}=分区数,{1}=参考宽,{2}=参考高 -->
+  <data name="SummaryFormat" xml:space="preserve">
+    <value>{0} 个分区 · {1}×{2}</value>
+  </data>
+
+  <!-- 删除确认对话框 -->
+  <data name="DeleteDialogTitle" xml:space="preserve">
+    <value>删除布局</value>
+  </data>
+  <!-- 无规则引用时:{0}=布局名 -->
+  <data name="DeleteConfirm" xml:space="preserve">
+    <value>确定删除布局「{0}」吗?此操作无法撤销。</value>
+  </data>
+  <!-- 有规则引用时:{0}=布局名,{1}=受影响配置文件数 -->
+  <data name="DeleteConfirmCascade" xml:space="preserve">
+    <value>删除布局「{0}」会移除 {1} 个配置文件中引用它的规则(整条删除)。此操作无法撤销。</value>
+  </data>
+
+  <!-- 生成时写入用户数据的种子名(按当前语言生成一次,不再翻译) -->
+  <data name="NewLayoutName" xml:space="preserve">
+    <value>新布局</value>
+  </data>
+  <data name="NewLayoutZoneName" xml:space="preserve">
+    <value>全屏</value>
+  </data>
+  <!-- 复制布局的名称后缀:{0}=原布局名 -->
+  <data name="DuplicateNameFormat" xml:space="preserve">
+    <value>{0} 副本</value>
+  </data>
+</root>

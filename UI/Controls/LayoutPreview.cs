@@ -7,8 +7,8 @@ using Layout = Reframe.Core.Layout;
 namespace Reframe.UI.Controls;
 
 /// <summary>
-/// 布局迷你预览:按 RefWidth:RefHeight 比例在给定框内画一个矩形,
-/// 内部用半透明色块 + 名字画出各 Zone。纯代码绘制,放进列表卡片即可。
+/// Layout mini-preview: draws a rectangle at the RefWidth:RefHeight aspect inside the given box, with
+/// each Zone shown as a semi-transparent block + its name. Pure code drawing; drop it into a list card.
 /// </summary>
 public sealed class LayoutPreview : ContentControl
 {
@@ -44,7 +44,7 @@ public sealed class LayoutPreview : ContentControl
         set => SetValue(LayoutProperty, value);
     }
 
-    /// <summary>预览里是否绘制 zone 名称(列表小卡片可关掉省地方)。</summary>
+    /// <summary>Whether to draw zone names in the preview (small list cards can turn this off to save space).</summary>
     public bool ShowLabels { get; set; } = true;
 
     private void Render()
@@ -55,7 +55,7 @@ public sealed class LayoutPreview : ContentControl
         double cw = _canvas.ActualWidth, ch = _canvas.ActualHeight;
         if (layout is null || cw <= 0 || ch <= 0) return;
 
-        // 在画布内按 Ref 宽高比 letterbox 出实际绘制区。
+        // Letterbox the actual draw area inside the canvas at the Ref aspect ratio.
         double refW = layout.RefWidth > 0 ? layout.RefWidth : 16;
         double refH = layout.RefHeight > 0 ? layout.RefHeight : 9;
         double aspect = refW / refH;
@@ -92,7 +92,7 @@ public sealed class LayoutPreview : ContentControl
                     MaxWidth = z.W * boxW - 4,
                     HorizontalTextAlignment = TextAlignment.Center,
                 };
-                // 粗略居中(测量后再调,避免依赖布局过程)。
+                // Rough centering (measure then adjust, to avoid depending on the layout pass).
                 label.Measure(new Windows.Foundation.Size(z.W * boxW, z.H * boxH));
                 double lx = ox + z.X * boxW + (z.W * boxW - label.DesiredSize.Width) / 2;
                 double ly = oy + z.Y * boxH + (z.H * boxH - label.DesiredSize.Height) / 2;

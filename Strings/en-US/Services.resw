@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!--
+    Services.resw (en-US) — user-visible strings originating from Services\*.cs (tray menu /
+    launch errors / backup dialogs / hotkey action names and registration-failure reasons).
+    Code access: Loc.T("Services/Key").
+    Red line: only strings that ultimately surface in the UI (tray menu / ContentDialog /
+    Settings status) live here. Strings written to the engine dashboard log (Watcher.LogExternal)
+    or to hotkey.log stay hard-coded English and are NOT in this file.
+    See docs/dev/I18N.md.
+  -->
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- ===== Tray context menu (TrayIcon.cs) ===== -->
+  <data name="TrayOpen" xml:space="preserve">
+    <value>Open</value>
+  </data>
+  <data name="TrayEngine" xml:space="preserve">
+    <value>Engine</value>
+  </data>
+  <data name="TrayExit" xml:space="preserve">
+    <value>Exit</value>
+  </data>
+
+  <!-- ===== Hotkey action display names (HotkeyService.cs; shown in the Settings hotkey section
+       and the invalid-gesture notice). Looked up by action Id: Loc.T("Services/Hotkey_<ActionId>"). -->
+  <data name="Hotkey_ToggleBorderless" xml:space="preserve">
+    <value>Toggle borderless (foreground window)</value>
+  </data>
+  <data name="Hotkey_SendToZone1" xml:space="preserve">
+    <value>Send to zone 1</value>
+  </data>
+  <data name="Hotkey_SendToZone2" xml:space="preserve">
+    <value>Send to zone 2</value>
+  </data>
+  <data name="Hotkey_SendToZone3" xml:space="preserve">
+    <value>Send to zone 3</value>
+  </data>
+
+  <!-- ===== Hotkey registration-failure reasons (HotkeyService.DescribeError; feed the Settings
+       status table). Note: hotkey.log and the dashboard log use separate English text, not these. -->
+  <data name="HotkeyErrUnknown" xml:space="preserve">
+    <value>unknown</value>
+  </data>
+  <data name="HotkeyErrAlreadyRegistered" xml:space="preserve">
+    <value>already in use</value>
+  </data>
+  <data name="HotkeyErrNotRegistered" xml:space="preserve">
+    <value>hotkey unavailable</value>
+  </data>
+  <data name="HotkeyErrInvalidParam" xml:space="preserve">
+    <value>invalid parameter</value>
+  </data>
+  <data name="HotkeyErrInvalidGesture" xml:space="preserve">
+    <value>invalid gesture</value>
+  </data>
+  <data name="HotkeyErrCodeFormat" xml:space="preserve">
+    <value>error {0}</value>
+  </data>
+
+  <!-- ===== Game launch errors (GameLauncher.cs; shown in a ContentDialog) ===== -->
+  <data name="LaunchNoMethod" xml:space="preserve">
+    <value>No launch method configured: set a “Launch command” or an “Executable file”.</value>
+  </data>
+  <data name="LaunchAlreadyRunningFormat" xml:space="preserve">
+    <value>“{0}” is already running.</value>
+  </data>
+  <data name="LaunchUnsupportedCommand" xml:space="preserve">
+    <value>Unsupported launch command: only known launcher protocols such as steam://, hoyoplay:// and http(s):// are allowed.</value>
+  </data>
+  <data name="LaunchFileNotFoundFormat" xml:space="preserve">
+    <value>File not found: {0}</value>
+  </data>
+  <data name="LaunchFailedFormat" xml:space="preserve">
+    <value>Launch failed: {0}</value>
+  </data>
+  <data name="LaunchUnnamedProfile" xml:space="preserve">
+    <value>This profile</value>
+  </data>
+
+  <!-- ===== Config backup dialogs (ConfigBackup.cs) ===== -->
+  <data name="BackupFileTypeLabel" xml:space="preserve">
+    <value>Reframe configuration</value>
+  </data>
+  <data name="ImportInvalidTitle" xml:space="preserve">
+    <value>Import failed</value>
+  </data>
+  <data name="ImportInvalidContent" xml:space="preserve">
+    <value>Invalid file: not a valid Reframe configuration file.</value>
+  </data>
+</root>

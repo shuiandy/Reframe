@@ -14,45 +14,46 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- 标题 + 引擎总开关:标题在左,引擎标签+开关在右,一行垂直居中 -->
+        <!-- Title + engine master switch: title at left, engine label + toggle at right, centered on one row -->
         <Grid VerticalAlignment="Center">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="仪表盘" FontSize="28" FontWeight="SemiBold"
+            <TextBlock Grid.Column="0" x:Uid="/DashboardPage/Title" FontSize="28" FontWeight="SemiBold"
                        VerticalAlignment="Center"/>
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10"
                         VerticalAlignment="Center">
-                <TextBlock Text="引擎" VerticalAlignment="Center"/>
+                <TextBlock x:Uid="/DashboardPage/EngineLabel" VerticalAlignment="Center"/>
+                <!-- On/OffContent are set in code-behind (Loc.T); x:Uid for those attached contents is unreliable in MRT Core. -->
                 <ToggleSwitch x:Name="EngineToggle"
-                              OnContent="运行中" OffContent="已停止"
                               VerticalAlignment="Center"
+                              Loaded="EngineToggle_Loaded"
                               Toggled="EngineToggle_Toggled"/>
             </StackPanel>
         </Grid>
 
-        <!-- 概览行 -->
+        <!-- Summary row -->
         <TextBlock x:Name="SummaryText" Grid.Row="1" Opacity="0.7"/>
 
-        <!-- 实时屏幕小地图(主视觉)。高度由控件按桌面包围盒宽高比自适应(夹 90~320),不再固定 260。 -->
+        <!-- Live monitor mini-map (primary visual). Height auto-fits the desktop bounding-box aspect (clamped 90..320), no longer fixed at 260. -->
         <controls:LiveMonitorMap x:Name="MonitorMap" Grid.Row="2"
                                  HorizontalAlignment="Stretch" VerticalAlignment="Top"/>
 
-        <!-- 下方左右两栏:左=接管中的窗口卡片,右=日志(收窄) -->
+        <!-- Bottom split: left = taken-window cards, right = log (narrow) -->
         <Grid Grid.Row="3" ColumnSpacing="16">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="3*"/>
                 <ColumnDefinition Width="2*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- 接管中的窗口 -->
+            <!-- Active windows -->
             <Grid Grid.Column="0" RowSpacing="8">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
-                <TextBlock Text="接管中的窗口" FontWeight="SemiBold"/>
+                <TextBlock x:Uid="/DashboardPage/TakenHeader" FontWeight="SemiBold"/>
                 <Grid Grid.Row="1">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <ItemsControl x:Name="TakenList">
@@ -69,7 +70,7 @@
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
 
-                                            <!-- 接管窗口图标:取不到回落默认字形(显隐互斥) -->
+                                            <!-- Window icon: falls back to a default glyph when unavailable (visibility is mutually exclusive) -->
                                             <Grid Grid.Column="0" Width="32" Height="32"
                                                   VerticalAlignment="Center">
                                                 <FontIcon Glyph="&#xE737;"
@@ -92,11 +93,11 @@
                                             </StackPanel>
                                             <StackPanel Grid.Column="2" Orientation="Horizontal"
                                                         Spacing="8" VerticalAlignment="Center">
-                                                <Button Content="还原" Tag="{Binding Handle}"
+                                                <Button x:Uid="/DashboardPage/RestoreButton" Tag="{Binding Handle}"
                                                         Click="RestoreWindow_Click"/>
-                                                <Button Content="重新扫描"
+                                                <Button x:Uid="/DashboardPage/RescanButton"
                                                         Click="Reapply_Click"
-                                                        ToolTipService.ToolTip="立即触发一次全量扫描与应用(对全部窗口生效,非仅此卡片)"/>
+                                                        Loaded="RescanButton_Loaded"/>
                                             </StackPanel>
                                         </Grid>
                                     </Border>
@@ -104,14 +105,14 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                     </ScrollViewer>
-                    <TextBlock x:Name="TakenEmpty" Text="暂无被接管的窗口"
+                    <TextBlock x:Name="TakenEmpty" x:Uid="/DashboardPage/TakenEmptyLabel"
                                Opacity="0.5" VerticalAlignment="Top" Margin="2,4"/>
                 </Grid>
             </Grid>
 
-            <!-- 日志(收窄,约 5 行可滚动) -->
+            <!-- Log (narrow, ~5 scrollable rows) -->
             <StackPanel Grid.Column="1" Spacing="8">
-                <TextBlock Text="日志" FontWeight="SemiBold"/>
+                <TextBlock x:Uid="/DashboardPage/LogHeader" FontWeight="SemiBold"/>
                 <ListView x:Name="LogList" SelectionMode="None" IsItemClickEnabled="False"
                           MaxHeight="160"
                           BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"

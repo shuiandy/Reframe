@@ -7,52 +7,85 @@ using Reframe.Interop;
 namespace Reframe.Services;
 
 /// <summary>
-/// 全局热键统管:自带一个后台线程 + message-only 窗口收 WM_HOTKEY(照搬 <see cref="TrayIcon"/> 的
-/// RegisterClassEx + HWND_MESSAGE + GetMessage 泵的手法)。所有 RegisterHotKey/UnregisterHotKey 都
-/// 在该线程做(系统要求注册与注销同线程)。
+/// Central global-hotkey manager: owns a background thread plus a message-only window that receives
+/// WM_HOTKEY (reusing <see cref="TrayIcon"/>'s RegisterClassEx + HWND_MESSAGE + GetMessage pump
+/// approach). All RegisterHotKey/UnregisterHotKey calls happen on that thread (the OS requires
+/// registration and unregistration to share a thread).
 ///
-/// <para>动作表(Id → 默认手势 → 执行体):</para>
+/// <para>Action table (Id → default gesture → executor):</para>
 /// <list type="bullet">
-/// <item><b>ToggleBorderless</b> = Ctrl+Alt+B:前台窗口 IsTracked ? Restore : Apply 去边框(从 TrayIcon 迁来)。</item>
-/// <item><b>SendToZone1/2/3</b> = Ctrl+Alt+1/2/3:前台窗口 → Layouts[0] 第 N 个 zone 在"窗口当前所在屏"
-///       工作区的矩形(经 <see cref="PlacementResolver.ZoneToRect"/>,与 DragSnap/ResolveRect 同源)→ SetWindowPos 普通移动。</item>
+/// <item><b>ToggleBorderless</b> = Ctrl+Alt+B: foreground window IsTracked ? Restore : Apply to strip the border (moved over from TrayIcon).</item>
+/// <item><b>SendToZone1/2/3</b> = Ctrl+Alt+1/2/3: foreground window → the rectangle of zone N in Layouts[0],
+///       within the work area of "the monitor the window is currently on" (via
+///       <see cref="PlacementResolver.ZoneToRect"/>, the same source as DragSnap/ResolveRect) → a plain SetWindowPos move.</item>
 /// </list>
 ///
-/// <para>绑定来源 <see cref="AppConfig.Hotkeys"/>(缺项补默认);<see cref="ConfigService.Changed"/> 时防抖重注册;
-/// 注册失败(手势无效或被占用)记入 <see cref="GetStatuses"/> 可查的状态表。</para>
+/// <para>Bindings come from <see cref="AppConfig.Hotkeys"/> (missing entries fall back to defaults);
+/// re-registration is debounced on <see cref="ConfigService.Changed"/>; registration failures
+/// (invalid gesture or already taken) are recorded in the status table exposed via <see cref="GetStatuses"/>.</para>
 ///
-/// <para>动作的执行体跑在热键线程(WM_HOTKEY 回调),只做线程无关的 Win32(取前台窗口、SetWindowPos)。</para>
+/// <para>Action executors run on the hotkey thread (the WM_HOTKEY callback) and only perform
+/// thread-agnostic Win32 (get the foreground window, SetWindowPos).</para>
 /// </summary>
 public sealed class HotkeyService : IDisposable
 {
-    // ---- 动作 Id(与 Config.Hotkeys 字典键、SettingsPage 一致) ----
+    // ---- Action ids (match the Config.Hotkeys dictionary keys and SettingsPage) ----
     public const string ActToggleBorderless = "ToggleBorderless";
     public const string ActSendToZone1 = "SendToZone1";
     public const string ActSendToZone2 = "SendToZone2";
     public const string ActSendToZone3 = "SendToZone3";
 
-    /// <summary>动作元数据:Id、中文名、默认手势、执行体。顺序即 SettingsPage 显示顺序。</summary>
-    public sealed record ActionInfo(string Id, string DisplayName, string DefaultGesture);
+    /// <summary>
+    /// Action metadata: Id, default gesture, and a localized display name. Ordering here is the
+    /// SettingsPage display order. <see cref="DisplayName"/> resolves at access time from
+    /// Services.resw (<c>Services/Hotkey_&lt;Id&gt;</c>) via <see cref="Loc"/>, so the label follows the
+    /// chosen UI language; if the resource is missing it falls back to a built-in English string.
+    /// </summary>
+    public sealed record ActionInfo(string Id, string DefaultGesture)
+    {
+        /// <summary>Localized display name for this action (Services.resw key <c>Hotkey_&lt;Id&gt;</c>).</summary>
+        public string DisplayName
+        {
+            get
+            {
+                string key = "Services/Hotkey_" + Id;
+                string v = Loc.T(key);
+                return v == key ? FallbackName(Id) : v; // Loc.T returns the id unchanged on a miss
+            }
+        }
 
-    // 默认手势经本机实测 RegisterHotKey 验证可注册(2026-06,见 hotkey.log/诊断):
-    //   旧 Win+Alt+1/2/3 被 Windows 任务栏跳转列表保留(恒 1409,且 Win+Ctrl/Shift+数字 同样被占)。
-    // 改为同一 Ctrl+Alt 家族(与可用的 Ctrl+Alt+B 同族):B / 1 / 2 / 3,全部实测注册成功。
+        // English fallback used only if the resw lookup fails (broken PRI); normally resw wins.
+        private static string FallbackName(string id) => id switch
+        {
+            ActToggleBorderless => "Toggle borderless (foreground window)",
+            ActSendToZone1 => "Send to zone 1",
+            ActSendToZone2 => "Send to zone 2",
+            ActSendToZone3 => "Send to zone 3",
+            _ => id,
+        };
+    }
+
+    // The default gestures were verified registrable via RegisterHotKey on this machine (2026-06,
+    // see hotkey.log/diagnostics): the old Win+Alt+1/2/3 are reserved by the Windows taskbar jump
+    // list (always 1409, and Win+Ctrl/Shift+digit are taken too). Switched to the same Ctrl+Alt
+    // family (alongside the working Ctrl+Alt+B): B / 1 / 2 / 3, all of which register successfully.
     private static readonly ActionInfo[] _actions =
     {
-        new(ActToggleBorderless, "无边框开关(前台窗口)", "Ctrl+Alt+B"),
-        new(ActSendToZone1,      "送入分区 1",            "Ctrl+Alt+1"),
-        new(ActSendToZone2,      "送入分区 2",            "Ctrl+Alt+2"),
-        new(ActSendToZone3,      "送入分区 3",            "Ctrl+Alt+3"),
+        new(ActToggleBorderless, "Ctrl+Alt+B"),
+        new(ActSendToZone1,      "Ctrl+Alt+1"),
+        new(ActSendToZone2,      "Ctrl+Alt+2"),
+        new(ActSendToZone3,      "Ctrl+Alt+3"),
     };
 
-    /// <summary>对外只读动作表(SettingsPage 据此渲染每一行)。</summary>
+    /// <summary>Read-only action table (SettingsPage renders one row per entry).</summary>
     public static IReadOnlyList<ActionInfo> Actions => _actions;
 
-    /// <summary>某动作的默认手势(SettingsPage "缺项回填"用)。</summary>
+    /// <summary>The default gesture for an action (used by SettingsPage to backfill missing entries).</summary>
     public static string DefaultGesture(string actionId)
         => _actions.FirstOrDefault(a => a.Id == actionId)?.DefaultGesture ?? "";
 
-    /// <summary>一条动作的当前注册状态(供设置页提示)。</summary>
+    /// <summary>The current registration state of one action (for the Settings page to report).
+    /// <paramref name="Error"/>, when set, is a localized human-readable reason shown in the UI.</summary>
     public sealed record HotkeyStatus(string ActionId, string Gesture, bool Registered, string? Error);
 
     private Func<AppConfig>? _getConfig;
@@ -63,18 +96,20 @@ public sealed class HotkeyService : IDisposable
     private readonly ManualResetEventSlim _ready = new(false);
     private volatile bool _disposed;
 
-    // 委托保存为字段:WndProc 地址传给系统,局部会被 GC(同 TrayIcon 的坑)。
+    // The delegate is kept in a field: its address is handed to the OS, and a local would be GC'd
+    // (the same pitfall as in TrayIcon).
     private readonly WndProc _wndProc;
 
     private const string WindowClassName = "Reframe.HotkeyHostWindow";
 
-    // 防抖:ConfigService.Changed 可能连发,合并成一次重注册。
+    // Debounce: ConfigService.Changed can fire in bursts; coalesce into a single re-registration.
     private const int DebounceMs = 250;
     private Timer? _debounce;
     private readonly object _gate = new();
 
-    // ---- 注册态(仅热键线程读写;状态表对外暴露需上锁拷贝) ----
-    // hotkeyId → (动作 Id, 执行体)。id 从 1 递增,每次重注册重排。
+    // ---- Registration state (read/written only on the hotkey thread; exposing the status table
+    // requires a locked copy) ----
+    // hotkeyId → (action Id, executor). Ids count up from 1 and are renumbered on every re-registration.
     private readonly Dictionary<int, RegEntry> _registered = new();
     private List<HotkeyStatus> _statuses = new();
     private readonly object _statusGate = new();
@@ -83,11 +118,12 @@ public sealed class HotkeyService : IDisposable
 
     public HotkeyService() => _wndProc = WndProcImpl;
 
-    /// <summary>启动:在 UI 线程调用。幂等。所有动作执行体均为线程无关的 Win32,无需切回 UI 线程。</summary>
+    /// <summary>Start: call on the UI thread. Idempotent. All action executors are thread-agnostic
+    /// Win32, so none need to marshal back to the UI thread.</summary>
     public void Start(DispatcherQueue ui, Func<AppConfig> getConfig)
     {
         if (_thread != null) return;
-        _ = ui; // 当前所有动作都在热键线程直接执行;保留参数以兼容调用方契约
+        _ = ui; // all current actions run directly on the hotkey thread; the parameter is kept for the caller contract
         _getConfig = getConfig;
 
         _thread = new Thread(ThreadProc) { IsBackground = true, Name = "Reframe.Hotkey" };
@@ -95,12 +131,12 @@ public sealed class HotkeyService : IDisposable
         _thread.Start();
         _ready.Wait(3000);
 
-        // 首次注册 + 订阅配置变化重注册。
+        // Initial registration + subscribe to config changes for re-registration.
         PostRegisterAll();
         ConfigService.Instance.Changed += OnConfigChanged;
     }
 
-    /// <summary>停止:解订阅、注销全部热键、退泵收尾。幂等。</summary>
+    /// <summary>Stop: unsubscribe, unregister all hotkeys, drain the pump, and tear down. Idempotent.</summary>
     public void Stop()
     {
         if (_thread == null) return;
@@ -123,7 +159,8 @@ public sealed class HotkeyService : IDisposable
         _ready.Dispose();
     }
 
-    /// <summary>当前各动作的注册状态快照(设置页"应用后"据此显示成功/失败)。</summary>
+    /// <summary>A snapshot of each action's current registration state (the Settings page shows
+    /// success/failure from this after "Apply").</summary>
     public IReadOnlyList<HotkeyStatus> GetStatuses()
     {
         lock (_statusGate) return new List<HotkeyStatus>(_statuses);
@@ -131,7 +168,7 @@ public sealed class HotkeyService : IDisposable
 
     private void OnConfigChanged()
     {
-        // 防抖:静默 250ms 后在热键线程重注册。
+        // Debounce: re-register on the hotkey thread after 250ms of quiet.
         lock (_gate)
         {
             _debounce?.Dispose();
@@ -139,7 +176,7 @@ public sealed class HotkeyService : IDisposable
         }
     }
 
-    // 把"重注册"投递到热键线程执行(注册必须与窗口同线程)。
+    // Post the "re-register" request to the hotkey thread (registration must share the window's thread).
     private void PostRegisterAll()
     {
         if (_hwnd == IntPtr.Zero) return;
@@ -172,7 +209,7 @@ public sealed class HotkeyService : IDisposable
             hInstance = GetModuleHandle(null),
             lpszClassName = WindowClassName,
         };
-        RegisterClassEx(ref wc); // 进程内唯一即可,重复返回 0 无妨
+        RegisterClassEx(ref wc); // process-wide uniqueness is enough; a duplicate returning 0 is fine
     }
 
     private IntPtr WndProcImpl(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
@@ -184,7 +221,7 @@ public sealed class HotkeyService : IDisposable
                 int id = (int)(wParam.ToInt64() & 0xFFFFFFFF);
                 if (_registered.TryGetValue(id, out var e))
                 {
-                    try { e.Execute(); } catch { /* 单个动作失败不拖垮泵 */ }
+                    try { e.Execute(); } catch { /* a single failing action must not take down the pump */ }
                 }
                 return IntPtr.Zero;
             }
@@ -205,7 +242,7 @@ public sealed class HotkeyService : IDisposable
         return DefWindowProc(hWnd, msg, wParam, lParam);
     }
 
-    // ---- 注册 / 注销(均在热键线程) ----
+    // ---- Registration / unregistration (both on the hotkey thread) ----
 
     private void UnregisterAll()
     {
@@ -221,11 +258,13 @@ public sealed class HotkeyService : IDisposable
 
         var cfg = _getConfig?.Invoke();
         var statuses = new List<HotkeyStatus>(_actions.Length);
+        // English detail for the dashboard log (engine logs in English; see docs/dev/I18N.md).
+        var failedEn = new List<string>();
         int nextId = 1;
 
         foreach (var act in _actions)
         {
-            // 取配置手势,缺项/空串回落默认。
+            // Take the configured gesture; missing/blank falls back to the default.
             string gesture = act.DefaultGesture;
             if (cfg?.Hotkeys != null &&
                 cfg.Hotkeys.TryGetValue(act.Id, out var g) && !string.IsNullOrWhiteSpace(g))
@@ -233,12 +272,14 @@ public sealed class HotkeyService : IDisposable
 
             if (!HotkeyGesture.TryParse(gesture, out uint mods, out uint vk))
             {
-                statuses.Add(new HotkeyStatus(act.Id, gesture, false, "手势无效"));
+                // UI status carries a localized reason; the dashboard log stays English.
+                statuses.Add(new HotkeyStatus(act.Id, gesture, false, Loc.T("Services/HotkeyErrInvalidGesture")));
+                failedEn.Add($"{gesture} (invalid gesture)");
                 continue;
             }
 
             int id = nextId++;
-            // 全局热键统一附加 NOREPEAT,避免长按连发。
+            // All global hotkeys add NOREPEAT to avoid auto-repeat while held.
             bool ok = RegisterHotKey(_hwnd, id, mods | MOD_NOREPEAT, vk);
             int err = ok ? 0 : Marshal.GetLastWin32Error();
             if (ok)
@@ -249,37 +290,54 @@ public sealed class HotkeyService : IDisposable
             }
             else
             {
+                // Status table: localized reason for the Settings page. Log file/dashboard: English.
                 statuses.Add(new HotkeyStatus(act.Id, gesture, false, DescribeError(err)));
-                Log($"FAIL  {act.Id,-18} {gesture,-16} mods=0x{mods:X4} vk=0x{vk:X2} err={err} ({DescribeError(err)})");
+                failedEn.Add($"{gesture} ({DescribeErrorEn(err)})");
+                Log($"FAIL  {act.Id,-18} {gesture,-16} mods=0x{mods:X4} vk=0x{vk:X2} err={err} ({DescribeErrorEn(err)})");
             }
         }
 
-        // 任何注册失败:在仪表盘日志打一条可见提示(用户不必进设置页才知道)。
-        var failed = statuses.Where(s => !s.Registered).ToList();
-        if (failed.Count > 0)
+        // Any registration failure: surface one visible line in the dashboard log (so the user
+        // doesn't have to open Settings to find out). Engine log is English by the i18n red line.
+        if (failedEn.Count > 0)
         {
             try
             {
-                var detail = string.Join("、", failed.Select(s => $"{s.Gesture}({s.Error})"));
-                App.Engine?.LogExternal($"热键注册失败:{detail}。可在 设置 → 热键 改绑。");
+                var detail = string.Join(", ", failedEn);
+                App.Engine?.LogExternal($"Hotkey registration failed: {detail}. Rebind under Settings -> Hotkeys.");
             }
-            catch { /* 引擎未就绪等:不让提示路径影响注册 */ }
+            catch { /* engine not ready etc.: don't let the notice path affect registration */ }
         }
 
         lock (_statusGate) _statuses = statuses;
     }
 
-    /// <summary>把 RegisterHotKey 的 Win32 错误码翻成人话(供状态表与 hotkey.log)。</summary>
+    /// <summary>
+    /// Localized human-readable form of a RegisterHotKey Win32 error code, for the status table that
+    /// the Settings page shows. The hotkey.log and dashboard log use <see cref="DescribeErrorEn"/> instead.
+    /// </summary>
     private static string DescribeError(int err) => err switch
     {
-        0    => "未知",
-        1409 => "已被占用",            // ERROR_HOTKEY_ALREADY_REGISTERED:被本进程或别的进程抢先注册
-        1419 => "热键不可用",          // ERROR_HOTKEY_NOT_REGISTERED(注销路径)
-        87   => "参数无效",            // ERROR_INVALID_PARAMETER
-        _    => $"错误码 {err}",
+        0    => Loc.T("Services/HotkeyErrUnknown"),
+        1409 => Loc.T("Services/HotkeyErrAlreadyRegistered"), // ERROR_HOTKEY_ALREADY_REGISTERED: taken by this or another process
+        1419 => Loc.T("Services/HotkeyErrNotRegistered"),     // ERROR_HOTKEY_NOT_REGISTERED (unregister path)
+        87   => Loc.T("Services/HotkeyErrInvalidParam"),      // ERROR_INVALID_PARAMETER
+        _    => Loc.T("Services/HotkeyErrCodeFormat", err),
     };
 
-    // ---- 诊断日志:%LOCALAPPDATA%\Reframe\hotkey.log(每次注册一行,排查热键占用用) ----
+    /// <summary>English-only form of a RegisterHotKey error code, for diagnostic logs (hotkey.log and
+    /// the engine dashboard log, which are English by the i18n red line).</summary>
+    private static string DescribeErrorEn(int err) => err switch
+    {
+        0    => "unknown",
+        1409 => "already in use",     // ERROR_HOTKEY_ALREADY_REGISTERED
+        1419 => "hotkey unavailable", // ERROR_HOTKEY_NOT_REGISTERED
+        87   => "invalid parameter",  // ERROR_INVALID_PARAMETER
+        _    => $"error {err}",
+    };
+
+    // ---- Diagnostic log: %LOCALAPPDATA%\Reframe\hotkey.log (one line per registration, for
+    // troubleshooting hotkey contention) ----
     private static readonly object _logFileGate = new();
 
     private static void Log(string line)
@@ -296,10 +354,10 @@ public sealed class HotkeyService : IDisposable
                 File.AppendAllText(path, $"[{stamp}] {line}{Environment.NewLine}");
             }
         }
-        catch { /* 日志失败不能影响注册 */ }
+        catch { /* a logging failure must not affect registration */ }
     }
 
-    // 把动作 Id 映射到执行体。zone 动作捕获其 0 基索引。
+    // Map an action Id to its executor. Zone actions capture their 0-based index.
     private Action BuildExecutor(string actionId) => actionId switch
     {
         ActToggleBorderless => ToggleForegroundBorderless,
@@ -309,9 +367,10 @@ public sealed class HotkeyService : IDisposable
         _ => () => { },
     };
 
-    // ---- 动作执行体 ----
+    // ---- Action executors ----
 
-    /// <summary>前台窗口去边框/还原(从 TrayIcon→App 迁来的原 Ctrl+Alt+B 行为)。</summary>
+    /// <summary>Strip the border from / restore the foreground window (the original Ctrl+Alt+B
+    /// behavior, moved over from TrayIcon→App).</summary>
     private void ToggleForegroundBorderless()
     {
         IntPtr h = WindowActivation.GetForeground();
@@ -322,15 +381,16 @@ public sealed class HotkeyService : IDisposable
         }
         else
         {
-            // 只去边框、不动几何、不置顶;快照由 Apply 内部留存。
+            // Only strip the border: don't change geometry, don't set topmost; Apply keeps the snapshot internally.
             var target = new PlacementResolver.Target(MakeBorderless: true, Rect: null, Topmost: false);
             WindowOps.Apply(h, in target);
         }
     }
 
     /// <summary>
-    /// 把前台窗口送进 Layouts[0] 第 <paramref name="zoneIndex"/> 个 zone 在"窗口当前所在屏"工作区的矩形:
-    /// 比例 × rcWork(同 DragSnap),SetWindowPos 普通移动(不去框、不接管、不置顶)。
+    /// Send the foreground window into the rectangle of zone <paramref name="zoneIndex"/> in Layouts[0],
+    /// within the work area of "the monitor the window is currently on": ratio × rcWork (same as
+    /// DragSnap), a plain SetWindowPos move (no borderless, no takeover, no topmost).
     /// </summary>
     private void SendForegroundToZone(int zoneIndex)
     {
@@ -342,19 +402,20 @@ public sealed class HotkeyService : IDisposable
         if (layout is null || zoneIndex < 0 || zoneIndex >= layout.Zones.Count) return;
         var z = layout.Zones[zoneIndex];
 
-        // 窗口当前所在屏的工作区(rcWork)。
+        // The work area (rcWork) of the monitor the window is currently on.
         IntPtr hMon = NativeMethods.MonitorFromWindow(h, NativeMethods.MONITOR_DEFAULTTONEAREST);
         var mi = new NativeMethods.MONITORINFOEX { cbSize = Marshal.SizeOf<NativeMethods.MONITORINFOEX>() };
         if (!NativeMethods.GetMonitorInfo(hMon, ref mi)) return;
 
-        // zone 比例 × 工作区:统一走合同函数 PlacementResolver.ZoneToRect(消除手抄的第三份公式,
-        // 与 DragSnap/ResolveRect 同源)。basis 取 rcWork(送窗口入分区避开任务栏)。
+        // zone ratio × work area: go through the contract function PlacementResolver.ZoneToRect
+        // (eliminating a hand-copied third formula; same source as DragSnap/ResolveRect). basis is
+        // rcWork (so sending a window into a zone avoids the taskbar).
         var r = PlacementResolver.ZoneToRect(z, mi.rcWork);
         int left = r.Left, top = r.Top;
         int cw = r.Right - r.Left, ch = r.Bottom - r.Top;
         if (cw <= 0 || ch <= 0) return;
 
-        // 先从最小化还原,再移动(不动 Z 序、不抢焦点)。
+        // Restore from minimized first, then move (don't change Z-order, don't steal focus).
         if (NativeMethods.IsIconic(h))
             NativeMethods.ShowWindow(h, NativeMethods.SW_RESTORE);
 
@@ -363,7 +424,7 @@ public sealed class HotkeyService : IDisposable
             NativeMethods.SWP_NOOWNERZORDER | NativeMethods.SWP_FRAMECHANGED);
     }
 
-    // ====================== P/Invoke(本服务私有,不污染 NativeMethods) ======================
+    // ====================== P/Invoke (private to this service; does not pollute NativeMethods) ======================
 
     private delegate IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
@@ -371,11 +432,11 @@ public sealed class HotkeyService : IDisposable
     private const uint WM_CLOSE = 0x0010;
     private const uint WM_HOTKEY = 0x0312;
     private const uint WM_APP = 0x8000;
-    private const uint WM_APP_REREGISTER = WM_APP + 1; // 自定义:请热键线程重注册
+    private const uint WM_APP_REREGISTER = WM_APP + 1; // custom: ask the hotkey thread to re-register
 
     private static readonly IntPtr HWND_MESSAGE = new(-3);
 
-    // RegisterHotKey 修饰符(与 HotkeyGesture 的 MOD_* 同值;NOREPEAT 注册时附加)。
+    // RegisterHotKey modifier (same value as HotkeyGesture's MOD_*; NOREPEAT is added at registration time).
     private const uint MOD_NOREPEAT = 0x4000;
 
     [StructLayout(LayoutKind.Sequential)]

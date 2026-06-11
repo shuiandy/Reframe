@@ -5,41 +5,43 @@ using System.Text.Json;
 namespace Reframe.Services;
 
 /// <summary>
-/// SteamGridDB 在线图标兜底。专做游戏图标的免费服务,Bearer 认证。
-/// 端点(已核实 https://www.steamgriddb.com/api/v2):
-///   - 基址:https://www.steamgriddb.com/api/v2/
-///   - 认证:Authorization: Bearer &lt;key&gt;
-///   - 搜索:GET search/autocomplete/{term}     → { success, data: [ { id, name, ... } ] }
-///   - 图标:GET icons/game/{gameId}?mimes=...   → { success, data: [ { id, url, thumb, width, height, mime, ... } ] }
+/// SteamGridDB online icon fallback. A free service dedicated to game icons, Bearer auth.
+/// Endpoints (verified at https://www.steamgriddb.com/api/v2):
+///   - Base: https://www.steamgriddb.com/api/v2/
+///   - Auth: Authorization: Bearer &lt;key&gt;
+///   - Search: GET search/autocomplete/{term}     → { success, data: [ { id, name, ... } ] }
+///   - Icons:  GET icons/game/{gameId}?mimes=...   → { success, data: [ { id, url, thumb, width, height, mime, ... } ] }
 ///
-/// 流程:按名搜索 → 取首个匹配游戏 id → 拉该游戏 icons(优先 png)→ 选 32-64px 的合适项
-///       → 下载到 %LOCALAPPDATA%\Reframe\icons\&lt;进程名&gt;.png。
-/// 全程 5s 超时 + try/catch,任何失败一律返回 null(调用方静默回落占位)。绝不抛、绝不阻塞 UI 线程
-/// (调用方应在后台线程 await)。
+/// Flow: search by name → take the first matching game id → fetch that game's icons (prefer png) →
+///       pick a suitable 32-64px item → download to %LOCALAPPDATA%\Reframe\icons\&lt;process&gt;.png.
+/// A 5s timeout + try/catch throughout; any failure returns null (the caller silently falls back to a
+/// placeholder). Never throws, never blocks the UI thread (the caller should await on a background thread).
 /// </summary>
 public static class SteamGridDb
 {
     private const string Base = "https://www.steamgriddb.com/api/v2/";
 
-    // 单例 HttpClient(避免 socket 耗尽)。HttpClient.Timeout 不覆盖响应流的逐块读取,
-    // 故每次请求另用 CancellationTokenSource(5s) 兜住"连上后慢慢吐 body"的情形(见 RequestTimeout)。
-    // 这里把 HttpClient.Timeout 设为 InfiniteTimeSpan,完全交给 CTS 统一控时(避免两套超时打架)。
+    // Singleton HttpClient (to avoid socket exhaustion). HttpClient.Timeout doesn't cover the chunked
+    // reading of the response stream, so each request additionally uses a CancellationTokenSource(5s)
+    // to cap the "connected, then dribbles the body slowly" case (see RequestTimeout). HttpClient.Timeout
+    // is set to InfiniteTimeSpan, leaving all timing to the CTS (to avoid two timeouts fighting).
     private static readonly HttpClient _http = new() { Timeout = Timeout.InfiniteTimeSpan };
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
 
-    // 图标体积上限 2MB:挡住异常巨大的响应(防 OOM / 写爆磁盘缓存)。
+    // 2MB icon size cap: blocks an abnormally huge response (guards against OOM / blowing out the disk cache).
     private const long MaxIconBytes = 2 * 1024 * 1024;
 
     public static string IconsDir => Path.Combine(ConfigStore.Dir, "icons");
 
-    /// <summary>进程名(已规范化,小写不含 .exe)对应的本地缓存图标文件路径。</summary>
+    /// <summary>The local cached icon file path for a process name (normalized: lowercase, no .exe).</summary>
     public static string CachedIconFile(string normalizedProcessName)
         => Path.Combine(IconsDir, normalizedProcessName + ".png");
 
     /// <summary>
-    /// 取该游戏图标并落盘,返回本地文件路径;失败返回 null。
-    /// 已有磁盘缓存则直接返回(不联网)。searchTerms 按优先级尝试(如 Profile.Name 优先,再进程名拆词)。
-    /// 须在后台线程调用(内含网络 IO)。
+    /// Fetch this game's icon, save it to disk, and return the local file path; null on failure.
+    /// If a disk cache already exists, return it directly (no network). searchTerms are tried in
+    /// priority order (e.g. Profile.Name first, then the camel-split process name). Call on a
+    /// background thread (includes network IO).
     /// </summary>
     public static async Task<string?> TryFetchIconAsync(
         string apiKey, string normalizedProcessName, IEnumerable<string> searchTerms)
@@ -49,13 +51,13 @@ public static class SteamGridDb
 
         string outFile = CachedIconFile(normalizedProcessName);
 
-        // 磁盘已有 → 直接用,绝不再联网。
+        // Already on disk → use it directly, never go online again.
         try
         {
             if (File.Exists(outFile) && new FileInfo(outFile).Length > 0)
                 return outFile;
         }
-        catch { /* 探测失败就当没有,继续联网 */ }
+        catch { /* if the probe fails, treat as absent and go online */ }
 
         try
         {
@@ -73,12 +75,12 @@ public static class SteamGridDb
                     return outFile;
             }
         }
-        catch { /* 网络/解析任意失败:静默 */ }
+        catch { /* any network/parse failure: silent */ }
 
         return null;
     }
 
-    // ---- 搜索:search/autocomplete/{term} → 首个游戏 id ----
+    // ---- Search: search/autocomplete/{term} → first game id ----
     private static async Task<int?> SearchGameIdAsync(string apiKey, string term)
     {
         try
@@ -96,18 +98,18 @@ public static class SteamGridDb
 
             foreach (var g in data.EnumerateArray())
                 if (g.TryGetProperty("id", out var id) && id.TryGetInt32(out int v))
-                    return v; // 首个即最相关(autocomplete 已按相关度排序)
+                    return v; // the first is the most relevant (autocomplete is already sorted by relevance)
         }
-        catch { /* 静默(含超时取消) */ }
+        catch { /* silent (including timeout cancellation) */ }
         return null;
     }
 
-    // ---- 图标:icons/game/{id}?mimes=image/png → 选 32-64px 合适项 ----
+    // ---- Icons: icons/game/{id}?mimes=image/png → pick a suitable 32-64px item ----
     private static async Task<string?> PickIconUrlAsync(string apiKey, int gameId)
     {
         try
         {
-            // 限定 png(便于直接落 .png 并交给 WriteableBitmap/BitmapImage 解码)。
+            // Restrict to png (so it can be saved directly as .png and handed to WriteableBitmap/BitmapImage to decode).
             string uri = $"{Base}icons/game/{gameId}?mimes=image/png";
             using var cts = new CancellationTokenSource(RequestTimeout);
             using var resp = await SendAsync(apiKey, uri, cts.Token).ConfigureAwait(false);
@@ -129,12 +131,12 @@ public static class SteamGridDb
 
                 int width = icon.TryGetProperty("width", out var w) && w.TryGetInt32(out int wv) ? wv : 0;
 
-                // 偏好 32-64px:落在区间内给最高分(越接近 48 越好);否则离区间越近越好(轻罚)。
+                // Prefer 32-64px: items inside the range get the highest score (closer to 48 is better); otherwise the nearer the range the better (a light penalty).
                 int score;
                 if (width >= 32 && width <= 64) score = 1000 - Math.Abs(width - 48);
-                else if (width == 0) score = 0; // 无尺寸信息:可用但不优先
-                else if (width < 32) score = -100 - (32 - width); // 太小
-                else score = -50 - (width - 64);                  // 太大(缩放尚可,优于太小)
+                else if (width == 0) score = 0; // no size info: usable but not preferred
+                else if (width < 32) score = -100 - (32 - width); // too small
+                else score = -50 - (width - 64);                  // too large (downscaling is OK, better than too small)
 
                 if (score > bestScore)
                 {
@@ -144,28 +146,28 @@ public static class SteamGridDb
             }
             return best;
         }
-        catch { /* 静默 */ }
+        catch { /* silent */ }
         return null;
     }
 
     private static async Task<bool> DownloadAsync(string url, string outFile)
     {
-        // tmp 带 GUID:防同一进程内并发下载同名图标互相踩 tmp。
+        // The tmp name carries a GUID: prevents concurrent downloads of the same-named icon in one process from clobbering each other's tmp.
         string tmp = outFile + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
             Directory.CreateDirectory(IconsDir);
             using var cts = new CancellationTokenSource(RequestTimeout);
-            using var req = new HttpRequestMessage(HttpMethod.Get, url); // 图标 CDN 无需 Bearer
-            // ResponseHeadersRead:先拿到头(可读 Content-Length 做上限预检),body 仍受 cts 控时。
+            using var req = new HttpRequestMessage(HttpMethod.Get, url); // the icon CDN needs no Bearer
+            // ResponseHeadersRead: get the headers first (so Content-Length can be pre-checked against the cap); the body is still timed by cts.
             using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token)
                 .ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode) return false;
 
-            // Content-Length 预检:声明超 2MB 直接拒(异常巨图)。无该头则靠下面读取时的硬上限兜底。
+            // Content-Length pre-check: reject outright if it declares over 2MB (an abnormally huge image). Without that header, rely on the hard cap during reading below.
             if (resp.Content.Headers.ContentLength is long len && len > MaxIconBytes) return false;
 
-            // 流式读取并强制 2MB 上限(防服务器不报或谎报 Content-Length)。
+            // Stream and enforce a hard 2MB cap (in case the server omits or lies about Content-Length).
             await using (var src = await resp.Content.ReadAsStreamAsync(cts.Token).ConfigureAwait(false))
             await using (var dst = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
             {
@@ -175,20 +177,20 @@ public static class SteamGridDb
                 while ((n = await src.ReadAsync(buf.AsMemory(0, buf.Length), cts.Token).ConfigureAwait(false)) > 0)
                 {
                     total += n;
-                    if (total > MaxIconBytes) return false; // 超限:放弃(finally 清 tmp)
+                    if (total > MaxIconBytes) return false; // over the cap: give up (finally cleans the tmp)
                     await dst.WriteAsync(buf.AsMemory(0, n), cts.Token).ConfigureAwait(false);
                 }
-                if (total == 0) return false; // 空 body:不当有效缓存
+                if (total == 0) return false; // empty body: not a valid cache
             }
 
-            // 原子覆盖(同卷):File.Move(tmp, out, overwrite:true),避免半截文件被当成有效缓存。
+            // Atomic overwrite (same volume): File.Move(tmp, out, overwrite:true), to avoid a half-written file being treated as a valid cache.
             File.Move(tmp, outFile, overwrite: true);
             return true;
         }
         catch { return false; }
         finally
         {
-            // 失败/超时残留的 tmp 清掉(成功路径 tmp 已被 Move 走,Exists 为 false)。
+            // Clean up the tmp left by a failure/timeout (on the success path tmp was already Move'd away, so Exists is false).
             try { if (File.Exists(tmp)) File.Delete(tmp); } catch { /* ignore */ }
         }
     }
@@ -199,7 +201,7 @@ public static class SteamGridDb
         {
             using var req = new HttpRequestMessage(HttpMethod.Get, uri);
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-            // ResponseHeadersRead:尽早返回(状态码即可判断),body 由调用方在同一 ct 下读取。
+            // ResponseHeadersRead: return as early as possible (the status code is enough to decide); the body is read by the caller under the same ct.
             return await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         }
         catch { return null; }

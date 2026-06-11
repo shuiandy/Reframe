@@ -14,9 +14,9 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Text="配置文件" Style="{ThemeResource TitleTextBlockStyle}"/>
+        <TextBlock x:Uid="/ProfilesPage/Title" Style="{ThemeResource TitleTextBlockStyle}"/>
 
-        <!-- 主页式双栏:左=运行中的窗口(常驻),中间 1px 分隔线,右=配置列表 -->
+        <!-- Home-style two-column layout: left = running windows (always present), a 1px divider in the middle, right = profile list. -->
         <Grid Grid.Row="1" ColumnSpacing="16">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="2*"/>
@@ -24,7 +24,7 @@
                 <ColumnDefinition Width="3*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- ===== 左栏:运行中的窗口 ===== -->
+            <!-- ===== Left column: running windows ===== -->
             <Grid Grid.Column="0" RowSpacing="8">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -32,31 +32,30 @@
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <TextBlock Text="运行中的窗口" Style="{ThemeResource SubtitleTextBlockStyle}"/>
+                <TextBlock x:Uid="/ProfilesPage/RunningWindowsHeader" Style="{ThemeResource SubtitleTextBlockStyle}"/>
 
-                <!-- 搜索 + 显示已过滤 + 刷新 -->
+                <!-- Search + show-filtered + refresh -->
                 <Grid Grid.Row="1" ColumnSpacing="8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <TextBox x:Name="SearchBox" Grid.Column="0"
-                             PlaceholderText="按标题或进程名筛选…"
+                    <TextBox x:Name="SearchBox" x:Uid="/ProfilesPage/SearchBox" Grid.Column="0"
                              TextChanged="SearchBox_TextChanged"/>
-                    <!-- 显示已过滤:开了之后被过滤的窗口也列出(置灰 + 原因),兜底找回被误滤的游戏 -->
+                    <!-- Show filtered: when on, windows that were filtered out are also listed (greyed + reason), a fallback for recovering games that were filtered by mistake. -->
+                    <!-- Tooltip is set from code-behind (Loc.T) because attached-property x:Uid is brittle in MRT Core. -->
                     <ToggleButton x:Name="ShowFilteredToggle" Grid.Column="1"
                                   VerticalAlignment="Stretch"
                                   Checked="ShowFilteredToggle_Toggled"
-                                  Unchecked="ShowFilteredToggle_Toggled"
-                                  ToolTipService.ToolTip="显示被过滤掉的窗口(系统/已忽略/已隐藏/过小)">
+                                  Unchecked="ShowFilteredToggle_Toggled">
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <FontIcon Glyph="&#xE7B3;" FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="14"/>
-                            <TextBlock Text="显示已过滤"/>
+                            <TextBlock x:Uid="/ProfilesPage/ShowFilteredLabel"/>
                         </StackPanel>
                     </ToggleButton>
                     <Button x:Name="RefreshButton" Grid.Column="2"
-                            Click="RefreshButton_Click" ToolTipService.ToolTip="刷新窗口列表">
+                            Click="RefreshButton_Click">
                         <FontIcon Glyph="&#xE72C;" FontFamily="{ThemeResource SymbolThemeFontFamily}"/>
                     </Button>
                 </Grid>
@@ -75,31 +74,31 @@
                     </ListView.ItemContainerStyle>
                     <ListView.ItemTemplate>
                         <DataTemplate x:DataType="local:WindowRow">
-                            <!-- 被过滤行整行置灰(RowOpacity);「+ 建配置」按钮不受 IsFiltered 影响仍可用(兜底) -->
+                            <!-- A filtered row is greyed out as a whole (RowOpacity); the "+ create profile" button stays usable regardless of IsFiltered (fallback). -->
                             <Grid ColumnSpacing="12" Background="Transparent"
                                   Opacity="{x:Bind RowOpacity, Mode=OneWay}">
                                 <Grid.ContextFlyout>
                                     <MenuFlyout>
-                                        <MenuFlyoutItem Text="创建配置" Click="CreateProfile_Click">
+                                        <MenuFlyoutItem x:Uid="/ProfilesPage/MenuCreateProfile" Click="CreateProfile_Click">
                                             <MenuFlyoutItem.Icon>
                                                 <SymbolIcon Symbol="Add"/>
                                             </MenuFlyoutItem.Icon>
                                         </MenuFlyoutItem>
-                                        <MenuFlyoutItem Text="立即去边框" Click="QuickBorderless_Click">
+                                        <MenuFlyoutItem x:Uid="/ProfilesPage/MenuQuickBorderless" Click="QuickBorderless_Click">
                                             <MenuFlyoutItem.Icon>
                                                 <FontIcon Glyph="&#xE740;"/>
                                             </MenuFlyoutItem.Icon>
                                         </MenuFlyoutItem>
                                         <MenuFlyoutSeparator/>
-                                        <!-- 忽略此进程(加进用户忽略名单,正常模式下消失);系统外壳窗不可忽略,此项自动隐藏 -->
-                                        <MenuFlyoutItem Text="忽略此进程" Click="IgnoreProcess_Click"
+                                        <!-- Ignore this process (adds it to the user ignore list; disappears in normal mode); system-shell windows can't be ignored, so this item auto-hides. -->
+                                        <MenuFlyoutItem x:Uid="/ProfilesPage/MenuIgnoreProcess" Click="IgnoreProcess_Click"
                                                         Visibility="{x:Bind IgnoreItemVisibility, Mode=OneWay}">
                                             <MenuFlyoutItem.Icon>
                                                 <FontIcon Glyph="&#xED1A;"/>
                                             </MenuFlyoutItem.Icon>
                                         </MenuFlyoutItem>
-                                        <!-- 取消忽略(移出名单);仅对已被用户忽略的行显示 -->
-                                        <MenuFlyoutItem Text="取消忽略" Click="UnignoreProcess_Click"
+                                        <!-- Stop ignoring (removes it from the list); shown only for rows the user has ignored. -->
+                                        <MenuFlyoutItem x:Uid="/ProfilesPage/MenuUnignoreProcess" Click="UnignoreProcess_Click"
                                                         Visibility="{x:Bind UnignoreItemVisibility, Mode=OneWay}">
                                             <MenuFlyoutItem.Icon>
                                                 <FontIcon Glyph="&#xE7B3;"/>
@@ -133,10 +132,10 @@
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <TextBlock Text="{x:Bind SizeLabel, Mode=OneWay}" Opacity="0.7"
                                                    Style="{ThemeResource CaptionTextBlockStyle}"/>
-                                        <TextBlock Text="已有配置" Opacity="0.55"
+                                        <TextBlock x:Uid="/ProfilesPage/HasProfileTag" Opacity="0.55"
                                                    Style="{ThemeResource CaptionTextBlockStyle}"
                                                    Visibility="{x:Bind HasProfileVisibility, Mode=OneWay}"/>
-                                        <!-- 过滤原因小字:系统窗口/已忽略/已隐藏/过小 -->
+                                        <!-- Filter-reason caption: System window / Ignored / Hidden / Too small. -->
                                         <Border Background="{ThemeResource CardStrokeColorDefaultBrush}"
                                                 CornerRadius="4" Padding="6,1"
                                                 Visibility="{x:Bind ReasonVisibility, Mode=OneWay}">
@@ -146,9 +145,10 @@
                                     </StackPanel>
                                 </StackPanel>
 
+                                <!-- Tooltip set from code-behind (Loc.T via Loaded) — attached-property x:Uid is brittle in MRT Core, and named elements aren't reachable inside a DataTemplate. -->
                                 <Button Grid.Column="3" VerticalAlignment="Center" Padding="9,7"
                                         Click="CreateProfile_Click"
-                                        ToolTipService.ToolTip="据此窗口创建配置">
+                                        Loaded="CreateFromWindowButton_Loaded">
                                     <FontIcon Glyph="&#xE710;" FontSize="14"/>
                                 </Button>
                             </Grid>
@@ -156,17 +156,17 @@
                     </ListView.ItemTemplate>
                 </ListView>
 
-                <TextBlock x:Name="WindowEmptyHint" Grid.Row="2"
-                           Text="没有可选的窗口。" Opacity="0.6"
+                <TextBlock x:Name="WindowEmptyHint" x:Uid="/ProfilesPage/WindowEmptyHint" Grid.Row="2"
+                           Opacity="0.6"
                            HorizontalAlignment="Center" VerticalAlignment="Center"
                            Visibility="Collapsed"/>
             </Grid>
 
-            <!-- 中间分隔线 -->
+            <!-- Middle divider -->
             <Border Grid.Column="1" Width="1"
                     Background="{ThemeResource CardStrokeColorDefaultBrush}"/>
 
-            <!-- ===== 右栏:配置列表 ===== -->
+            <!-- ===== Right column: profile list ===== -->
             <Grid Grid.Column="2" RowSpacing="8">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -174,15 +174,15 @@
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <TextBlock Text="配置列表" Style="{ThemeResource SubtitleTextBlockStyle}"/>
+                <TextBlock x:Uid="/ProfilesPage/ProfileListHeader" Style="{ThemeResource SubtitleTextBlockStyle}"/>
 
                 <CommandBar Grid.Row="1" DefaultLabelPosition="Right"
                             Background="Transparent" HorizontalAlignment="Left"
                             IsOpen="False">
-                    <AppBarButton x:Name="NewButton" Icon="Add" Label="新建" Click="NewButton_Click"/>
-                    <AppBarButton x:Name="EditButton" Icon="Edit" Label="编辑"
+                    <AppBarButton x:Name="NewButton" x:Uid="/ProfilesPage/NewButton" Icon="Add" Click="NewButton_Click"/>
+                    <AppBarButton x:Name="EditButton" x:Uid="/ProfilesPage/EditButton" Icon="Edit"
                                   Click="EditButton_Click" IsEnabled="False"/>
-                    <AppBarButton x:Name="DeleteButton" Icon="Delete" Label="删除"
+                    <AppBarButton x:Name="DeleteButton" x:Uid="/ProfilesPage/DeleteButton" Icon="Delete"
                                   Click="DeleteButton_Click" IsEnabled="False"/>
                 </CommandBar>
 
@@ -203,13 +203,13 @@
                                   ContextRequested="ProfileRow_ContextRequested">
                                 <Grid.ContextFlyout>
                                     <MenuFlyout>
-                                        <MenuFlyoutItem Text="编辑" Click="EditButton_Click">
+                                        <MenuFlyoutItem x:Uid="/ProfilesPage/MenuEdit" Click="EditButton_Click">
                                             <MenuFlyoutItem.Icon>
                                                 <SymbolIcon Symbol="Edit"/>
                                             </MenuFlyoutItem.Icon>
                                         </MenuFlyoutItem>
                                         <MenuFlyoutSeparator/>
-                                        <MenuFlyoutItem Text="删除" Click="DeleteButton_Click">
+                                        <MenuFlyoutItem x:Uid="/ProfilesPage/MenuDelete" Click="DeleteButton_Click">
                                             <MenuFlyoutItem.Icon>
                                                 <SymbolIcon Symbol="Delete"/>
                                             </MenuFlyoutItem.Icon>
@@ -231,7 +231,7 @@
                                               Toggled="EnabledToggle_Toggled"
                                               Tag="{x:Bind ProfileId}"/>
 
-                                <!-- 行首图标:进程匹配显示其图标,取不到/非进程匹配回落默认字形(显隐互斥) -->
+                                <!-- Leading icon: a process match shows its icon; missing icon / non-process match falls back to the default glyph (visibility is mutually exclusive). -->
                                 <Grid Grid.Column="1" Width="32" Height="32" VerticalAlignment="Center">
                                     <FontIcon Glyph="&#xE7FC;"
                                               FontFamily="{ThemeResource SymbolThemeFontFamily}"
@@ -253,12 +253,13 @@
                                                Style="{ThemeResource CaptionTextBlockStyle}"/>
                                 </StackPanel>
 
+                                <!-- Tooltip set from code-behind (Loc.T via Loaded) — see note on the left-column "+" button. -->
                                 <Button Grid.Column="3" VerticalAlignment="Center"
                                         Background="Transparent" BorderThickness="0" Padding="8"
                                         IsEnabled="{x:Bind CanLaunch}"
                                         Tag="{x:Bind ProfileId}"
                                         Click="LaunchButton_Click"
-                                        ToolTipService.ToolTip="启动">
+                                        Loaded="LaunchButton_Loaded">
                                     <FontIcon Glyph="&#xE768;" FontSize="16"/>
                                 </Button>
                             </Grid>
@@ -266,8 +267,7 @@
                     </ListView.ItemTemplate>
                 </ListView>
 
-                <TextBlock x:Name="EmptyHint" Grid.Row="2"
-                           Text="还没有配置文件,点击上方“新建”或从左栏窗口创建一个。"
+                <TextBlock x:Name="EmptyHint" x:Uid="/ProfilesPage/EmptyHint" Grid.Row="2"
                            Opacity="0.6" HorizontalAlignment="Center" VerticalAlignment="Center"
                            Visibility="Collapsed"/>
             </Grid>

@@ -3,40 +3,40 @@ using System.Diagnostics;
 namespace Reframe.Services;
 
 /// <summary>
-/// 开机自启:用 Windows 计划任务(schtasks)实现。
-/// 程序是 requireAdministrator,普通 Run 注册表自启会触发 UAC;
-/// 计划任务 /RL HIGHEST + /SC ONLOGON 可在登录时以最高权限静默拉起,免 UAC。
-/// 所有调用静默运行,异常不外抛,以 bool 表示成败。
+/// Run at startup, implemented with a Windows scheduled task (schtasks).
+/// The app is requireAdministrator, so an ordinary Run-key autostart would trigger UAC; a scheduled
+/// task with /RL HIGHEST + /SC ONLOGON launches it silently at logon with the highest privileges, no UAC.
+/// All calls run silently and don't surface exceptions, reporting success/failure as a bool.
 /// </summary>
 public static class StartupTaskService
 {
     private const string TaskName = "Reframe";
 
-    /// <summary>计划任务是否已存在。</summary>
+    /// <summary>Whether the scheduled task already exists.</summary>
     public static bool IsEnabled()
     {
-        // /Query 命中返回 0,不存在返回非 0。
+        // /Query returns 0 on a hit, non-zero if it doesn't exist.
         return Run($"/Query /TN \"{TaskName}\"") == 0;
     }
 
-    /// <summary>创建/覆盖计划任务,指向当前 exe。</summary>
+    /// <summary>Create/overwrite the scheduled task, pointing at the current exe.</summary>
     public static bool Enable()
     {
         string? exe = Environment.ProcessPath;
         if (string.IsNullOrEmpty(exe)) return false;
 
-        // /F 覆盖同名任务;/TR 路径含空格须再包一层引号。
+        // /F overwrites a task of the same name; /TR needs an extra layer of quotes when the path contains spaces.
         string args = $"/Create /TN \"{TaskName}\" /SC ONLOGON /RL HIGHEST /TR \"\\\"{exe}\\\"\" /F";
         return Run(args) == 0;
     }
 
-    /// <summary>删除计划任务。</summary>
+    /// <summary>Delete the scheduled task.</summary>
     public static bool Disable()
     {
         return Run($"/Delete /TN \"{TaskName}\" /F") == 0;
     }
 
-    /// <summary>静默运行 schtasks,返回退出码;启动失败返回 -1。</summary>
+    /// <summary>Run schtasks silently and return its exit code; -1 if it failed to start.</summary>
     private static int Run(string arguments)
     {
         try

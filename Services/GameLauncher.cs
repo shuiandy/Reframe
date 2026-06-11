@@ -4,70 +4,77 @@ using Reframe.Core;
 namespace Reframe.Services;
 
 /// <summary>
-/// 迷你游戏库:从配置一键启动游戏。
+/// Mini game library: launch a game from its profile with one click.
 ///
-/// 时序闭环(先预设、后启动):若 Profile 启用了启动分辨率预设(<see cref="UnityResolutionPreset"/>),
-/// 且目标进程当前**没在跑**,先调 <see cref="UnityPreset.Write"/> 把 Screenmanager 注册表写成目标分辨率,
-/// 再启动游戏——这样游戏启动时读到的就是目标分辨率(原神等渲染分辨率钉死在注册表的 Unity 游戏)。
-/// 进程已在跑就不写预设(游戏退出时会把当前值写回,中途写无意义),也不重复启动。
+/// Ordered closure (preset first, then launch): if the profile enables a startup resolution preset
+/// (<see cref="UnityResolutionPreset"/>) and the target process is **not currently running**, call
+/// <see cref="UnityPreset.Write"/> first to write the target resolution into the Screenmanager
+/// registry, then launch the game — so the game reads the target resolution at startup (for Unity
+/// games such as Genshin whose render resolution is pinned in the registry). If the process is
+/// already running, the preset is not written (the game writes the current value back on exit, so a
+/// mid-run write is pointless), and the game is not launched again.
 ///
-/// 启动目标:<see cref="Profile.LaunchCommand"/> 非空优先用它,否则用 <see cref="Profile.ExePath"/>;两者皆空 → 失败。
-/// 用 ShellExecute 启动:本地 exe 设工作目录为其所在目录;URI / 启动器命令(如 hoyoplay://)交给 shell,不设工作目录。
+/// Launch target: <see cref="Profile.LaunchCommand"/> if non-empty, otherwise
+/// <see cref="Profile.ExePath"/>; if both are empty → failure. Started via ShellExecute: a local exe
+/// gets its containing directory as the working directory; a URI / launcher command (e.g.
+/// hoyoplay://) is handed to the shell with no working directory.
 /// </summary>
 public static class GameLauncher
 {
     /// <summary>
-    /// 启动 Profile 对应的游戏。成功返回 true;失败返回 false 并通过 <paramref name="error"/> 给出人话原因
-    /// (没配启动方式 / 文件不存在 / 已在运行 / 启动异常)。须在 UI 线程调用(调用方据 error 弹提示)。
+    /// Launch the game for a profile. Returns true on success; on failure returns false and sets
+    /// <paramref name="error"/> to a localized human-readable reason (no launch method / file not
+    /// found / already running / launch exception). Call on the UI thread (the caller shows the
+    /// error in a dialog).
     /// </summary>
     public static bool Launch(Profile p, out string? error)
     {
         error = null;
 
-        // 启动目标:LaunchCommand 非空优先,否则 ExePath;都空 → 没配启动方式。
+        // Launch target: prefer LaunchCommand, otherwise ExePath; both empty → no launch method configured.
         string? target = FirstNonEmpty(p.LaunchCommand, p.ExePath);
         if (target is null)
         {
-            error = "没有配置启动方式:请填写“启动命令”或“可执行文件”。";
+            error = Loc.T("Services/LaunchNoMethod");
             return false;
         }
 
-        // 已在运行(仅进程匹配可靠判定)→ 不重复启动。
+        // Already running (only reliably determinable for process matches) → don't launch again.
         if (p.MatchKind == MatchKind.Process && IsProcessRunning(p.MatchValue))
         {
-            error = $"“{NameOf(p)}”已在运行。";
+            error = Loc.T("Services/LaunchAlreadyRunningFormat", NameOf(p));
             return false;
         }
 
-        // 安全白名单(本进程为 requireAdministrator,绝不对任意串 ShellExecute):
-        //   放行① 现存的 .exe 文件路径;放行② 白名单协议前缀(steam:// 等);其余一律拒。
+        // Security allow-list (this process is requireAdministrator; never ShellExecute an arbitrary string):
+        //   allow (1) an existing .exe file path; allow (2) an allow-listed protocol prefix (steam:// etc.); reject the rest.
         bool isExe = IsExistingExe(target);
         bool isAllowedUri = !isExe && IsAllowedProtocol(target);
 
         if (!isExe && !isAllowedUri)
         {
-            // 既不是现存 exe、也不是白名单协议:可能是写错的路径,或不被允许的命令。
+            // Neither an existing exe nor an allow-listed protocol: likely a mistyped path, or a disallowed command.
             error = LooksLikeUri(target)
-                ? "不支持的启动命令:仅允许 steam:// hoyoplay:// http(s):// 等已知启动器协议。"
-                : $"找不到文件:{target}";
+                ? Loc.T("Services/LaunchUnsupportedCommand")
+                : Loc.T("Services/LaunchFileNotFoundFormat", target);
             return false;
         }
 
         bool isUri = isAllowedUri;
 
-        // 时序闭环:先写分辨率预设(进程未在跑时才写),后启动。
-        // 注:能走到这里说明上面"已在运行"判定未命中(进程不在跑),故此处直接写。
+        // Ordered closure: write the resolution preset first (only when the process isn't running), then launch.
+        // Note: reaching here means the "already running" check above missed (process not running), so write directly.
         var preset = p.ResolutionPreset;
         if (preset is { Enabled: true } && !string.IsNullOrWhiteSpace(preset.RegistryPath))
         {
             try { UnityPreset.Write(preset.RegistryPath, preset.Width, preset.Height, preset.Windowed); }
-            catch { /* 预设写入失败不阻断启动:大不了游戏按自身记忆分辨率渲染 */ }
+            catch { /* a failed preset write doesn't block launch: worst case the game renders at its own remembered resolution */ }
         }
 
         try
         {
             var psi = new ProcessStartInfo(target) { UseShellExecute = true };
-            // 本地 exe 设工作目录为其所在目录(部分游戏依赖 CWD 找资源);URI 不设。
+            // A local exe gets its containing directory as the working directory (some games rely on CWD to find assets); a URI does not.
             if (!isUri)
             {
                 string? dir = Path.GetDirectoryName(target);
@@ -78,38 +85,39 @@ public static class GameLauncher
         }
         catch (Exception ex)
         {
-            error = "启动失败:" + ex.Message;
+            error = Loc.T("Services/LaunchFailedFormat", ex.Message);
             return false;
         }
     }
 
     /// <summary>
-    /// 允许的启动协议前缀白名单(admin 进程下只放行已知游戏启动器/网页协议)。
-    /// 命中按 URI 交给 shell;命中之外的协议(file:// shell: cmd 管道等)一律拒。
+    /// Allow-list of permitted launch-protocol prefixes (under an admin process, only known game
+    /// launcher / web protocols are allowed). A match is handed to the shell as a URI; protocols not
+    /// on the list (file://, shell:, cmd pipes, etc.) are all rejected.
     /// </summary>
     private static readonly string[] AllowedSchemes =
     {
         "steam://",        // Steam
-        "hoyoplay://",     // 米哈游 HoYoPlay
+        "hoyoplay://",     // miHoYo HoYoPlay
         "com.epicgames.launcher://", // Epic
         "uplay://", "ubisoft://",    // Ubisoft Connect
         "origin://", "ea://", "link2ea://", // EA / Origin
         "battlenet://", "blizzard://",      // Battle.net
         "goggalaxy://",    // GOG Galaxy
-        "http://", "https://", // 网页启动页
+        "http://", "https://", // web launch page
     };
 
-    /// <summary>target 是否为一个现存的 .exe 文件(放行①)。</summary>
+    /// <summary>Whether target is an existing .exe file (allow rule 1).</summary>
     private static bool IsExistingExe(string target)
     {
         try
         {
             return target.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && File.Exists(target);
         }
-        catch { return false; } // 非法路径字符等
+        catch { return false; } // illegal path characters, etc.
     }
 
-    /// <summary>target 是否以白名单协议前缀打头(放行②,大小写不敏感)。</summary>
+    /// <summary>Whether target starts with an allow-listed protocol prefix (allow rule 2, case-insensitive).</summary>
     private static bool IsAllowedProtocol(string target)
     {
         foreach (var s in AllowedSchemes)
@@ -118,11 +126,12 @@ public static class GameLauncher
         return false;
     }
 
-    /// <summary>仅用于报错措辞:看起来像个协议 URI(含 "://"),用来区分"路径写错"与"协议不被允许"。</summary>
+    /// <summary>For error wording only: whether it looks like a protocol URI (contains "://"), to
+    /// distinguish "mistyped path" from "protocol not allowed".</summary>
     private static bool LooksLikeUri(string target)
         => target.Contains("://", StringComparison.Ordinal);
 
-    /// <summary>按进程名(忽略 .exe、大小写)判断是否有该进程在运行。与 Watcher 的判定一致。</summary>
+    /// <summary>Whether a process with this name is running (ignoring .exe and case). Matches Watcher's check.</summary>
     private static bool IsProcessRunning(string matchValue)
     {
         if (string.IsNullOrWhiteSpace(matchValue)) return false;
@@ -146,5 +155,5 @@ public static class GameLauncher
     }
 
     private static string NameOf(Profile p)
-        => string.IsNullOrWhiteSpace(p.Name) ? "该配置" : p.Name;
+        => string.IsNullOrWhiteSpace(p.Name) ? Loc.T("Services/LaunchUnnamedProfile") : p.Name;
 }

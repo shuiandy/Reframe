@@ -16,16 +16,16 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Text="布局" Style="{ThemeResource TitleTextBlockStyle}"/>
+        <TextBlock Grid.Row="0" x:Uid="/LayoutsPage/Title" Style="{ThemeResource TitleTextBlockStyle}"/>
 
         <CommandBar Grid.Row="1"
                     DefaultLabelPosition="Right"
                     HorizontalAlignment="Left"
                     Background="Transparent">
-            <AppBarButton x:Name="NewButton" Icon="Add" Label="新建" Click="NewButton_Click"/>
-            <AppBarButton x:Name="DuplicateButton" Icon="Copy" Label="复制" Click="DuplicateButton_Click"/>
-            <AppBarButton x:Name="EditButton" Icon="Edit" Label="编辑" Click="EditButton_Click"/>
-            <AppBarButton x:Name="DeleteButton" Icon="Delete" Label="删除" Click="DeleteButton_Click"/>
+            <AppBarButton x:Name="NewButton" x:Uid="/LayoutsPage/NewButton" Icon="Add" Click="NewButton_Click"/>
+            <AppBarButton x:Name="DuplicateButton" x:Uid="/LayoutsPage/DuplicateButton" Icon="Copy" Click="DuplicateButton_Click"/>
+            <AppBarButton x:Name="EditButton" x:Uid="/LayoutsPage/EditButton" Icon="Edit" Click="EditButton_Click"/>
+            <AppBarButton x:Name="DeleteButton" x:Uid="/LayoutsPage/DeleteButton" Icon="Delete" Click="DeleteButton_Click"/>
         </CommandBar>
 
         <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
@@ -35,9 +35,10 @@
                           IsItemClickEnabled="False"
                           DoubleTapped="LayoutsGrid_DoubleTapped"
                           SelectionChanged="LayoutsGrid_SelectionChanged">
-                    <!-- 卡片 hover:由系统 GridViewItem 容器驱动(无自定义动画)。
-                         容器圆角对齐内卡;pointer-over 用内置状态切换边框/背景刷,
-                         本地把这些刷改成 accent 描边 + 微抬升的层色。 -->
+                    <!-- Card hover is driven by the system GridViewItem container (no custom animation).
+                         The container corner radius aligns with the inner card; pointer-over uses the
+                         built-in visual states to swap the border/background brushes, which we override
+                         locally to an accent outline plus a slightly lifted layer color. -->
                     <GridView.ItemContainerStyle>
                         <Style TargetType="GridViewItem">
                             <Setter Property="Margin" Value="4"/>
@@ -47,35 +48,36 @@
                         </Style>
                     </GridView.ItemContainerStyle>
                     <GridView.Resources>
-                        <!-- pointer-over:边框转 accent、背景轻提亮(均为内置 ThemeResource) -->
+                        <!-- pointer-over: border turns accent, background lifts slightly (both built-in ThemeResources) -->
                         <StaticResource x:Key="GridViewItemBackgroundPointerOver" ResourceKey="SubtleFillColorSecondaryBrush"/>
                         <StaticResource x:Key="GridViewItemBorderBrushPointerOver" ResourceKey="AccentFillColorDefaultBrush"/>
-                        <!-- 选中态也用 accent 描边,与 hover 呼应 -->
+                        <!-- Selected state also uses an accent outline, echoing the hover state -->
                         <StaticResource x:Key="GridViewItemBorderBrushSelected" ResourceKey="AccentFillColorDefaultBrush"/>
                         <StaticResource x:Key="GridViewItemBorderBrushSelectedPointerOver" ResourceKey="AccentFillColorDefaultBrush"/>
                     </GridView.Resources>
                     <GridView.ItemTemplate>
                         <DataTemplate x:DataType="local:LayoutItem">
-                            <!-- 卡背景刷成卡色;hover 抬升由外层容器边框/背景体现。
-                                 内卡边框透明,让容器的 accent 描边成为唯一边线,避免双线。 -->
+                            <!-- The card background is painted with the card color; the hover lift comes
+                                 from the outer container's border/background. The inner card border is
+                                 transparent so the container's accent outline is the only edge (no double line). -->
                             <Grid Width="220" Height="180" Padding="10" RowSpacing="6"
                                   Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                                   CornerRadius="7"
                                   ContextRequested="LayoutCard_ContextRequested">
                                 <Grid.ContextFlyout>
                                     <MenuFlyout>
-                                        <MenuFlyoutItem Text="编辑" Click="EditButton_Click">
+                                        <MenuFlyoutItem x:Uid="/LayoutsPage/MenuEdit" Click="EditButton_Click">
                                             <MenuFlyoutItem.Icon>
                                                 <SymbolIcon Symbol="Edit"/>
                                             </MenuFlyoutItem.Icon>
                                         </MenuFlyoutItem>
-                                        <MenuFlyoutItem Text="复制" Click="DuplicateButton_Click">
+                                        <MenuFlyoutItem x:Uid="/LayoutsPage/MenuDuplicate" Click="DuplicateButton_Click">
                                             <MenuFlyoutItem.Icon>
                                                 <SymbolIcon Symbol="Copy"/>
                                             </MenuFlyoutItem.Icon>
                                         </MenuFlyoutItem>
                                         <MenuFlyoutSeparator/>
-                                        <MenuFlyoutItem Text="删除" Click="DeleteButton_Click">
+                                        <MenuFlyoutItem x:Uid="/LayoutsPage/MenuDelete" Click="DeleteButton_Click">
                                             <MenuFlyoutItem.Icon>
                                                 <SymbolIcon Symbol="Delete"/>
                                             </MenuFlyoutItem.Icon>
@@ -108,7 +110,7 @@
                             Visibility="Collapsed">
                     <FontIcon Glyph="&#xE80A;" FontSize="40"
                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                    <TextBlock Text="还没有布局,点击「新建」创建第一个。"
+                    <TextBlock x:Uid="/LayoutsPage/EmptyHintText"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                 </StackPanel>
             </Grid>

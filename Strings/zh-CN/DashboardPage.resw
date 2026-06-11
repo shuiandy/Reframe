@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!--
+    DashboardPage.resw (zh-CN) — 仪表盘页 + UI/Controls 的全部用户可见字符串。
+    静态 UI 文本在 XAML 用 x:Uid="/DashboardPage/<键>"(键 "Title" → data name "Title.Text")。
+    运行时/代码字符串(概览行、卡片占位、ToggleSwitch On/Off、tooltip)经 Loc.T("DashboardPage/<键>") 取。
+    占位符用 .NET 复合格式索引({0}),供 Loc.T(key, args) 做 string.Format。
+    注:LiveMonitorMap 画的 zone/profile 名称来自用户数据,不在此本地化;仅纯字面量在这里。
+    详见 docs/dev/I18N.md。
+  -->
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- 页标题 + 引擎开关 -->
+  <data name="Title.Text" xml:space="preserve">
+    <value>仪表盘</value>
+  </data>
+  <data name="EngineLabel.Text" xml:space="preserve">
+    <value>引擎</value>
+  </data>
+
+  <!-- 接管中的窗口栏 -->
+  <data name="TakenHeader.Text" xml:space="preserve">
+    <value>接管中的窗口</value>
+  </data>
+  <data name="RestoreButton.Content" xml:space="preserve">
+    <value>还原</value>
+  </data>
+  <data name="RescanButton.Content" xml:space="preserve">
+    <value>重新扫描</value>
+  </data>
+
+  <!-- 日志栏 -->
+  <data name="LogHeader.Text" xml:space="preserve">
+    <value>日志</value>
+  </data>
+
+  <!-- ===== 代码后置动态字符串 ===== -->
+  <!-- 引擎总开关 OnContent/OffContent(ToggleSwitch 经代码设,x:Uid 设附加内容不可靠) -->
+  <data name="EngineOn" xml:space="preserve">
+    <value>运行中</value>
+  </data>
+  <data name="EngineOff" xml:space="preserve">
+    <value>已停止</value>
+  </data>
+
+  <!-- 重新扫描按钮 tooltip(模板内按钮经代码后置设,见 DashboardPage.xaml.cs RescanButton_Loaded) -->
+  <data name="RescanTooltip" xml:space="preserve">
+    <value>立即触发一次全量扫描与应用(对全部窗口生效,非仅此卡片)</value>
+  </data>
+
+  <!-- 概览行:配置文件数 + 布局数。{0}=配置文件数,{1}=布局数 -->
+  <data name="SummaryFormat" xml:space="preserve">
+    <value>{0} 个配置文件 · {1} 个布局</value>
+  </data>
+
+  <!-- 接管卡片占位文本(XAML x:Uid 直接设 .Text) -->
+  <data name="TakenEmptyLabel.Text" xml:space="preserve">
+    <value>暂无被接管的窗口</value>
+  </data>
+
+  <!-- 卡片字段兜底值 -->
+  <data name="ProfileDeleted" xml:space="preserve">
+    <value>(已删除)</value>
+  </data>
+  <data name="WindowNoTitle" xml:space="preserve">
+    <value>(无标题)</value>
+  </data>
+  <data name="RectUnavailable" xml:space="preserve">
+    <value>(矩形不可用)</value>
+  </data>
+  <!-- 卡片副信息行:标题与进程名都有且不同时拼接。{0}=窗口标题,{1}=进程 exe 名 -->
+  <data name="SubInfoFormat" xml:space="preserve">
+    <value>{0} · {1}</value>
+  </data>
+
+  <!-- ===== LiveMonitorMap 小地图字面量 ===== -->
+  <!-- 主显示器标注后缀(接在分辨率之后,如 "3840×2160 (主)") -->
+  <data name="PrimaryMonitorSuffix" xml:space="preserve">
+    <value> (主)</value>
+  </data>
+  <!-- 接管窗口的 profile 名称取不到时的兜底标 -->
+  <data name="UnknownProfile" xml:space="preserve">
+    <value>?</value>
+  </data>
+</root>

@@ -15,18 +15,19 @@ namespace Reframe.UI;
 
 public sealed partial class LayoutEditorPage : Page
 {
-    // ---- 画布尺寸:用满容器可用宽度,高按 Ref 宽高比;过高时再按可用高度回退,始终居中 ----
-    private const double SnapPx = 8;            // 吸附阈值(画布 DIP)
-    private const double FallbackCanvasWidth = 900;  // 容器尚未测量出宽度时的兜底宽
+    // ---- Canvas sizing: fill the host's available width, height from the Ref aspect ratio; if too
+    //      tall, fall back to the available height instead, always centered ----
+    private const double SnapPx = 8;            // snap threshold (canvas DIP)
+    private const double FallbackCanvasWidth = 900;  // fallback width before the host has been measured
 
     private string? _layoutId;
-    private Layout _work = new();               // 工作副本,保存时才写回真实配置
+    private Layout _work = new();               // working copy; written back to the real config only on save
     private double _canvasW = FallbackCanvasWidth;
     private double _canvasH = FallbackCanvasWidth * 9 / 16;
 
     private readonly List<ZoneVisual> _visuals = new();
     private Zone? _selected;
-    private bool _suppressSync;                 // 抑制属性面板回写与 UI 互相触发
+    private bool _suppressSync;                 // suppress the property panel write-back and UI from re-triggering each other
 
     public LayoutEditorPage()
     {
@@ -41,7 +42,7 @@ public sealed partial class LayoutEditorPage : Page
         var real = ConfigService.Instance.Config.Layouts.FirstOrDefault(l => l.Id == _layoutId);
         if (real is null)
         {
-            // 容错:找不到就回退。
+            // Defensive: if not found, go back.
             if (Frame.CanGoBack) Frame.GoBack();
             return;
         }
@@ -65,12 +66,13 @@ public sealed partial class LayoutEditorPage : Page
     protected override void OnNavigatedFrom(NavigationEventArgs e)
     {
         base.OnNavigatedFrom(e);
-        // 对称退订:OnNavigatedTo 里每次都 += OnPageKeyDown。若将来开启 NavigationCacheMode
-        // 复用本页实例,不退订会令同一处理器叠加注册,Delete 键一次删多个分区。
+        // Symmetric unsubscribe: OnNavigatedTo does += OnPageKeyDown every time. If NavigationCacheMode
+        // is ever enabled and this page instance is reused, failing to unsubscribe would stack the same
+        // handler, so a single Delete keypress would remove several zones.
         KeyDown -= OnPageKeyDown;
     }
 
-    // ---------- 克隆 ----------
+    // ---------- Clone ----------
     private static Layout Clone(Layout src) => new()
     {
         Id = src.Id,
@@ -82,8 +84,8 @@ public sealed partial class LayoutEditorPage : Page
             .ToList()
     };
 
-    // ---------- 参考分辨率 ----------
-    // 末位"自定义"项,当 Ref 不匹配任何显示器时回显当前分辨率。
+    // ---------- Reference resolution ----------
+    // Trailing "custom" item that echoes the current resolution when Ref matches no monitor.
     private ComboBoxItem? _customItem;
 
     private void InitMonitorCombo()
@@ -95,22 +97,24 @@ public sealed partial class LayoutEditorPage : Page
         {
             foreach (var m in MonitorService.GetMonitors())
             {
+                string label = Loc.T("LayoutEditorPage/MonitorItemFormat", m.Width, m.Height);
+                if (m.IsPrimary) label += Loc.T("LayoutEditorPage/MonitorPrimarySuffix");
                 MonitorCombo.Items.Add(new ComboBoxItem
                 {
-                    Content = $"{m.Width}×{m.Height}{(m.IsPrimary ? " (主)" : "")}",
+                    Content = label,
                     Tag = new int[] { m.Width, m.Height }
                 });
             }
         }
-        catch { /* 服务尚未就绪时静默 */ }
+        catch { /* stay silent if the service is not ready yet */ }
         _suppressSync = false;
 
-        // 进入时回显当前 Ref:匹配显示器则选中,否则补一项"自定义"。
+        // Echo the current Ref on entry: select the matching monitor, or append a "custom" item.
         SyncMonitorCombo();
     }
 
-    // 让 ComboBox 显示当前 _work 的参考分辨率:命中某显示器则选中该项,
-    // 否则维护一个"WxH(自定义)"项并选中,避免停留在占位符。
+    // Make the ComboBox show _work's current reference resolution: if it matches a monitor, select that
+    // item; otherwise maintain a "WxH (custom)" item and select it, so it never sits on the placeholder.
     private void SyncMonitorCombo()
     {
         int w = _work.RefWidth, h = _work.RefHeight;
@@ -128,7 +132,7 @@ public sealed partial class LayoutEditorPage : Page
 
         if (match is not null)
         {
-            // 命中显示器:移除可能残留的自定义项,选中匹配项。
+            // Monitor matched: remove any leftover custom item and select the match.
             if (_customItem is not null)
             {
                 MonitorCombo.Items.Remove(_customItem);
@@ -138,8 +142,8 @@ public sealed partial class LayoutEditorPage : Page
         }
         else
         {
-            // 未命中:复用或新建末位自定义项,回显当前分辨率。
-            string label = $"{w}×{h}(自定义)";
+            // No match: reuse or create the trailing custom item, echoing the current resolution.
+            string label = Loc.T("LayoutEditorPage/MonitorCustomFormat", w, h);
             if (_customItem is null)
             {
                 _customItem = new ComboBoxItem { Content = label, Tag = new int[] { w, h } };
@@ -184,33 +188,36 @@ public sealed partial class LayoutEditorPage : Page
         _work.RefHeight = h;
         RecomputeCanvasSize();
         RebuildCanvas();
-        SyncPropPanel();        // 像素显示随 Ref 变化
-        SyncMonitorCombo();     // 参考分辨率回显随 Ref 变化(手输/匹配显示器)
+        SyncPropPanel();        // pixel display tracks the Ref change
+        SyncMonitorCombo();     // reference-resolution echo tracks the Ref change (typed in / matched monitor)
     }
 
-    // 容器尺寸变化时(窗口拉伸、属性面板宽度恒定)重算画布并重新布局 zone。
+    // When the host resizes (window stretch; the property panel width is fixed), recompute the canvas
+    // and re-lay-out the zones.
     private void CanvasHost_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         RecomputeCanvasSize();
         LayoutVisuals();
     }
 
-    // 画布占满容器可用宽度,高按参考宽高比;若高度超过容器可用高度则按高度回退、宽度随之收窄。
+    // The canvas fills the host's available width, height from the reference aspect ratio; if the height
+    // exceeds the available height, constrain by height instead and narrow the width accordingly.
     private void RecomputeCanvasSize()
     {
         double aspect = (double)_work.RefWidth / _work.RefHeight;
 
-        // CanvasHost.Padding = 16(四周),可用区域要扣掉左右/上下各 16。
+        // CanvasHost.Padding = 16 (all sides), so subtract 16 on each axis from the available area.
         double padW = CanvasHost.Padding.Left + CanvasHost.Padding.Right;
         double padH = CanvasHost.Padding.Top + CanvasHost.Padding.Bottom;
         double availW = CanvasHost.ActualWidth - padW;
         double availH = CanvasHost.ActualHeight - padH;
 
-        // 容器尚未测量出尺寸时用兜底宽,稍后 SizeChanged 会再次触发精确布局。
+        // Use the fallback width before the host has been measured; SizeChanged will re-trigger an exact layout later.
         double w = availW > 1 ? availW : FallbackCanvasWidth;
         double h = w / aspect;
 
-        // 高度超出可用高度(如 16:9、竖向布局)时改按高度约束,避免画布溢出滚动。
+        // If the height overflows the available height (e.g. 16:9 or portrait layouts), constrain by
+        // height instead to avoid the canvas overflowing into scroll.
         if (availH > 1 && h > availH)
         {
             h = availH;
@@ -233,27 +240,34 @@ public sealed partial class LayoutEditorPage : Page
         _work.Name = NameBox.Text;
     }
 
-    // ---------- 预设模板 ----------
+    // ---------- Preset templates ----------
+    // Preset zone names are localized at generation time and written into user data as-is; existing
+    // data is never re-translated (see docs/dev/I18N.md section 8).
     private void Preset_Click(object sender, RoutedEventArgs e)
     {
         string tag = (string)((Button)sender).Tag;
+        string left = Loc.T("LayoutEditorPage/ZonePresetLeft");
+        string right = Loc.T("LayoutEditorPage/ZonePresetRight");
+        string center = Loc.T("LayoutEditorPage/ZonePresetCenter");
+        string game = Loc.T("LayoutEditorPage/ZonePresetGame");
+        string secondary = Loc.T("LayoutEditorPage/ZonePresetSecondary");
         _work.Zones = tag switch
         {
             "half" => new()
             {
-                new Zone { Name = "左区", X = 0,   Y = 0, W = 0.5, H = 1 },
-                new Zone { Name = "右区", X = 0.5, Y = 0, W = 0.5, H = 1 },
+                new Zone { Name = left,  X = 0,   Y = 0, W = 0.5, H = 1 },
+                new Zone { Name = right, X = 0.5, Y = 0, W = 0.5, H = 1 },
             },
             "thirds" => new()
             {
-                new Zone { Name = "左区", X = 0,       Y = 0, W = 1.0/3, H = 1 },
-                new Zone { Name = "中区", X = 1.0/3,   Y = 0, W = 1.0/3, H = 1 },
-                new Zone { Name = "右区", X = 2.0/3,   Y = 0, W = 1.0/3, H = 1 },
+                new Zone { Name = left,   X = 0,       Y = 0, W = 1.0/3, H = 1 },
+                new Zone { Name = center, X = 1.0/3,   Y = 0, W = 1.0/3, H = 1 },
+                new Zone { Name = right,  X = 2.0/3,   Y = 0, W = 1.0/3, H = 1 },
             },
             "twoThirds" => new()
             {
-                new Zone { Name = "游戏区", X = 0,     Y = 0, W = 2.0/3, H = 1 },
-                new Zone { Name = "副屏区", X = 2.0/3, Y = 0, W = 1.0/3, H = 1 },
+                new Zone { Name = game,      X = 0,     Y = 0, W = 2.0/3, H = 1 },
+                new Zone { Name = secondary, X = 2.0/3, Y = 0, W = 1.0/3, H = 1 },
             },
             "center169" => Centered(16.0 / 9),
             "left219"   => LeftAligned(21.0 / 9),
@@ -263,7 +277,7 @@ public sealed partial class LayoutEditorPage : Page
         SelectZone(null);
     }
 
-    // 16:9 居中:在 Ref 区内 letterbox 出一块 16:9,居中,命名"游戏区"。
+    // 16:9 centered: letterbox a 16:9 region inside the Ref area, centered, named "Game".
     private List<Zone> Centered(double targetAspect)
     {
         double refAspect = (double)_work.RefWidth / _work.RefHeight;
@@ -272,11 +286,12 @@ public sealed partial class LayoutEditorPage : Page
         else { h = 1; w = targetAspect / refAspect; }
         return new()
         {
-            new Zone { Name = "游戏区", X = (1 - w) / 2, Y = (1 - h) / 2, W = w, H = h }
+            new Zone { Name = Loc.T("LayoutEditorPage/ZonePresetGame"), X = (1 - w) / 2, Y = (1 - h) / 2, W = w, H = h }
         };
     }
 
-    // 21:9 居左:同样比例,但贴左、垂直居中,余下右侧作"副屏区"(若有横向余量)。
+    // 21:9 left: same ratio but flush left and vertically centered, leaving the right side as
+    // "Secondary" (if there is any horizontal slack).
     private List<Zone> LeftAligned(double targetAspect)
     {
         double refAspect = (double)_work.RefWidth / _work.RefHeight;
@@ -286,25 +301,29 @@ public sealed partial class LayoutEditorPage : Page
 
         var zones = new List<Zone>
         {
-            new Zone { Name = "游戏区", X = 0, Y = (1 - h) / 2, W = w, H = h }
+            new Zone { Name = Loc.T("LayoutEditorPage/ZonePresetGame"), X = 0, Y = (1 - h) / 2, W = w, H = h }
         };
         if (w < 0.999)
-            zones.Add(new Zone { Name = "副屏区", X = w, Y = 0, W = 1 - w, H = 1 });
+            zones.Add(new Zone { Name = Loc.T("LayoutEditorPage/ZonePresetSecondary"), X = w, Y = 0, W = 1 - w, H = 1 });
         return zones;
     }
 
     private void AddZone_Click(object sender, RoutedEventArgs e)
     {
-        var z = new Zone { Name = $"分区{_work.Zones.Count + 1}", X = 0.3, Y = 0.3, W = 0.4, H = 0.4 };
+        var z = new Zone
+        {
+            Name = Loc.T("LayoutEditorPage/ZoneNameNew", _work.Zones.Count + 1),
+            X = 0.3, Y = 0.3, W = 0.4, H = 0.4
+        };
         _work.Zones.Add(z);
         RebuildCanvas();
         SelectZone(z);
     }
 
-    // ---------- 画布重建 ----------
+    // ---------- Canvas rebuild ----------
     private void RebuildCanvas()
     {
-        // 保留 GuideCanvas,清掉其余 zone 视觉。
+        // Keep GuideCanvas, clear the rest of the zone visuals.
         var keep = GuideCanvas;
         ZoneCanvas.Children.Clear();
         GuideCanvas.Children.Clear();
@@ -319,7 +338,7 @@ public sealed partial class LayoutEditorPage : Page
             vis.AddTo(ZoneCanvas);
         }
 
-        // 参考线层置于最上,且后加保证 z 序在 zone 之上。
+        // Put the guide layer on top; adding it last also guarantees its z-order is above the zones.
         ZoneCanvas.Children.Add(keep);
         Canvas.SetZIndex(keep, 100);
 
@@ -327,13 +346,13 @@ public sealed partial class LayoutEditorPage : Page
         HighlightSelection();
     }
 
-    // 把每个 zone 的比例坐标渲染到画布像素。
+    // Render each zone's ratio coordinates to canvas pixels.
     private void LayoutVisuals()
     {
         foreach (var v in _visuals) v.Layout(_canvasW, _canvasH);
     }
 
-    // ---------- 选中 ----------
+    // ---------- Selection ----------
     internal void SelectZone(Zone? z)
     {
         _selected = z;
@@ -363,10 +382,15 @@ public sealed partial class LayoutEditorPage : Page
         ZoneYBox.Value = Math.Round(_selected.Y * _work.RefHeight);
         ZoneWBox.Value = Math.Round(_selected.W * _work.RefWidth);
         ZoneHBox.Value = Math.Round(_selected.H * _work.RefHeight);
-        ZoneRatioText.Text =
-            $"比例 X={_selected.X:0.###} Y={_selected.Y:0.###} W={_selected.W:0.###} H={_selected.H:0.###}";
+        ZoneRatioText.Text = FormatRatio(_selected);
         _suppressSync = false;
     }
+
+    // Property-panel ratio readout: the four 0..1 ratios at 3 decimals.
+    private static string FormatRatio(Zone z) => Loc.T(
+        "LayoutEditorPage/ZoneRatioFormat",
+        z.X.ToString("0.###"), z.Y.ToString("0.###"),
+        z.W.ToString("0.###"), z.H.ToString("0.###"));
 
     private void ZoneNameBox_TextChanged(object sender, TextChangedEventArgs e)
     {
@@ -375,7 +399,7 @@ public sealed partial class LayoutEditorPage : Page
         VisualFor(_selected)?.UpdateLabels(_canvasW, _canvasH);
     }
 
-    // 属性面板像素 → 比例回写。取整只发生在显示,这里反算回 0..1。
+    // Property-panel pixels -> ratio write-back. Rounding only happens for display; here we convert back to 0..1.
     private void ZonePx_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
     {
         if (_suppressSync || _selected is null) return;
@@ -386,7 +410,7 @@ public sealed partial class LayoutEditorPage : Page
         double w = Math.Max(1, px(ZoneWBox, _selected.W * _work.RefWidth));
         double h = Math.Max(1, px(ZoneHBox, _selected.H * _work.RefHeight));
 
-        // 钳制到 Ref 范围内。
+        // Clamp within the Ref range.
         x = Math.Clamp(x, 0, _work.RefWidth - 1);
         y = Math.Clamp(y, 0, _work.RefHeight - 1);
         w = Math.Min(w, _work.RefWidth - x);
@@ -399,8 +423,7 @@ public sealed partial class LayoutEditorPage : Page
 
         VisualFor(_selected)?.Layout(_canvasW, _canvasH);
         _suppressSync = true;
-        ZoneRatioText.Text =
-            $"比例 X={_selected.X:0.###} Y={_selected.Y:0.###} W={_selected.W:0.###} H={_selected.H:0.###}";
+        ZoneRatioText.Text = FormatRatio(_selected);
         _suppressSync = false;
     }
 
@@ -414,22 +437,23 @@ public sealed partial class LayoutEditorPage : Page
 
     private ZoneVisual? VisualFor(Zone z) => _visuals.FirstOrDefault(v => v.Zone == z);
 
-    // ---------- 拖拽/缩放结束后:写回比例 + 刷新面板 ----------
-    // 由 ZoneVisual 在交互结束/进行中调用。
+    // ---------- After a drag/resize: write the ratios back + refresh the panel ----------
+    // Called by ZoneVisual during and at the end of an interaction.
     internal void OnZoneGeometryChanged(Zone z)
     {
         if (z == _selected) SyncPropPanel();
     }
 
-    // ---------- 吸附:给定画布 px 候选值,返回吸附后的值;edges = 其它 zone 的同向边 ----------
-    // dimMax = 该轴画布尺寸(_canvasW 或 _canvasH)。
+    // ---------- Snapping: given a candidate value in canvas px, return the snapped value; edges = the
+    //            same-axis edges of the other zones ----------
+    // dimMax = the canvas size on that axis (_canvasW or _canvasH).
     internal double Snap(double value, double dimMax, IEnumerable<double> otherEdges, out double? guideLine)
     {
         guideLine = null;
         double best = value;
         double bestDist = SnapPx;
 
-        // 等分线候选:0, 1/3, 1/2, 2/3, 1
+        // Division-line candidates: 0, 1/3, 1/2, 2/3, 1
         double[] fractions = { 0, 1.0 / 3, 0.5, 2.0 / 3, 1.0 };
         foreach (double f in fractions)
         {
@@ -445,7 +469,7 @@ public sealed partial class LayoutEditorPage : Page
         return best;
     }
 
-    // 收集除 self 外所有 zone 在某轴上的边(画布 px)。horizontal=true 取 X 向边(左/右)。
+    // Collect every zone's edges on one axis except self (canvas px). horizontal=true takes the X-axis edges (left/right).
     internal List<double> OtherEdges(Zone self, bool horizontal)
     {
         var list = new List<double>();
@@ -471,7 +495,7 @@ public sealed partial class LayoutEditorPage : Page
     internal int RefWidthOf() => _work.RefWidth;
     internal int RefHeightOf() => _work.RefHeight;
 
-    // ---------- 对齐参考线 ----------
+    // ---------- Alignment guides ----------
     internal void ShowGuides(double? vx, double? hy)
     {
         GuideCanvas.Children.Clear();
@@ -491,7 +515,7 @@ public sealed partial class LayoutEditorPage : Page
         StrokeDashArray = new DoubleCollection { 4, 3 },
     };
 
-    // ---------- 键盘 ----------
+    // ---------- Keyboard ----------
     private void OnPageKeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (e.Key == Windows.System.VirtualKey.Delete && _selected is not null)
@@ -506,7 +530,7 @@ public sealed partial class LayoutEditorPage : Page
         }
     }
 
-    // ---------- 保存 / 取消 ----------
+    // ---------- Save / Cancel ----------
     private void Save_Click(object sender, RoutedEventArgs e)
     {
         var real = ConfigService.Instance.Config.Layouts.FirstOrDefault(l => l.Id == _layoutId);
@@ -515,7 +539,8 @@ public sealed partial class LayoutEditorPage : Page
             real.Name = _work.Name;
             real.RefWidth = _work.RefWidth;
             real.RefHeight = _work.RefHeight;
-            // 复用现有 Zone 对象身份不重要(LayoutId/ZoneId 是字符串),按工作副本整体替换。
+            // Reusing existing Zone object identity does not matter (LayoutId/ZoneId are strings), so
+            // replace the whole collection from the working copy.
             real.Zones = _work.Zones
                 .Select(z => new Zone { Id = z.Id, Name = z.Name, X = z.X, Y = z.Y, W = z.W, H = z.H })
                 .ToList();

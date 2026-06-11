@@ -4,12 +4,12 @@ using Xunit;
 namespace Reframe.Core.Tests;
 
 /// <summary>
-/// WindowScanner.IsBlacklistedProcess 纯逻辑测试:系统外壳进程名黑名单。
-/// cloaked / 尺寸过滤需 Win32,不在单测覆盖范围(那部分埋在 EnumerateCandidates 里)。
+/// WindowScanner.IsBlacklistedProcess pure-logic tests: the system-shell process-name blacklist.
+/// cloaked / size filtering needs Win32 and is out of unit-test scope (that part lives in EnumerateCandidates).
 /// </summary>
 public class WindowScannerTests
 {
-    [Theory(DisplayName = "黑名单进程(不含 .exe)→ 命中")]
+    [Theory(DisplayName = "Blacklisted process (without .exe) → match")]
     [InlineData("reframe")]
     [InlineData("textinputhost")]
     [InlineData("shellexperiencehost")]
@@ -23,14 +23,14 @@ public class WindowScannerTests
     public void Blacklisted_NoExe_Matches(string name)
         => Assert.True(WindowScanner.IsBlacklistedProcess(name));
 
-    [Theory(DisplayName = "黑名单进程带 .exe / 大小写混合 → 仍命中")]
+    [Theory(DisplayName = "Blacklisted process with .exe / mixed case → still matches")]
     [InlineData("Reframe.exe")]
     [InlineData("TextInputHost.EXE")]
     [InlineData("  SearchHost  ")]
     public void Blacklisted_WithExeOrCase_Matches(string name)
         => Assert.True(WindowScanner.IsBlacklistedProcess(name));
 
-    [Theory(DisplayName = "普通应用/游戏进程 → 不命中")]
+    [Theory(DisplayName = "Normal app/game process → no match")]
     [InlineData("starrail")]
     [InlineData("yuanshen")]
     [InlineData("notepad")]
@@ -39,18 +39,18 @@ public class WindowScannerTests
     public void NormalApp_NoMatch(string name)
         => Assert.False(WindowScanner.IsBlacklistedProcess(name));
 
-    [Theory(DisplayName = "空 / 空白 / null → 不命中(不抛)")]
+    [Theory(DisplayName = "Empty / whitespace / null → no match (no throw)")]
     [InlineData("")]
     [InlineData("   ")]
     [InlineData(null)]
     public void EmptyOrNull_NoMatch(string? name)
         => Assert.False(WindowScanner.IsBlacklistedProcess(name));
 
-    // ======================== 用户忽略名单 IsUserIgnored ========================
+    // ======================== User-ignore list IsUserIgnored ========================
 
     private static readonly string[] SampleIgnores = { "notepad", "chrome", "discord" };
 
-    [Theory(DisplayName = "用户忽略名单命中(进程名/带.exe/大小写/空白都容忍)")]
+    [Theory(DisplayName = "User-ignore list matches (process name / with .exe / case / whitespace all tolerated)")]
     [InlineData("notepad")]
     [InlineData("Notepad")]
     [InlineData("NOTEPAD.exe")]
@@ -59,57 +59,57 @@ public class WindowScannerTests
     public void UserIgnored_Matches(string name)
         => Assert.True(WindowScanner.IsUserIgnored(name, SampleIgnores));
 
-    [Theory(DisplayName = "用户忽略名单不命中(不在单里的进程)")]
+    [Theory(DisplayName = "User-ignore list doesn't match (process not in the list)")]
     [InlineData("starrail")]
     [InlineData("yuanshen")]
     [InlineData("ZenlessZoneZero.exe")]
     public void UserIgnored_NoMatch(string name)
         => Assert.False(WindowScanner.IsUserIgnored(name, SampleIgnores));
 
-    [Fact(DisplayName = "忽略名单本身带 .exe / 大小写 → 仍能命中(名单端也 StripExe)")]
+    [Fact(DisplayName = "List entry itself has .exe / case → still matches (the list side is StripExe'd too)")]
     public void UserIgnored_ListEntryWithExe_Matches()
         => Assert.True(WindowScanner.IsUserIgnored("yuanshen", new[] { "YuanShen.exe" }));
 
-    [Theory(DisplayName = "空名 / null名 / 空单 / null单 → 不命中(不抛)")]
+    [Theory(DisplayName = "Empty name / null name / empty list / null list → no match (no throw)")]
     [InlineData("", new[] { "notepad" })]
     [InlineData(null, new[] { "notepad" })]
     public void UserIgnored_EmptyName_NoMatch(string? name, string[] ignores)
         => Assert.False(WindowScanner.IsUserIgnored(name, ignores));
 
-    [Fact(DisplayName = "忽略名单为空 / null → 任何名都不命中")]
+    [Fact(DisplayName = "Empty / null ignore list → no name matches")]
     public void UserIgnored_EmptyOrNullList_NoMatch()
     {
         Assert.False(WindowScanner.IsUserIgnored("notepad", System.Array.Empty<string>()));
         Assert.False(WindowScanner.IsUserIgnored("notepad", null));
     }
 
-    [Fact(DisplayName = "忽略名单含空串/空白项 → 跳过,不误命中空名进程")]
+    [Fact(DisplayName = "Ignore list with empty/whitespace entries → skipped, doesn't falsely match an empty-named process")]
     public void UserIgnored_BlankListEntries_Skipped()
         => Assert.False(WindowScanner.IsUserIgnored("notepad", new[] { "", "   " }));
 
-    // ======================== 纯过滤判定 Classify ========================
+    // ======================== Pure filter verdict Classify ========================
 
-    [Fact(DisplayName = "Classify:正常进程 + 足够大 + 未隐藏 + 不在名单 → None")]
+    [Fact(DisplayName = "Classify: normal process + big enough + not hidden + not in list → None")]
     public void Classify_NormalCandidate_None()
         => Assert.Equal(FilterReason.None,
             WindowScanner.Classify("starrail", 1920, 1080, isCloaked: false, SampleIgnores));
 
-    [Fact(DisplayName = "Classify:系统外壳黑名单 → SystemShell")]
+    [Fact(DisplayName = "Classify: system-shell blacklist → SystemShell")]
     public void Classify_SystemShell()
         => Assert.Equal(FilterReason.SystemShell,
             WindowScanner.Classify("textinputhost", 1920, 1080, isCloaked: false, SampleIgnores));
 
-    [Fact(DisplayName = "Classify:用户忽略名单命中 → UserIgnored")]
+    [Fact(DisplayName = "Classify: user-ignore list matches → UserIgnored")]
     public void Classify_UserIgnored()
         => Assert.Equal(FilterReason.UserIgnored,
             WindowScanner.Classify("notepad", 1920, 1080, isCloaked: false, SampleIgnores));
 
-    [Fact(DisplayName = "Classify:cloaked → Cloaked")]
+    [Fact(DisplayName = "Classify: cloaked → Cloaked")]
     public void Classify_Cloaked()
         => Assert.Equal(FilterReason.Cloaked,
             WindowScanner.Classify("starrail", 1920, 1080, isCloaked: true, SampleIgnores));
 
-    [Theory(DisplayName = "Classify:任一边过小 → TooSmall")]
+    [Theory(DisplayName = "Classify: either side too small → TooSmall")]
     [InlineData(40, 1080)]
     [InlineData(1920, 40)]
     [InlineData(10, 10)]
@@ -117,16 +117,16 @@ public class WindowScannerTests
         => Assert.Equal(FilterReason.TooSmall,
             WindowScanner.Classify("starrail", w, h, isCloaked: false, SampleIgnores));
 
-    [Fact(DisplayName = "Classify:系统黑名单与用户忽略叠加 → 黑名单优先(SystemShell)")]
+    [Fact(DisplayName = "Classify: system blacklist and user-ignore overlap → blacklist wins (SystemShell)")]
     public void Classify_BlacklistOverlapsUserIgnore_BlacklistWins()
     {
-        // explorer 既在系统黑名单,又被显式加进用户忽略 —— 应判系统外壳(不可逆),不是 UserIgnored。
+        // explorer is both in the system blacklist and explicitly added to user-ignore — should be judged system-shell (irreversible), not UserIgnored.
         var ignores = new[] { "explorer", "notepad" };
         Assert.Equal(FilterReason.SystemShell,
             WindowScanner.Classify("explorer", 1920, 1080, isCloaked: false, ignores));
     }
 
-    [Fact(DisplayName = "Classify:用户忽略优先于 cloaked/过小(先判可逆原因,UI 显「已忽略」)")]
+    [Fact(DisplayName = "Classify: user-ignore beats cloaked/too-small (the reversible reason is judged first, UI shows \"Ignored\")")]
     public void Classify_UserIgnore_BeatsCloakedAndSmall()
     {
         Assert.Equal(FilterReason.UserIgnored,
@@ -135,7 +135,7 @@ public class WindowScannerTests
             WindowScanner.Classify("notepad", 10, 10, isCloaked: false, SampleIgnores));
     }
 
-    [Fact(DisplayName = "Classify:无用户名单(null)时退化为系统黑名单/尺寸/cloaked 三判")]
+    [Fact(DisplayName = "Classify: with no user list (null) falls back to the system-blacklist/size/cloaked trio")]
     public void Classify_NullIgnores_StillWorks()
     {
         Assert.Equal(FilterReason.None,

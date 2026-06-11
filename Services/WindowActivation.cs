@@ -5,15 +5,15 @@ using WinRT.Interop;
 namespace Reframe.Services;
 
 /// <summary>
-/// 唤起/前台相关的小工具(自包含 P/Invoke,不碰 NativeMethods.cs)。
-/// 给托盘唤起主窗口、全局热键取前台窗口用。
+/// Small activation / foreground helpers (self-contained P/Invoke; does not touch NativeMethods.cs).
+/// Used by the tray to raise the main window and by global hotkeys to get the foreground window.
 /// </summary>
 public static class WindowActivation
 {
-    /// <summary>当前前台窗口句柄(全局热键对它动手)。</summary>
+    /// <summary>The current foreground window handle (the one global hotkeys act on).</summary>
     public static IntPtr GetForeground() => GetForegroundWindow();
 
-    /// <summary>把自己的窗口提到前台并激活(托盘唤起;Activate 在后台触发时未必抢得到焦点,补一记 SetForegroundWindow)。</summary>
+    /// <summary>Raise and activate our own window (tray activation; Activate may not grab focus when fired from the background, so follow up with a SetForegroundWindow).</summary>
     public static void BringToFront(Window window)
     {
         IntPtr h = WindowNative.GetWindowHandle(window);

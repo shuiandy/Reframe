@@ -7,15 +7,15 @@ namespace Reframe;
 
 public partial class App : Application
 {
-    /// <summary>转发到 ConfigService 当前配置(热重载后引用会更换,他人只读、用完即取)。</summary>
+    /// <summary>Forwards to ConfigService's current config (the reference is swapped after a hot reload; others read it, fetch-on-use).</summary>
     public static AppConfig Config => ConfigService.Instance.Config;
 
     public static Watcher Engine { get; private set; } = null!;
 
-    /// <summary>主窗口(OnLaunched 后非空)。页面如需直接触发可用;材质等主路径走 ConfigService.Changed。</summary>
+    /// <summary>The main window (non-null after OnLaunched). Available if a page needs to trigger directly; the main path for backdrop etc. goes through ConfigService.Changed.</summary>
     public static MainWindow? Main { get; private set; }
 
-    /// <summary>全局热键服务(OnLaunched 后非空)。设置页据此查"应用后"的注册状态。</summary>
+    /// <summary>The global hotkey service (non-null after OnLaunched). The Settings page queries the post-"Apply" registration state from it.</summary>
     public static HotkeyService? Hotkeys { get; private set; }
 
     private MainWindow? _window;
@@ -24,12 +24,14 @@ public partial class App : Application
     private DispatcherQueue? _ui;
     private bool _exiting;
 
-    /// <summary>当前 App 实例(OnLaunched 后非空)。供 <see cref="RequestExit"/> 等静态入口转发到实例方法。</summary>
+    /// <summary>The current App instance (non-null after OnLaunched). Lets static entry points such as <see cref="RequestExit"/> forward to instance methods.</summary>
     private static App? _current;
 
     /// <summary>
-    /// 程序化触发正常退出(等价于托盘"退出"):还原全部接管窗口 + 清托盘 + Application.Exit。
-    /// 供"语言切换后立即重启"等场景调用。内部切回 UI 线程跑现有 <c>ExitApp</c> 链;幂等。
+    /// Programmatically trigger a normal exit (equivalent to the tray "Exit"): restore all managed
+    /// windows + clear the tray + Application.Exit. For scenarios like "restart immediately after a
+    /// language change". Internally marshals back to the UI thread to run the existing <c>ExitApp</c>
+    /// chain; idempotent.
     /// </summary>
     public static void RequestExit()
     {
@@ -43,21 +45,23 @@ public partial class App : Application
     {
         _current = this;
 
-        // 显示语言覆盖:必须在任何 XAML 资源解析之前设(InitializeComponent 会加载 App.xaml)。
-        // unpackaged 下 MRT Core 默认按"系统显示语言"解析资源;PrimaryLanguageOverride(WinAppSDK 的
-        // Microsoft.Windows.Globalization,非 UWP 那个——后者 unpackaged 会抛)可改写这一选择。
-        // Config.Language="system"(默认)→ 不设(跟随系统);"zh-CN"/"en-US" → 强制该语言。
-        // 仅启动早期设一次;运行时切换 x:Uid 不可靠,故 SettingsPage 改语言要求重启(见该页)。
+        // Display-language override: must be set before any XAML resource resolution (InitializeComponent
+        // loads App.xaml). Unpackaged, MRT Core resolves resources by the "system display language" by
+        // default; PrimaryLanguageOverride (the WinAppSDK Microsoft.Windows.Globalization one, not the UWP
+        // namesake — the latter throws when unpackaged) overrides that choice.
+        // Config.Language="system" (default) → leave unset (follow the system); "zh-CN"/"en-US" → force that language.
+        // Set once, early at startup; switching x:Uid at runtime is unreliable, so a language change in
+        // SettingsPage requires a restart (see that page).
         ApplyLanguageOverride();
 
         InitializeComponent();
 
-        // 崩溃日志:把未处理异常落到 %LOCALAPPDATA%\Reframe\crash.log。
-        // XAML/WinRT 层异常(0xc000027b stowed exception)否则只在事件查看器看到模块名,无堆栈。
+        // Crash log: write unhandled exceptions to %LOCALAPPDATA%\Reframe\crash.log.
+        // XAML/WinRT-layer exceptions (0xc000027b stowed exception) would otherwise show only a module name in Event Viewer, with no stack.
         UnhandledException += (_, e) =>
         {
             LogCrash("XAML UnhandledException", e.Exception);
-            // 不设 e.Handled = true:让进程照常崩,但我们已留下堆栈。
+            // Don't set e.Handled = true: let the process crash as usual, but we've captured the stack.
         };
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
             LogCrash("AppDomain UnhandledException", e.ExceptionObject as Exception);
@@ -66,10 +70,12 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// 据 Config.Language 设 <c>ApplicationLanguages.PrimaryLanguageOverride</c>。在 App 构造最早期调用
-    /// (任何 XAML 加载前)。用 <see cref="ConfigStore.TryLoad"/> 纯读盘——不触发 ConfigService 单例的
-    /// 文件监听/防抖等副作用,也不在缺文件时落默认(首启读不到就跟随系统,正确)。
-    /// "system" 或读不到 → 不覆盖(跟随系统显示语言)。任何异常都吞掉:本地化失败不该挡启动。
+    /// Set <c>ApplicationLanguages.PrimaryLanguageOverride</c> from Config.Language. Called at the very
+    /// start of App construction (before any XAML loads). Uses <see cref="ConfigStore.TryLoad"/>, a pure
+    /// disk read — it doesn't trigger the ConfigService singleton's file-watch/debounce side effects, and
+    /// doesn't write the default when the file is missing (on first run, an unreadable config follows the
+    /// system, which is correct). "system" or unreadable → no override (follow the system display
+    /// language). Any exception is swallowed: a localization failure must not block startup.
     /// </summary>
     private static void ApplyLanguageOverride()
     {
@@ -78,11 +84,11 @@ public partial class App : Application
             string? lang = ConfigStore.TryLoad()?.Language;
             if (string.IsNullOrWhiteSpace(lang) ||
                 string.Equals(lang, "system", StringComparison.OrdinalIgnoreCase))
-                return; // 跟随系统:不设覆盖
+                return; // follow the system: no override
 
             Microsoft.Windows.Globalization.ApplicationLanguages.PrimaryLanguageOverride = lang;
         }
-        catch { /* 本地化覆盖失败:回落系统语言,不阻断启动 */ }
+        catch { /* override failed: fall back to the system language, don't block startup */ }
     }
 
     private static void LogCrash(string source, Exception? ex)
@@ -96,40 +102,40 @@ public partial class App : Application
                           (ex?.ToString() ?? "(null exception)") + Environment.NewLine + Environment.NewLine;
             System.IO.File.AppendAllText(System.IO.Path.Combine(dir, "crash.log"), text);
         }
-        catch { /* 日志失败不能再抛 */ }
+        catch { /* a logging failure must not throw again */ }
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        // 单实例:最先做。已有实例会被唤起,本进程在此 Environment.Exit。
+        // Single instance: do this first. An existing instance is brought to the front, and this process Environment.Exits here.
         if (!SingleInstance.EnsureSingle()) return;
 
-        // 首次访问 Instance 即触发 Load。Engine 始终取最新配置引用。
+        // First access to Instance triggers Load. Engine always takes the latest config reference.
         _ = ConfigService.Instance;
         Engine = new Watcher(() => ConfigService.Instance.Config);
         Engine.Start();
 
-        // 拖拽吸附:按住修饰键拖窗口 → 分区覆盖层 → 松手入位。内部自管线程/钩子。
+        // Drag snap: drag a window while holding the modifier → zone overlay → drop into place. Manages its own thread/hooks internally.
         DragSnapService.Start(() => ConfigService.Instance.Config);
 
-        // 配置变化(UI 保存 / 外部改 config.json)→ 立刻重写 Unity 分辨率预设(游戏多半未运行,写了即生效)。
+        // Config change (UI save / external config.json edit) → immediately rewrite the Unity resolution preset (the game is usually not running, so the write takes effect).
         ConfigService.Instance.Changed += () => Engine?.OnConfigChanged();
 
         _window = new MainWindow();
         Main = _window;
         _ui = _window.DispatcherQueue;
 
-        // 点 X 不退出:取消关闭、隐藏到托盘,引擎继续跑。退出只走托盘菜单。
+        // Clicking X doesn't exit: cancel the close, hide to the tray, and the engine keeps running. Exit is only via the tray menu.
         _window.AppWindow.Closing += OnAppWindowClosing;
 
         _window.Activate();
 
-        // 全局热键统管(自带消息窗口线程):去框/还原、送窗口入分区。配置变化自动重注册。
+        // Central global hotkeys (with their own message-window thread): borderless/restore, send window to a zone. Auto re-register on config change.
         _hotkeys = new HotkeyService();
         Hotkeys = _hotkeys;
         _hotkeys.Start(_ui!, () => ConfigService.Instance.Config);
 
-        // 托盘常驻。回调都切回 UI 线程执行。
+        // Tray stays resident. All callbacks marshal back to the UI thread.
         _tray = new TrayIcon
         {
             OnOpen = () => _ui!.TryEnqueue(ShowMainWindow),
@@ -143,12 +149,12 @@ public partial class App : Application
     private void OnAppWindowClosing(Microsoft.UI.Windowing.AppWindow sender,
         Microsoft.UI.Windowing.AppWindowClosingEventArgs e)
     {
-        if (_exiting) return;       // 真正退出时放行
-        e.Cancel = true;            // 拦下关闭
-        sender.Hide();              // 隐藏到托盘
+        if (_exiting) return;       // let it through on a real exit
+        e.Cancel = true;            // intercept the close
+        sender.Hide();              // hide to the tray
     }
 
-    /// <summary>托盘左键 / 菜单"打开":显示并激活主窗口。</summary>
+    /// <summary>Tray left click / menu "Open": show and activate the main window.</summary>
     private void ShowMainWindow()
     {
         if (_window is null) return;
@@ -157,7 +163,7 @@ public partial class App : Application
         WindowActivation.BringToFront(_window);
     }
 
-    /// <summary>切换引擎启用(配置项),写盘。Watcher.SafeTick 据此即时生效。</summary>
+    /// <summary>Toggle the engine-enabled config flag and write to disk. Watcher.SafeTick applies it immediately.</summary>
     private void SetEngineEnabled(bool on)
     {
         var cfg = ConfigService.Instance.Config;
@@ -167,37 +173,41 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// 真正退出:还原全部接管窗口 + 移除托盘 + 退出。只由托盘"退出"触发。须在 UI 线程进入。
+    /// The real exit: restore all managed windows + remove the tray + exit. Triggered only by the tray
+    /// "Exit". Must be entered on the UI thread.
     ///
-    /// 退出链不再于 UI 线程同步跑(旧实现里 Engine.Stop 内含 Wait(2000)+RestoreAll,最坏数秒假死):
-    ///   1) 先隐藏主窗口 → 视觉立即"退出了"。
-    ///   2) 停服链(DragSnap/Hotkey/Engine/ConfigService)放到后台线程跑完(可能阻塞数秒,不卡 UI)。
-    ///   3) 完成后切回 UI 线程做托盘 Dispose(保持其线程亲和)+ Application.Exit(必须回 UI 线程)。
+    /// The exit chain no longer runs synchronously on the UI thread (the old implementation had
+    /// Engine.Stop's Wait(2000)+RestoreAll, freezing for up to several seconds in the worst case):
+    ///   1) Hide the main window first → visually "exited" immediately.
+    ///   2) Run the stop chain (DragSnap/Hotkey/Engine/ConfigService) on a background thread (it may
+    ///      block for several seconds without stalling the UI).
+    ///   3) When done, marshal back to the UI thread for tray Dispose (to keep its thread affinity) +
+    ///      Application.Exit (which must run on the UI thread).
     /// </summary>
     private void ExitApp()
     {
         if (_exiting) return;
         _exiting = true;
 
-        // 1) 立即隐藏窗口,给用户即时反馈(此刻仍在 UI 线程)。
+        // 1) Hide the window immediately for instant feedback (still on the UI thread here).
         try { _window?.AppWindow.Hide(); } catch { /* ignore */ }
 
-        // 2) 停服链放后台,避免 Engine.Stop 的 Wait+RestoreAll 阻塞 UI 线程。
+        // 2) Run the stop chain in the background, to avoid Engine.Stop's Wait+RestoreAll blocking the UI thread.
         var ui = _ui;
         System.Threading.Tasks.Task.Run(() =>
         {
-            try { ConfigService.Instance.Shutdown(); } catch { /* 停热重载监听/防抖,免退出期回调 */ }
-            try { DragSnapService.Stop(); } catch { /* 先停吸附钩子,再拆引擎 */ }
-            try { _hotkeys?.Stop(); } catch { /* 注销全部热键 */ }
-            try { Engine?.Stop(restoreWindows: true); } catch { /* 尽力还原 */ }
+            try { ConfigService.Instance.Shutdown(); } catch { /* stop the hot-reload watch/debounce, to avoid callbacks during exit */ }
+            try { DragSnapService.Stop(); } catch { /* stop the snap hooks first, then tear down the engine */ }
+            try { _hotkeys?.Stop(); } catch { /* unregister all hotkeys */ }
+            try { Engine?.Stop(restoreWindows: true); } catch { /* best-effort restore */ }
 
-            // 3) 托盘 Dispose 与 Application.Exit 都回 UI 线程(托盘的线程亲和、Exit 的线程要求)。
+            // 3) Both tray Dispose and Application.Exit go back to the UI thread (the tray's thread affinity, Exit's thread requirement).
             void Finish()
             {
-                try { _tray?.Dispose(); } catch { /* ignore */ } // UI 线程 Dispose,不自 join 托盘线程
+                try { _tray?.Dispose(); } catch { /* ignore */ } // Dispose on the UI thread; doesn't self-join the tray thread
                 try { Exit(); } catch { /* ignore */ }           // Application.Exit
             }
-            if (ui is null || !ui.TryEnqueue(Finish)) Finish(); // 取不到队列就地兜底(尽力退出)
+            if (ui is null || !ui.TryEnqueue(Finish)) Finish(); // if the queue is unavailable, fall back in place (best-effort exit)
         });
     }
 }

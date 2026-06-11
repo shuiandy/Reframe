@@ -4,25 +4,27 @@ using Reframe.Interop;
 
 namespace Reframe.Core;
 
-/// <summary>Apply 的结果三态:无改动 / 已改动 / 失败(受保护窗口动不了,调用方据此报"无权限")。</summary>
+/// <summary>The three outcomes of Apply: no change / changed / failed (a protected window we can't touch; the caller reports "no permission" accordingly).</summary>
 public enum ApplyOutcome { NoChange, Changed, Failed }
 
-/// <summary>对窗口动手:去边框、定位、快照与还原。仅在确有变化时操作。</summary>
+/// <summary>Acts on windows: strip border, position, snapshot and restore. Only operates when there's an actual change.</summary>
 public static class WindowOps
 {
     private sealed record Snapshot(long Style, long ExStyle, NativeMethods.RECT Rect);
 
-    /// <summary>改动前的原始状态,用于"禁用规则/退出引擎 → 还原"。</summary>
+    /// <summary>The original state before any change, used to "restore on rule-disable / engine-exit".</summary>
     private static readonly ConcurrentDictionary<IntPtr, Snapshot> _originals = new();
 
     /// <summary>
-    /// 应用目标状态。返回三态:<see cref="ApplyOutcome.Changed"/> 做了实际改动;
-    /// <see cref="ApplyOutcome.NoChange"/> 目标已满足、无需动手;
-    /// <see cref="ApplyOutcome.Failed"/> 改样式被拒(受保护/UWP 窗口),调用方不应登记接管、应报"无权限"。
+    /// Apply the target state. Returns three outcomes: <see cref="ApplyOutcome.Changed"/> made an actual change;
+    /// <see cref="ApplyOutcome.NoChange"/> the target was already met, nothing to do;
+    /// <see cref="ApplyOutcome.Failed"/> the style change was rejected (protected/UWP window) — the caller
+    /// should not register a takeover and should report "no permission".
     /// </summary>
     public static ApplyOutcome Apply(IntPtr hWnd, in PlacementResolver.Target t)
     {
-        // 本次调用是否由我们首次为该窗口建快照——失败时要回滚,避免给动不了的窗口留下脏快照。
+        // Whether this call created the window's snapshot for the first time — on failure we roll it back,
+        // so an untouchable window isn't left with a stale snapshot.
         bool snapshotCreatedHere = false;
         bool changed = false;
 
@@ -44,7 +46,8 @@ public static class WindowOps
         {
             NativeMethods.GetWindowRect(hWnd, out var cur);
             int cw = r.Right - r.Left, ch = r.Bottom - r.Top;
-            // ±2px 容差:DPI 取整/边框抖动下,差一两像素不算"不同",免得无谓重发 SetWindowPos 与游戏拉锯。
+            // ±2px tolerance: under DPI rounding / frame jitter, being off by a pixel or two doesn't count as
+            // "different", so we avoid a pointless SetWindowPos resend and a tug-of-war with the game.
             bool same = Near(cur.Left, r.Left) && Near(cur.Top, r.Top) &&
                         Near(cur.Right - cur.Left, cw) && Near(cur.Bottom - cur.Top, ch);
             if (!same)
@@ -53,7 +56,7 @@ public static class WindowOps
                 if (NativeMethods.IsIconic(hWnd))
                     NativeMethods.ShowWindow(hWnd, NativeMethods.SW_RESTORE);
 
-                // 纯移动/缩放,不动 Z 序(置顶由下面单独处理)。
+                // Pure move/resize, no Z-order change (topmost is handled separately below).
                 NativeMethods.SetWindowPos(hWnd, IntPtr.Zero, r.Left, r.Top, cw, ch,
                     NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE |
                     NativeMethods.SWP_NOOWNERZORDER | NativeMethods.SWP_FRAMECHANGED);
@@ -61,9 +64,10 @@ public static class WindowOps
             }
         }
 
-        // 置顶:仅在 profile 要求置顶、且窗口当前还不是 TOPMOST 时,才发一次改 Z 序的 SetWindowPos
-        // (此时去掉 SWP_NOZORDER,用 HWND_TOPMOST 作锚点)。非置顶 profile 不动 Z 序:既不强设
-        // NOTOPMOST,也不改普通窗口已有层级——清除置顶只在 Restore 按快照进行。
+        // Topmost: only when the profile requests topmost AND the window isn't already TOPMOST do we send one
+        // Z-order-changing SetWindowPos (dropping SWP_NOZORDER, using HWND_TOPMOST as the anchor). A
+        // non-topmost profile leaves Z-order alone: it neither forces NOTOPMOST nor changes a normal window's
+        // existing level — clearing topmost happens only in Restore, per the snapshot.
         if (t.Topmost)
         {
             snapshotCreatedHere |= EnsureSnapshot(hWnd);
@@ -79,7 +83,7 @@ public static class WindowOps
         return changed ? ApplyOutcome.Changed : ApplyOutcome.NoChange;
     }
 
-    /// <summary>位置/尺寸比较的像素容差(DPI 取整抖动)。</summary>
+    /// <summary>Pixel tolerance for position/size comparison (DPI rounding jitter).</summary>
     private const int PosTolerance = 2;
     private static bool Near(int a, int b) => Math.Abs(a - b) <= PosTolerance;
 
@@ -87,7 +91,7 @@ public static class WindowOps
         => ((long)NativeMethods.GetWindowLongPtr(hWnd, NativeMethods.GWL_EXSTYLE)
             & NativeMethods.WS_EX_TOPMOST) != 0;
 
-    /// <summary>还原单个窗口到接管前的样子。返回 false 表示该窗口无快照或还原样式被拒。</summary>
+    /// <summary>Restore a single window to how it looked before takeover. Returns false if the window has no snapshot or the style restore was rejected.</summary>
     public static bool Restore(IntPtr hWnd)
     {
         if (!_originals.TryRemove(hWnd, out var s)) return false;
@@ -95,14 +99,16 @@ public static class WindowOps
         bool ok = SetWindowLongPtrChecked(hWnd, NativeMethods.GWL_STYLE, (IntPtr)s.Style);
         ok &= SetWindowLongPtrChecked(hWnd, NativeMethods.GWL_EXSTYLE, (IntPtr)s.ExStyle);
 
-        // 还原位置(不动 Z 序);WS_EX_TOPMOST 走不了 SetWindowLongPtr,下面用 Z 序锚点单独还原。
+        // Restore position (no Z-order change); WS_EX_TOPMOST can't go through SetWindowLongPtr, so it's
+        // restored separately below via a Z-order anchor.
         NativeMethods.SetWindowPos(hWnd, IntPtr.Zero,
             s.Rect.Left, s.Rect.Top, s.Rect.Right - s.Rect.Left, s.Rect.Bottom - s.Rect.Top,
             NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE |
             NativeMethods.SWP_NOOWNERZORDER | NativeMethods.SWP_FRAMECHANGED);
 
-        // 置顶状态按快照还原:原本置顶 → 仍 TOPMOST,原本不置顶 → 清成 NOTOPMOST
-        // (这正是"只对此前被我们置顶过的窗口在还原时清除"——若快照里就没置顶,这步把我们加的置顶撤掉)。
+        // Restore the topmost state per the snapshot: originally topmost → still TOPMOST, originally not →
+        // clear to NOTOPMOST (this is exactly "only clear topmost on windows we previously made topmost" —
+        // if the snapshot wasn't topmost, this step undoes the topmost we added).
         bool wasTopmost = (s.ExStyle & NativeMethods.WS_EX_TOPMOST) != 0;
         IntPtr anchor = wasTopmost ? NativeMethods.HWND_TOPMOST : NativeMethods.HWND_NOTOPMOST;
         NativeMethods.SetWindowPos(hWnd, anchor, 0, 0, 0, 0,
@@ -111,7 +117,7 @@ public static class WindowOps
         return ok;
     }
 
-    /// <summary>还原全部已接管窗口(引擎停止/应用退出)。</summary>
+    /// <summary>Restore every managed window (engine stop / app exit).</summary>
     public static void RestoreAll()
     {
         foreach (var hWnd in _originals.Keys)
@@ -121,10 +127,11 @@ public static class WindowOps
     public static bool IsTracked(IntPtr hWnd) => _originals.ContainsKey(hWnd);
 
     /// <summary>
-    /// 丢弃句柄已失效(<paramref name="isAlive"/> 判否)的原始快照。句柄会被系统复用——
-    /// 旧窗口销毁后其快照若不清,新窗口拿到同一 HWND 时 <see cref="EnsureSnapshot"/> 会跳过建快照
-    /// (GetOrAdd 命中旧值),导致还原写回上一个窗口的样式/位置(脏快照污染)。
-    /// 由 <see cref="Watcher"/> 的死窗口清理统一驱动(传 NativeMethods.IsWindow)。
+    /// Drop original snapshots whose handle is dead (<paramref name="isAlive"/> returns false). Handles get
+    /// reused by the system — if a destroyed window's snapshot isn't cleared, a new window grabbing the same
+    /// HWND would have <see cref="EnsureSnapshot"/> skip creating a snapshot (GetOrAdd hits the stale value),
+    /// causing restore to write back the previous window's style/position (stale-snapshot pollution).
+    /// Driven centrally by <see cref="Watcher"/>'s dead-window cleanup (passing NativeMethods.IsWindow).
     /// </summary>
     public static void ForgetDead(Func<IntPtr, bool> isAlive)
     {
@@ -133,7 +140,7 @@ public static class WindowOps
                 _originals.TryRemove(h, out _);
     }
 
-    /// <summary>建快照(若尚无)。返回 true 表示本次调用新建了快照(供失败回滚判断)。</summary>
+    /// <summary>Create the snapshot (if absent). Returns true if this call created a new snapshot (for failure-rollback decisions).</summary>
     private static bool EnsureSnapshot(IntPtr hWnd)
     {
         bool created = false;
@@ -171,8 +178,9 @@ public static class WindowOps
     }
 
     /// <summary>
-    /// SetWindowLongPtr 包一层"返回 0 不必然成功"的标准判定:调用前清线程 last-error,
-    /// 返回非 0 即成功;返回 0 时再看 last-error——0 表示原值本就是 0(成功),非 0 表示被拒(失败)。
+    /// Wraps SetWindowLongPtr with the standard "a return of 0 isn't necessarily success" check: clear the
+    /// thread's last-error before the call; a non-zero return is success; on a 0 return, inspect last-error —
+    /// 0 means the previous value really was 0 (success), non-zero means rejected (failure).
     /// </summary>
     private static bool SetWindowLongPtrChecked(IntPtr hWnd, int nIndex, IntPtr value)
     {

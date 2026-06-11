@@ -9,42 +9,54 @@ using Windows.Storage.Streams;
 namespace Reframe.Services;
 
 /// <summary>
-/// 进程图标缓存服务(静态、跨页面共享)。取图标优先级:
-///   1. Profile.ExePath(调用方经 <see cref="ByProfile"/> 传入)→ 直接从该 exe 提取。
-///      用于反作弊保护、读不到 MainModule 的游戏(绝区零/原神),手动指定即可。
-///   2. 内存缓存:进程名(小写,不含 .exe) → ImageSource(命中则零成本返回;失败也缓存为 null,不反复重试)。
-///   3. SteamGridDB 磁盘缓存:%LOCALAPPDATA%\Reframe\icons\&lt;进程名&gt;.png(联网取过就有,直接解码,不再联网)。
-///   4. 路径映射持久化:%LOCALAPPDATA%\Reframe\iconpaths.json(进程名 → exe 完整路径)。
-///      首次看到该进程在运行时学到路径并存盘;以后即使游戏没在跑,也能从存好的路径直接提取图标。
-///   5. 运行中进程:MainModule.FileName,失败再用 QueryFullProcessImageNameW 兜底(受保护进程通常仍可读)。
-///   6. SteamGridDB 在线(最后兜底,经 <see cref="PrewarmFromSteamGridDbAsync"/>,本地全失败且配了 key 才走)。
-/// 提取实现:exe 路径 → ExtractIconEx → HICON → WriteableBitmap;png 文件 → BitmapImage。纯 P/Invoke + WinRT。
-/// 全程 try/catch,取不到一律返回 null,UI 显示默认字形。
+/// Process-icon cache service (static, shared across pages). Icon lookup priority:
+///   1. Profile.ExePath (passed in by the caller via <see cref="ByProfile"/>) → extract straight from
+///      that exe. For anti-cheat-protected games whose MainModule can't be read (Zenless Zone Zero /
+///      Genshin): a manual path is enough.
+///   2. In-memory cache: process name (lowercase, no .exe) → ImageSource (a hit returns at zero cost;
+///      failures are cached as null too, to avoid retrying).
+///   3. SteamGridDB disk cache: %LOCALAPPDATA%\Reframe\icons\&lt;process&gt;.png (present once fetched
+///      online; decode directly, no more network).
+///   4. Persisted path map: %LOCALAPPDATA%\Reframe\iconpaths.json (process name → full exe path).
+///      The path is learned and saved the first time the process is seen running; afterward the icon
+///      can be extracted straight from the saved path even when the game isn't running.
+///   5. Running process: MainModule.FileName, falling back to QueryFullProcessImageNameW (usually
+///      still readable for protected processes).
+///   6. SteamGridDB online (last resort, via <see cref="PrewarmFromSteamGridDbAsync"/>; taken only
+///      when everything local failed and a key is configured).
+/// Extraction: exe path → ExtractIconEx → HICON → WriteableBitmap; png file → BitmapImage. Pure
+/// P/Invoke + WinRT. Everything is wrapped in try/catch; on any miss it returns null and the UI shows
+/// the default glyph.
 ///
-/// 线程:WriteableBitmap/BitmapImage 必须在 UI 线程创建。同步 API 假定调用方在 UI 线程。
-///   - <see cref="TryGetCached"/>:纯内存命中,UI 线程同步直取(零 IO),给"高频刷新先快取"用。
-///   - <see cref="PrewarmByProcessName"/>:后台做慢的路径解析(不建位图);随后 UI 线程 ByProcessName 命中即瞬时。
-/// 内存缓存与路径表用同一把锁保护,可安全跨线程读写持久化部分。
+/// Threading: WriteableBitmap/BitmapImage must be created on the UI thread. The synchronous APIs
+/// assume the caller is on the UI thread.
+///   - <see cref="TryGetCached"/>: a pure in-memory hit, fetched synchronously on the UI thread (zero
+///     IO), for "fetch fast first on a high-frequency refresh".
+///   - <see cref="PrewarmByProcessName"/>: does the slow path resolution in the background (no bitmap);
+///     a subsequent UI-thread ByProcessName then hits instantly.
+/// The in-memory cache and the path map are guarded by the same lock, so the persisted part can be
+/// read/written safely across threads.
 /// </summary>
 public static class IconCache
 {
     private static readonly object _gate = new();
 
-    // 进程名(小写,不含 .exe)→ 已解析的图标(可能为 null:表示尝试过但失败,不再重试)。
+    // Process name (lowercase, no .exe) → resolved icon (may be null: tried but failed, don't retry).
     private static readonly Dictionary<string, ImageSource?> _mem = new(StringComparer.OrdinalIgnoreCase);
 
-    // 进程名(小写,不含 .exe)→ exe 完整路径。持久化到 iconpaths.json。
+    // Process name (lowercase, no .exe) → full exe path. Persisted to iconpaths.json.
     private static Dictionary<string, string>? _paths;
 
     private static string PathsFile =>
         Path.Combine(ConfigStore.Dir, "iconpaths.json");
 
-    // ---- 对外入口 ----
+    // ---- Public entry points ----
 
     /// <summary>
-    /// 同步快路径:仅查内存缓存(零 IO)。命中(含命中为 null 的"已知失败")返回 true。
-    /// 给仪表盘这类高频刷新先取,命中就直接设 Icon、不走异步;未命中才安排后台预热+回填。
-    /// 必须在 UI 线程调用(命中的 ImageSource 本就在 UI 线程创建)。
+    /// Synchronous fast path: in-memory cache only (zero IO). A hit (including a "known failure" cached
+    /// as null) returns true. For high-frequency refreshes like the dashboard to fetch first: set the
+    /// Icon directly on a hit without going async; only on a miss schedule background prewarm + backfill.
+    /// Must be called on the UI thread (a hit's ImageSource was itself created on the UI thread).
     /// </summary>
     public static bool TryGetCached(string? name, out ImageSource? icon)
     {
@@ -58,14 +70,15 @@ public static class IconCache
     }
 
     /// <summary>
-    /// 按 Profile 取图标:优先用 Profile.ExePath(手动指定的图标来源,绕过反作弊读不到 MainModule 的问题),
-    /// 否则回落到按进程名(MatchValue / MatchKind=Process)的常规链路。取不到返回 null。须在 UI 线程调用。
+    /// Get an icon for a profile: prefer Profile.ExePath (a manually specified icon source, which
+    /// bypasses the anti-cheat "can't read MainModule" problem), otherwise fall back to the normal
+    /// by-process-name path (MatchValue / MatchKind=Process). Returns null on a miss. Call on the UI thread.
     /// </summary>
     public static ImageSource? ByProfile(Core.Profile? profile)
     {
         if (profile is null) return null;
 
-        // 用进程名作缓存 key(同一进程不同来源仍共享一条缓存)。无进程名时用 ExePath 文件名兜底。
+        // Use the process name as the cache key (different sources for the same process still share one entry). Fall back to the ExePath file name when there's no process name.
         string? procName = profile.MatchKind == Core.MatchKind.Process && !string.IsNullOrWhiteSpace(profile.MatchValue)
             ? profile.MatchValue
             : null;
@@ -91,7 +104,7 @@ public static class IconCache
         return procName is null ? null : ByProcessName(procName);
     }
 
-    /// <summary>按进程名取图标。name 可带或不带 .exe,大小写不敏感。取不到返回 null。</summary>
+    /// <summary>Get an icon by process name. <paramref name="name"/> may or may not include .exe, case-insensitive. Returns null on a miss.</summary>
     public static ImageSource? ByProcessName(string? name)
     {
         if (string.IsNullOrWhiteSpace(name)) return null;
@@ -102,10 +115,10 @@ public static class IconCache
             if (_mem.TryGetValue(key, out var cached)) return cached;
         }
 
-        // SteamGridDB 磁盘缓存优先于进程提取:联网取过的游戏图标质量更高,且无需进程在跑。
+        // The SteamGridDB disk cache takes priority over process extraction: online game icons are higher quality and don't require the process to be running.
         ImageSource? icon = LoadPngFile(SteamGridDb.CachedIconFile(key));
 
-        // 否则解析 exe 路径:优先用当前运行实例(顺便学习并存盘),否则回落到持久化路径。
+        // Otherwise resolve the exe path: prefer a currently running instance (learning and saving the path along the way), otherwise fall back to the persisted path.
         if (icon is null)
         {
             string? path = ResolvePath(key);
@@ -114,15 +127,16 @@ public static class IconCache
 
         lock (_gate)
         {
-            _mem[key] = icon; // 失败也缓存,避免每次刷新都重试提取
+            _mem[key] = icon; // cache failures too, to avoid re-extracting on every refresh
         }
         return icon;
     }
 
     /// <summary>
-    /// 预热:只在后台做"可能慢"的路径解析(Process 枚举 / MainModule 读取),不创建位图。
-    /// 调用方应在后台线程调用此方法,再在 UI 线程调 ByProcessName 完成快速的位图构建。
-    /// 已在内存缓存中(连失败也算)则直接跳过,零成本。
+    /// Prewarm: do only the "potentially slow" path resolution (Process enumeration / MainModule read)
+    /// in the background, without creating a bitmap. The caller should invoke this on a background
+    /// thread, then call ByProcessName on the UI thread to do the fast bitmap construction. If it's
+    /// already in the in-memory cache (failures count too), skip at zero cost.
     /// </summary>
     public static void PrewarmByProcessName(string? name)
     {
@@ -130,21 +144,23 @@ public static class IconCache
         string key = Normalize(name);
         lock (_gate)
         {
-            if (_mem.ContainsKey(key)) return; // 结果已定,无需解析
+            if (_mem.ContainsKey(key)) return; // result is already decided, no resolution needed
         }
-        ResolvePath(key); // 副作用:学到路径就存盘,供随后 UI 线程的 ByProcessName 命中
+        ResolvePath(key); // side effect: if a path is learned it's saved, so a subsequent UI-thread ByProcessName hits
     }
 
     /// <summary>
-    /// 最后兜底:本地全失败且配了 key 才联网走 SteamGridDB。成功则下载图标到磁盘缓存,
-    /// 并清掉该进程名"已知失败"的内存条目(使随后的 ByProcessName 能从磁盘缓存命中并回填)。
-    /// 返回 true 表示拿到了新图标(调用方应在 UI 线程重取并刷新)。须在后台线程 await(含网络 IO)。
+    /// Last resort: go online via SteamGridDB only when everything local failed and a key is
+    /// configured. On success it downloads the icon to the disk cache and clears this process name's
+    /// "known failure" in-memory entry (so a subsequent ByProcessName can hit the disk cache and
+    /// backfill). Returns true if a new icon was obtained (the caller should re-fetch on the UI thread
+    /// and refresh). Must be awaited on a background thread (includes network IO).
     /// </summary>
     public static async Task<bool> PrewarmFromSteamGridDbAsync(string? apiKey, Core.Profile? profile)
     {
         if (string.IsNullOrWhiteSpace(apiKey) || profile is null) return false;
 
-        // 已配 ExePath 的不必联网(本地 exe 就能出图)。
+        // No need to go online if ExePath is set (a local exe can produce the icon).
         if (!string.IsNullOrWhiteSpace(profile.ExePath) && File.Exists(profile.ExePath)) return false;
 
         string? procName = profile.MatchKind == Core.MatchKind.Process && !string.IsNullOrWhiteSpace(profile.MatchValue)
@@ -153,17 +169,17 @@ public static class IconCache
         if (procName is null) return false;
         string key = Normalize(procName);
 
-        // 已有非空内存图标 → 本地已能出图,不联网。
+        // A non-null in-memory icon already exists → local can produce it, don't go online.
         lock (_gate)
         {
             if (_mem.TryGetValue(key, out var cached) && cached is not null) return false;
         }
 
-        // 已有磁盘缓存 → 不重复联网,但需要清掉"已知失败"的内存条目让下一跳从磁盘命中。
+        // A disk cache already exists → don't go online again, but clear the "known failure" in-memory entry so the next hop hits the disk.
         string cachedFile = SteamGridDb.CachedIconFile(key);
         if (!File.Exists(cachedFile))
         {
-            // 搜索词:Profile.Name 优先(中文名 SteamGridDB 多半识别),失败再用进程名驼峰拆词。
+            // Search terms: prefer Profile.Name (SteamGridDB usually recognizes a non-English name), then fall back to camel-case-splitting the process name.
             var terms = new List<string>();
             if (!string.IsNullOrWhiteSpace(profile.Name)) terms.Add(profile.Name);
             terms.Add(SplitCamelCase(key)); // ZenlessZoneZero → "Zenless Zone Zero"
@@ -172,7 +188,7 @@ public static class IconCache
             if (file is null) return false;
         }
 
-        // 清掉"已知失败"占位,使 ByProcessName 重新尝试(会命中磁盘缓存)。
+        // Clear the "known failure" placeholder so ByProcessName tries again (and will hit the disk cache).
         lock (_gate)
         {
             if (_mem.TryGetValue(key, out var cached) && cached is null)
@@ -181,7 +197,7 @@ public static class IconCache
         return true;
     }
 
-    /// <summary>驼峰/连写进程名 → 以空格分隔的可读搜索词:ZenlessZoneZero → "Zenless Zone Zero"。</summary>
+    /// <summary>Camel-case / run-together process name → a space-separated readable search term: ZenlessZoneZero → "Zenless Zone Zero".</summary>
     internal static string SplitCamelCase(string s)
     {
         if (string.IsNullOrEmpty(s)) return s;
@@ -196,27 +212,28 @@ public static class IconCache
         return sb.ToString();
     }
 
-    /// <summary>按进程 ID 取图标:先拿进程名走 ByProcessName(以复用缓存+学习路径)。取不到返回 null。</summary>
+    /// <summary>Get an icon by process ID: first get the process name and go through ByProcessName (to reuse the cache + learn the path). Returns null on a miss.</summary>
     public static ImageSource? ByProcessId(uint pid)
     {
         string? name = null;
         try
         {
             using var p = Process.GetProcessById((int)pid);
-            name = p.ProcessName; // 不含 .exe
+            name = p.ProcessName; // without .exe
         }
         catch { return null; }
 
         if (string.IsNullOrWhiteSpace(name)) return null;
 
-        // 顺便用这个 pid 学习路径(GetProcessById 比 GetProcessesByName 精确)。
+        // Learn the path from this pid along the way (GetProcessById is more precise than GetProcessesByName).
         TryLearnPathFromProcessId(Normalize(name), pid);
         return ByProcessName(name);
     }
 
     /// <summary>
-    /// 按进程 ID 取其 exe 完整路径(复用 MainModule → QueryFullProcessImageNameW 兜底链路)。
-    /// 给"运行中窗口"列表展示次行路径用。取不到(进程已退/无权限且兜底失败)返回 null。
+    /// Get the full exe path for a process ID (reusing the MainModule → QueryFullProcessImageNameW
+    /// fallback chain). For the secondary path line shown in the "running windows" list. Returns null
+    /// on a miss (process exited / no permission and the fallback failed too).
     /// </summary>
     public static string? TryResolveExePath(uint pid)
     {
@@ -228,7 +245,7 @@ public static class IconCache
         catch { return null; }
     }
 
-    // ---- 路径解析与学习 ----
+    // ---- Path resolution and learning ----
 
     private static string Normalize(string name)
     {
@@ -238,12 +255,12 @@ public static class IconCache
         return name.ToLowerInvariant();
     }
 
-    /// <summary>取 exe 路径:正在运行→读 MainModule 并存盘;否则查持久化表。</summary>
+    /// <summary>Get the exe path: if running → read MainModule and save it; otherwise consult the persisted map.</summary>
     private static string? ResolvePath(string key)
     {
-        // 1. 在跑的实例:GetProcessesByName 不含 .exe。任一实例可读到路径即学习。
-        //    先试 MainModule(快、含完整信息);反作弊/受保护进程会抛"拒绝访问",
-        //    再用 QueryFullProcessImageNameW 兜底(PROCESS_QUERY_LIMITED_INFORMATION 对受保护进程通常仍可用)。
+        // 1. Running instances: GetProcessesByName takes the name without .exe. Learn from any instance whose path is readable.
+        //    Try MainModule first (fast, full info); anti-cheat / protected processes throw "access denied",
+        //    so fall back to QueryFullProcessImageNameW (PROCESS_QUERY_LIMITED_INFORMATION usually still works for protected processes).
         try
         {
             foreach (var p in Process.GetProcessesByName(key))
@@ -257,13 +274,13 @@ public static class IconCache
                         return file;
                     }
                 }
-                catch { /* 这个实例读不到,试下一个 */ }
+                catch { /* this instance isn't readable, try the next */ }
                 finally { p.Dispose(); }
             }
         }
-        catch { /* 枚举失败:回落持久化表 */ }
+        catch { /* enumeration failed: fall back to the persisted map */ }
 
-        // 2. 持久化表:游戏没在跑也能命中。
+        // 2. Persisted map: hits even when the game isn't running.
         var map = LoadPaths();
         lock (_gate)
         {
@@ -275,7 +292,7 @@ public static class IconCache
 
     private static void TryLearnPathFromProcessId(string key, uint pid)
     {
-        // 已知路径就别重复读 MainModule(那是相对昂贵的调用)。
+        // If the path is already known, don't re-read MainModule (a relatively expensive call).
         var map = LoadPaths();
         lock (_gate)
         {
@@ -288,22 +305,23 @@ public static class IconCache
             if (!string.IsNullOrEmpty(file) && File.Exists(file))
                 RememberPath(key, file);
         }
-        catch { /* 读不到就算了 */ }
+        catch { /* not readable, never mind */ }
     }
 
     /// <summary>
-    /// 取进程的 exe 路径:先 MainModule.FileName(快),失败再 QueryFullProcessImageNameW 兜底
-    /// (用 PROCESS_QUERY_LIMITED_INFORMATION 打开句柄,对反作弊/受保护进程通常仍可读出路径)。
-    /// 全程吞异常,读不到返回 null。
+    /// Get a process's exe path: MainModule.FileName first (fast), falling back to
+    /// QueryFullProcessImageNameW (open the handle with PROCESS_QUERY_LIMITED_INFORMATION, which can
+    /// usually still read the path for anti-cheat / protected processes). Swallows all exceptions;
+    /// returns null when unreadable.
     /// </summary>
     private static string? TryGetProcessImagePath(Process p)
     {
         try
         {
-            string? file = p.MainModule?.FileName; // 受保护进程会抛"拒绝访问"
+            string? file = p.MainModule?.FileName; // protected processes throw "access denied"
             if (!string.IsNullOrEmpty(file)) return file;
         }
-        catch { /* 落到 QueryFullProcessImageName 兜底 */ }
+        catch { /* fall through to the QueryFullProcessImageName fallback */ }
 
         IntPtr h = IntPtr.Zero;
         try
@@ -315,7 +333,7 @@ public static class IconCache
             if (QueryFullProcessImageNameW(h, 0, sb, ref cap) && cap > 0)
                 return sb.ToString(0, cap);
         }
-        catch { /* 兜底也失败 */ }
+        catch { /* the fallback failed too */ }
         finally { if (h != IntPtr.Zero) CloseHandle(h); }
         return null;
     }
@@ -333,13 +351,15 @@ public static class IconCache
         if (changed) SavePaths();
     }
 
-    // ---- 持久化(简单 JsonSerializer,无源生成) ----
+    // ---- Persistence (plain JsonSerializer, no source-gen) ----
 
     /// <summary>
-    /// 返回 _paths 本体引用(非快照,为省一次拷贝)。
-    /// 约定:调用方对返回字典的任何读/写都必须在 <see cref="_gate"/> 锁内进行——本类现有三处调用
-    /// (ResolvePath / TryLearnPathFromProcessId / RememberPath)均已在锁内访问。新增调用务必遵守,
-    /// 否则与 RememberPath 的并发写、SavePaths 的快照拷贝竞态。需要锁外持有时请自行拷贝。
+    /// Returns the _paths reference itself (not a snapshot, to save a copy).
+    /// Contract: any read/write of the returned dictionary by the caller MUST happen under the
+    /// <see cref="_gate"/> lock — this class's three existing callers (ResolvePath /
+    /// TryLearnPathFromProcessId / RememberPath) all access it under the lock. New callers must follow
+    /// suit, otherwise they race RememberPath's concurrent write and SavePaths's snapshot copy. If you
+    /// need to hold it outside the lock, copy it yourself.
     /// </summary>
     private static Dictionary<string, string> LoadPaths()
     {
@@ -357,7 +377,7 @@ public static class IconCache
                 loaded = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
             }
         }
-        catch { /* 损坏就当空表 */ }
+        catch { /* if corrupt, treat as an empty map */ }
 
         lock (_gate)
         {
@@ -383,25 +403,33 @@ public static class IconCache
                 new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(PathsFile, json);
         }
-        catch { /* 写盘失败不致命:本次会话内存缓存仍有效 */ }
+        catch { /* a failed disk write is not fatal: this session's in-memory cache is still valid */ }
     }
 
-    // ---- 图标提取:exe 路径 → ExtractIconEx → HICON → WriteableBitmap ----
-    // 全程 try/catch:任何失败一律回落 null → UI 显示默认字形。
+    // ---- Icon extraction: exe path → ExtractIconEx → HICON → WriteableBitmap ----
+    // Everything is wrapped in try/catch: any failure falls back to null → the UI shows the default glyph.
 
     /// <summary>
-    /// png 文件 → BitmapImage(SteamGridDB 磁盘缓存用)。缺文件/读失败一律 null。须在 UI 线程调用。
-    /// 同步把整文件字节读进内存流再 SetSource,切断"缓存对象 vs 磁盘文件"的时序耦合:
-    /// 旧实现 UriSource 是惰性解码(BitmapImage 之后才异步去读磁盘),期间文件被覆盖/删除就可能解码失败
-    /// 或拿到半截图。这里先 ReadAllBytes(此刻文件完整存在),后续位图再不依赖磁盘。
+    /// png file → BitmapImage (for the SteamGridDB disk cache). Missing file / read failure → null in
+    /// all cases. Call on the UI thread. Reads the whole file's bytes into a memory stream
+    /// synchronously and then SetSource, severing the timing coupling between "the cached object and
+    /// the disk file": the old UriSource implementation decoded lazily (BitmapImage read the disk
+    /// asynchronously later), so if the file was overwritten/deleted in the meantime, decoding could
+    /// fail or yield a partial image. Here we ReadAllBytes first (the file is complete at this moment),
+    /// after which the bitmap no longer depends on the disk.
     ///
-    /// 死锁陷阱(已修):绝不能在 UI 线程上对 <see cref="BitmapImage.SetSourceAsync"/> 做
-    /// <c>.AsTask().GetAwaiter().GetResult()</c> 同步等待——SetSourceAsync 的解码完成续体要回投到
-    /// 同一个 UI DispatcherQueue,而 UI 线程此刻正阻塞在 Monitor.Wait 等这个 Task,永不返回去泵队列 →
-    /// 自死锁(本页左栏一加载就对所有运行中窗口同步取图标,只要磁盘缓存里有对应 png 就必触发,整 UI 冻死)。
-    /// 改用 <b>同步</b> 的 <see cref="BitmapSource.SetSource"/>:它就地把流喂给位图、无 await、无续体回投,
-    /// 实际像素解码由框架在随后的布局/渲染阶段驱动,不阻塞也不依赖本线程泵消息。MemoryStream 经
-    /// AsRandomAccessStream 包装(纯同步,不触碰磁盘),字节已全在内存,与磁盘文件再无耦合。
+    /// Deadlock trap (fixed): never synchronously wait on <see cref="BitmapImage.SetSourceAsync"/> via
+    /// <c>.AsTask().GetAwaiter().GetResult()</c> on the UI thread — SetSourceAsync's decode-complete
+    /// continuation must be posted back to the same UI DispatcherQueue, but the UI thread is blocked in
+    /// Monitor.Wait on that very Task and never returns to pump the queue → self-deadlock (this page's
+    /// left column fetches icons synchronously for all running windows as soon as it loads, which is
+    /// guaranteed to fire whenever the disk cache has a matching png, freezing the whole UI). Use the
+    /// <b>synchronous</b> <see cref="BitmapSource.SetSource"/> instead: it feeds the stream to the
+    /// bitmap in place, with no await and no continuation post-back; the actual pixel decode is driven
+    /// by the framework during the subsequent layout/render phase, blocking nothing and not depending
+    /// on this thread pumping messages. The MemoryStream is wrapped via AsRandomAccessStream (purely
+    /// synchronous, touches no disk); the bytes are already entirely in memory, so it's no longer
+    /// coupled to the disk file.
     /// </summary>
     private static ImageSource? LoadPngFile(string path)
     {
@@ -409,7 +437,7 @@ public static class IconCache
         {
             if (!File.Exists(path)) return null;
             byte[] bytes;
-            // 显式 FileShare.Read 打开并一次性读完;0 字节(下载半截/占位)视为无效。
+            // Open with explicit FileShare.Read and read it all in one go; 0 bytes (a half-downloaded / placeholder file) is treated as invalid.
             using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
                 long len = fs.Length;
@@ -422,15 +450,16 @@ public static class IconCache
                     if (n <= 0) break;
                     read += n;
                 }
-                if (read != bytes.Length) return null; // 读不全:不当有效图
+                if (read != bytes.Length) return null; // incomplete read: not a valid image
             }
 
-            // 字节已全在内存:用 MemoryStream 同步包装成 IRandomAccessStream(不触碰磁盘),
-            // 交给 SetSource(同步)。注意:此 MemoryStream 的生命周期需覆盖 SetSource 调用本身即可——
-            // SetSource 内部会持有它直到解码完成,故这里不要 using 提前释放。
+            // The bytes are now entirely in memory: wrap a MemoryStream synchronously as an
+            // IRandomAccessStream (touches no disk) and hand it to SetSource (synchronous). Note: this
+            // MemoryStream's lifetime only needs to cover the SetSource call itself — SetSource holds
+            // it internally until decoding completes, so don't `using`-dispose it early.
             var ms = new MemoryStream(bytes, writable: false);
             var bmp = new BitmapImage { DecodePixelType = DecodePixelType.Logical };
-            // 同步 SetSource:无 await / 无续体回投,绝不在 UI 线程自死锁。解码在随后渲染阶段进行。
+            // Synchronous SetSource: no await / no continuation post-back, never self-deadlocks on the UI thread. Decoding happens in the subsequent render phase.
             bmp.SetSource(ms.AsRandomAccessStream());
             return bmp;
         }
@@ -442,7 +471,7 @@ public static class IconCache
         IntPtr hIcon = IntPtr.Zero;
         try
         {
-            // 取大图标;失败再退而求其次取小图标。
+            // Take the large icon; on failure fall back to the small icon.
             if (ExtractIconEx(path, 0, out hIcon, out IntPtr hSmall, 1) <= 0 || hIcon == IntPtr.Zero)
             {
                 if (hSmall != IntPtr.Zero) { hIcon = hSmall; hSmall = IntPtr.Zero; }
@@ -465,7 +494,7 @@ public static class IconCache
         }
     }
 
-    /// <summary>HICON → 32bpp top-down BGRA 像素 → WriteableBitmap(本身即 ImageSource,直接绑定 Image.Source)。</summary>
+    /// <summary>HICON → 32bpp top-down BGRA pixels → WriteableBitmap (itself an ImageSource, bound directly to Image.Source).</summary>
     private static ImageSource? IconToBitmap(IntPtr hIcon)
     {
         if (!GetIconInfo(hIcon, out ICONINFO ii)) return null;
@@ -473,7 +502,7 @@ public static class IconCache
         IntPtr hbmColor = ii.hbmColor, hbmMask = ii.hbmMask;
         try
         {
-            // 单色图标(只有 mask、无彩色位图)无法可靠重建 → 放弃,回落默认字形。
+            // A monochrome icon (mask only, no color bitmap) can't be reliably reconstructed → give up, fall back to the default glyph.
             if (hbmColor == IntPtr.Zero) return null;
             if (GetObject(hbmColor, Marshal.SizeOf<BITMAP>(), out BITMAP bm) == 0) return null;
 
@@ -484,7 +513,7 @@ public static class IconCache
             {
                 biSize = (uint)Marshal.SizeOf<BITMAPINFOHEADER>(),
                 biWidth = w,
-                biHeight = -h,            // 负数 = top-down,与 WriteableBitmap 的 BGRA 行序一致
+                biHeight = -h,            // negative = top-down, matching WriteableBitmap's BGRA row order
                 biPlanes = 1,
                 biBitCount = 32,
                 biCompression = 0,        // BI_RGB
@@ -518,7 +547,7 @@ public static class IconCache
         }
     }
 
-    // ---- P/Invoke(自带,刻意不动 NativeMethods.cs:那归别的 agent) ----
+    // ---- P/Invoke (self-contained; deliberately leaves NativeMethods.cs alone: that belongs to another agent) ----
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     private static extern int ExtractIconEx(string lpszFile, int nIconIndex,
@@ -546,7 +575,7 @@ public static class IconCache
     [DllImport("user32.dll")]
     private static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
 
-    // QueryFullProcessImageNameW 兜底:对反作弊/受保护进程也常能读出 exe 路径。
+    // QueryFullProcessImageNameW fallback: often still reads the exe path for anti-cheat / protected processes.
     private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
 
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -597,7 +626,7 @@ public static class IconCache
         public uint biClrImportant;
     }
 
-    // GetDIBits 需要紧跟一段调色板空间;32bpp BI_RGB 用不到,但结构体须够大。
+    // GetDIBits needs a trailing palette area; 32bpp BI_RGB doesn't use it, but the struct must be large enough.
     [StructLayout(LayoutKind.Sequential)]
     private struct BITMAPINFO
     {

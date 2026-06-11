@@ -5,8 +5,8 @@ using Xunit;
 namespace Reframe.Core.Tests;
 
 /// <summary>
-/// 配置往返:CreateDefault → 序列化 → 反序列化,关键字段一致;老 JSON 多余字段不炸。
-/// 用源生成 ConfigJsonContext(与 App 实际写盘路径一致)。
+/// Config round-trip: CreateDefault → serialize → deserialize, key fields preserved; extra fields in old JSON
+/// don't blow up. Uses the source-generated ConfigJsonContext (the same path the App actually writes to disk).
 /// </summary>
 public class ConfigRoundTripTests
 {
@@ -16,39 +16,39 @@ public class ConfigRoundTripTests
     private static AppConfig Deserialize(string json)
         => JsonSerializer.Deserialize(json, ConfigJsonContext.Default.AppConfig)!;
 
-    [Fact(DisplayName = "默认配置往返:profiles / rules / zone 比例 / UseWorkArea 全部保真")]
+    [Fact(DisplayName = "Default config round-trip: profiles / rules / zone ratios / UseWorkArea all preserved")]
     public void Default_RoundTrip_KeyFieldsPreserved()
     {
         var original = AppConfig.CreateDefault();
         var json = Serialize(original);
         var back = Deserialize(json);
 
-        // 顶层
+        // Top level
         Assert.Equal(original.Version, back.Version);
         Assert.Equal(original.PollIntervalMs, back.PollIntervalMs);
         Assert.Equal(original.EngineEnabled, back.EngineEnabled);
 
-        // 布局数 / zone 数
+        // Layout count / zone count
         Assert.Equal(original.Layouts.Count, back.Layouts.Count);
         Assert.Single(back.Layouts);
         var layout = back.Layouts[0];
         Assert.Equal(2, layout.Zones.Count);
 
-        // zone 比例(2/3 与 1/3)保真到 double
+        // Zone ratios (2/3 and 1/3) preserved to double precision
         Assert.Equal(0.0, layout.Zones[0].X, 12);
         Assert.Equal(2.0 / 3, layout.Zones[0].W, 12);
         Assert.Equal(2.0 / 3, layout.Zones[1].X, 12);
         Assert.Equal(1.0 / 3, layout.Zones[1].W, 12);
 
-        // Ref 分辨率
+        // Ref resolution
         Assert.Equal(7680, layout.RefWidth);
         Assert.Equal(2160, layout.RefHeight);
 
-        // profiles 数
+        // Profile count
         Assert.Equal(3, back.Profiles.Count);
         Assert.Equal(original.Profiles.Count, back.Profiles.Count);
 
-        // 每个 profile 两条规则,首条 Zone + UseWorkArea=true,末条 Fullscreen
+        // Each profile has two rules: first Zone + UseWorkArea=true, last Fullscreen
         foreach (var prof in back.Profiles)
         {
             Assert.Equal(2, prof.Rules.Count);
@@ -67,17 +67,17 @@ public class ConfigRoundTripTests
         }
     }
 
-    [Fact(DisplayName = "枚举以字符串形式存盘(UseStringEnumConverter)")]
+    [Fact(DisplayName = "Enums serialized as strings (UseStringEnumConverter)")]
     public void Enums_SerializedAsStrings()
     {
         var json = Serialize(AppConfig.CreateDefault());
-        // 应出现可读枚举名,而非数字
+        // Readable enum names should appear, not numbers
         Assert.Contains("\"Zone\"", json);
         Assert.Contains("\"Fullscreen\"", json);
         Assert.Contains("\"Process\"", json);
     }
 
-    [Fact(DisplayName = "Zone 与规则 Id 引用一致:首条规则 ZoneId 指向布局内的游戏区")]
+    [Fact(DisplayName = "Zone and rule Id references stay consistent: the first rule's ZoneId points at the game zone in the layout")]
     public void ZoneId_References_StayConsistent()
     {
         var back = Deserialize(Serialize(AppConfig.CreateDefault()));
@@ -89,10 +89,10 @@ public class ConfigRoundTripTests
         Assert.Contains(layout.Zones, z => z.Id == zoneRule.ZoneId);
     }
 
-    [Fact(DisplayName = "未知字段容忍:老/新 JSON 含多余字段反序列化不抛")]
+    [Fact(DisplayName = "Unknown fields tolerated: old/new JSON with extra fields deserializes without throwing")]
     public void UnknownFields_Tolerated()
     {
-        // 在合法 AppConfig JSON 里塞入未知字段(顶层 + 嵌套)
+        // Inject unknown fields into valid AppConfig JSON (top-level + nested)
         var json = """
         {
           "Version": 1,
@@ -143,7 +143,7 @@ public class ConfigRoundTripTests
         Assert.Null(ex);
         Assert.NotNull(cfg);
 
-        // 已知字段仍正确解析
+        // Known fields still parse correctly
         Assert.Single(cfg!.Layouts);
         Assert.Equal("测试布局", cfg.Layouts[0].Name);
         Assert.Single(cfg.Profiles);
@@ -152,7 +152,7 @@ public class ConfigRoundTripTests
         Assert.True(cfg.Profiles[0].Rules[0].UseWorkArea);
     }
 
-    [Fact(DisplayName = "M3 布尔开关默认值往返:Topmost/KeepAspectRatio 等默认 false 保真")]
+    [Fact(DisplayName = "M3 boolean switches default round-trip: Topmost/KeepAspectRatio etc. default false preserved")]
     public void M3Switches_DefaultsRoundTrip()
     {
         var cfg = AppConfig.CreateDefault();
@@ -165,7 +165,7 @@ public class ConfigRoundTripTests
         Assert.False(p.ClipCursor);
     }
 
-    [Fact(DisplayName = "M3 布尔开关置真后往返保真")]
+    [Fact(DisplayName = "M3 boolean switches set to true round-trip preserved")]
     public void M3Switches_TrueRoundTrip()
     {
         var cfg = AppConfig.CreateDefault();
@@ -176,9 +176,9 @@ public class ConfigRoundTripTests
         Assert.True(back.Profiles[0].KeepAspectRatio);
     }
 
-    // ---- Unity 分辨率预设 + MoveOnly ----
+    // ---- Unity resolution preset + MoveOnly ----
 
-    [Fact(DisplayName = "ResolutionPreset 默认为 null,且往返仍为 null")]
+    [Fact(DisplayName = "ResolutionPreset defaults to null, and round-trips as null")]
     public void ResolutionPreset_DefaultsNull_RoundTrip()
     {
         var cfg = AppConfig.CreateDefault();
@@ -187,7 +187,7 @@ public class ConfigRoundTripTests
         Assert.Null(back.Profiles[0].ResolutionPreset);
     }
 
-    [Fact(DisplayName = "ResolutionPreset 全字段往返保真(原神 5120×2088 窗口化)")]
+    [Fact(DisplayName = "ResolutionPreset all fields round-trip preserved (Genshin 5120×2088 windowed)")]
     public void ResolutionPreset_FullRoundTrip()
     {
         var cfg = AppConfig.CreateDefault();
@@ -209,9 +209,9 @@ public class ConfigRoundTripTests
         Assert.True(rp.Windowed);
     }
 
-    // ---- 背景材质 ----
+    // ---- Backdrop material ----
 
-    [Fact(DisplayName = "Backdrop 默认 Mica,且以字符串形式存盘")]
+    [Fact(DisplayName = "Backdrop defaults to Mica, and is stored as a string")]
     public void Backdrop_DefaultMica_SerializedAsString()
     {
         var cfg = AppConfig.CreateDefault();
@@ -224,7 +224,7 @@ public class ConfigRoundTripTests
         Assert.Equal(BackdropKind.Mica, back.Backdrop);
     }
 
-    [Theory(DisplayName = "Backdrop 三种取值往返保真")]
+    [Theory(DisplayName = "Backdrop all three values round-trip preserved")]
     [InlineData(BackdropKind.Mica)]
     [InlineData(BackdropKind.MicaAlt)]
     [InlineData(BackdropKind.Acrylic)]
@@ -236,9 +236,9 @@ public class ConfigRoundTripTests
         Assert.Equal(kind, back.Backdrop);
     }
 
-    // ---- 主题(夜间模式) ----
+    // ---- Theme (dark mode) ----
 
-    [Fact(DisplayName = "Theme 默认 System,且以字符串形式存盘")]
+    [Fact(DisplayName = "Theme defaults to System, and is stored as a string")]
     public void Theme_DefaultSystem_SerializedAsString()
     {
         var cfg = AppConfig.CreateDefault();
@@ -251,7 +251,7 @@ public class ConfigRoundTripTests
         Assert.Equal(AppTheme.System, back.Theme);
     }
 
-    [Theory(DisplayName = "Theme 三种取值往返保真")]
+    [Theory(DisplayName = "Theme all three values round-trip preserved")]
     [InlineData(AppTheme.System)]
     [InlineData(AppTheme.Light)]
     [InlineData(AppTheme.Dark)]
@@ -263,9 +263,9 @@ public class ConfigRoundTripTests
         Assert.Equal(theme, back.Theme);
     }
 
-    // ---- ExePath(图标来源) ----
+    // ---- ExePath (icon source) ----
 
-    [Fact(DisplayName = "Profile.ExePath 默认 null,且往返仍为 null")]
+    [Fact(DisplayName = "Profile.ExePath defaults to null, and round-trips as null")]
     public void ExePath_DefaultNull_RoundTrip()
     {
         var cfg = AppConfig.CreateDefault();
@@ -274,20 +274,20 @@ public class ConfigRoundTripTests
         Assert.Null(back.Profiles[0].ExePath);
     }
 
-    [Fact(DisplayName = "Profile.ExePath 设值后往返保真(含空格与反斜杠路径)")]
+    [Fact(DisplayName = "Profile.ExePath set value round-trips preserved (path with spaces and backslashes)")]
     public void ExePath_FullRoundTrip()
     {
         var cfg = AppConfig.CreateDefault();
         cfg.Profiles[1].ExePath = @"D:\Games\Zenless Zone Zero\ZenlessZoneZero.exe";
         var back = Deserialize(Serialize(cfg));
         Assert.Equal(@"D:\Games\Zenless Zone Zero\ZenlessZoneZero.exe", back.Profiles[1].ExePath);
-        // 其它未设的仍为 null
+        // Others left unset remain null
         Assert.Null(back.Profiles[0].ExePath);
     }
 
     // ---- SteamGridDB API key ----
 
-    [Fact(DisplayName = "AppConfig.SteamGridDbApiKey 默认 null,且往返仍为 null")]
+    [Fact(DisplayName = "AppConfig.SteamGridDbApiKey defaults to null, and round-trips as null")]
     public void SteamGridDbApiKey_DefaultNull_RoundTrip()
     {
         var cfg = AppConfig.CreateDefault();
@@ -296,7 +296,7 @@ public class ConfigRoundTripTests
         Assert.Null(back.SteamGridDbApiKey);
     }
 
-    [Fact(DisplayName = "AppConfig.SteamGridDbApiKey 设值后往返保真")]
+    [Fact(DisplayName = "AppConfig.SteamGridDbApiKey set value round-trips preserved")]
     public void SteamGridDbApiKey_FullRoundTrip()
     {
         var cfg = AppConfig.CreateDefault();
@@ -305,20 +305,20 @@ public class ConfigRoundTripTests
         Assert.Equal("abc123DEF456", back.SteamGridDbApiKey);
     }
 
-    [Fact(DisplayName = "PlacementRule.MoveOnly 默认 false,置真后往返保真")]
+    [Fact(DisplayName = "PlacementRule.MoveOnly defaults to false, round-trips preserved when set true")]
     public void MoveOnly_RoundTrip()
     {
         var cfg = AppConfig.CreateDefault();
-        Assert.False(cfg.Profiles[0].Rules[0].MoveOnly); // 默认
+        Assert.False(cfg.Profiles[0].Rules[0].MoveOnly); // Default
         cfg.Profiles[0].Rules[0].MoveOnly = true;
         var back = Deserialize(Serialize(cfg));
         Assert.True(back.Profiles[0].Rules[0].MoveOnly);
         Assert.False(back.Profiles[0].Rules[1].MoveOnly);
     }
 
-    // ---- LaunchCommand(M5:一键启动) ----
+    // ---- LaunchCommand (M5: one-click launch) ----
 
-    [Fact(DisplayName = "Profile.LaunchCommand 默认 null,且往返仍为 null")]
+    [Fact(DisplayName = "Profile.LaunchCommand defaults to null, and round-trips as null")]
     public void LaunchCommand_DefaultNull_RoundTrip()
     {
         var cfg = AppConfig.CreateDefault();
@@ -327,18 +327,18 @@ public class ConfigRoundTripTests
         Assert.Null(back.Profiles[0].LaunchCommand);
     }
 
-    [Fact(DisplayName = "Profile.LaunchCommand 设值后往返保真(启动器 URI)")]
+    [Fact(DisplayName = "Profile.LaunchCommand set value round-trips preserved (launcher URI)")]
     public void LaunchCommand_Uri_RoundTrip()
     {
         var cfg = AppConfig.CreateDefault();
         cfg.Profiles[2].LaunchCommand = "hoyoplay://launchgame?gameId=1";
         var back = Deserialize(Serialize(cfg));
         Assert.Equal("hoyoplay://launchgame?gameId=1", back.Profiles[2].LaunchCommand);
-        // 其它未设的仍为 null
+        // Others left unset remain null
         Assert.Null(back.Profiles[0].LaunchCommand);
     }
 
-    [Fact(DisplayName = "Profile.LaunchCommand 设值后往返保真(含空格与反斜杠的本地路径)")]
+    [Fact(DisplayName = "Profile.LaunchCommand set value round-trips preserved (local path with spaces and backslashes)")]
     public void LaunchCommand_LocalPath_RoundTrip()
     {
         var cfg = AppConfig.CreateDefault();
@@ -347,9 +347,9 @@ public class ConfigRoundTripTests
         Assert.Equal(@"D:\Games\Zenless Zone Zero\launcher.exe", back.Profiles[1].LaunchCommand);
     }
 
-    // ---- Hotkeys(M5:热键绑定字典) ----
+    // ---- Hotkeys (M5: hotkey-binding dictionary) ----
 
-    [Fact(DisplayName = "AppConfig.Hotkeys 默认空字典,往返仍为空且非 null")]
+    [Fact(DisplayName = "AppConfig.Hotkeys defaults to an empty dictionary, round-trips empty and non-null")]
     public void Hotkeys_DefaultEmpty_RoundTrip()
     {
         var cfg = AppConfig.CreateDefault();
@@ -360,7 +360,7 @@ public class ConfigRoundTripTests
         Assert.Empty(back.Hotkeys);
     }
 
-    [Fact(DisplayName = "AppConfig.Hotkeys 多条绑定往返保真(键值对全保留)")]
+    [Fact(DisplayName = "AppConfig.Hotkeys multiple bindings round-trip preserved (all key-value pairs kept)")]
     public void Hotkeys_Entries_RoundTrip()
     {
         var cfg = AppConfig.CreateDefault();
@@ -378,7 +378,7 @@ public class ConfigRoundTripTests
         Assert.Equal("Win+Alt+3", back.Hotkeys["SendToZone3"]);
     }
 
-    [Fact(DisplayName = "AppConfig.Hotkeys 单条改绑往返保真(覆盖默认手势)")]
+    [Fact(DisplayName = "AppConfig.Hotkeys single rebind round-trips preserved (overriding the default gesture)")]
     public void Hotkeys_Rebind_RoundTrip()
     {
         var cfg = AppConfig.CreateDefault();
@@ -388,9 +388,9 @@ public class ConfigRoundTripTests
         Assert.Equal("Ctrl+Shift+B", back.Hotkeys["ToggleBorderless"]);
     }
 
-    // ---- IgnoredProcesses(用户忽略名单) ----
+    // ---- IgnoredProcesses (user-ignore list) ----
 
-    [Fact(DisplayName = "AppConfig.IgnoredProcesses 默认空列表,往返仍为空且非 null")]
+    [Fact(DisplayName = "AppConfig.IgnoredProcesses defaults to an empty list, round-trips empty and non-null")]
     public void IgnoredProcesses_DefaultEmpty_RoundTrip()
     {
         var cfg = AppConfig.CreateDefault();
@@ -401,7 +401,7 @@ public class ConfigRoundTripTests
         Assert.Empty(back.IgnoredProcesses);
     }
 
-    [Fact(DisplayName = "AppConfig.IgnoredProcesses 多条往返保真(顺序与值全保留)")]
+    [Fact(DisplayName = "AppConfig.IgnoredProcesses multiple entries round-trip preserved (order and values kept)")]
     public void IgnoredProcesses_Entries_RoundTrip()
     {
         var cfg = AppConfig.CreateDefault();
@@ -415,7 +415,7 @@ public class ConfigRoundTripTests
         Assert.Equal(new[] { "explorer", "steamwebhelper", "discord" }, back.IgnoredProcesses);
     }
 
-    [Fact(DisplayName = "AppConfig.IgnoredProcesses 含中文/空格进程名往返保真")]
+    [Fact(DisplayName = "AppConfig.IgnoredProcesses with Chinese/spaced process names round-trips preserved")]
     public void IgnoredProcesses_UnicodeAndSpaces_RoundTrip()
     {
         var cfg = AppConfig.CreateDefault();

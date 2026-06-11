@@ -1,33 +1,35 @@
 namespace Reframe.Core;
 
 /// <summary>
-/// 热键手势的纯解析(无 Win32 / 无 WinUI 依赖,可单测)。
-/// 文本如 "Ctrl+Alt+F" / "Win+Alt+1" → (修饰符位掩码, 虚拟键码)。
+/// Pure parsing of hotkey gestures (no Win32 / no WinUI dependency, unit-testable).
+/// Text like "Ctrl+Alt+F" / "Win+Alt+1" → (modifier bitmask, virtual-key code).
 ///
-/// <para>修饰符识别(大小写宽容、可多种别名):</para>
+/// <para>Modifier recognition (case-tolerant, several aliases):</para>
 /// <list type="bullet">
-/// <item>Ctrl / Control → MOD_CONTROL(0x0002)</item>
-/// <item>Alt → MOD_ALT(0x0001)</item>
-/// <item>Shift → MOD_SHIFT(0x0004)</item>
-/// <item>Win / Windows / Meta / Super → MOD_WIN(0x0008)</item>
+/// <item>Ctrl / Control → MOD_CONTROL (0x0002)</item>
+/// <item>Alt → MOD_ALT (0x0001)</item>
+/// <item>Shift → MOD_SHIFT (0x0004)</item>
+/// <item>Win / Windows / Meta / Super → MOD_WIN (0x0008)</item>
 /// </list>
 ///
-/// <para>主键:单字母 A-Z、单数字 0-9、功能键 F1-F24。其余无效。</para>
+/// <para>Main key: a single letter A-Z, a single digit 0-9, or a function key F1-F24. Anything else is invalid.</para>
 ///
-/// <para>校验:必须恰好一个主键;至少一个修饰符(全局热键无修饰符易误触,且 Win 单键多被系统占用)。
-/// 解析得到的 mods 不含 MOD_NOREPEAT —— 由 HotkeyService 注册时统一附加,使纯逻辑稳定可测。</para>
+/// <para>Validation: exactly one main key is required, plus at least one modifier (a modifier-less global
+/// hotkey is easy to trigger by accident, and a lone Win key is mostly taken by the system). The parsed mods
+/// do not include MOD_NOREPEAT — HotkeyService adds it uniformly at registration time, keeping the pure logic
+/// stable and testable.</para>
 /// </summary>
 public static class HotkeyGesture
 {
-    // 与 user32 RegisterHotKey 的 fsModifiers 一致。
+    // Matches user32 RegisterHotKey's fsModifiers.
     public const uint MOD_ALT = 0x0001;
     public const uint MOD_CONTROL = 0x0002;
     public const uint MOD_SHIFT = 0x0004;
     public const uint MOD_WIN = 0x0008;
 
     /// <summary>
-    /// 解析手势文本。成功返回 true 并填 mods/vk(mods 不含 NOREPEAT)。
-    /// 失败(空串、无主键、多主键、未知 token、无修饰符)返回 false。
+    /// Parse the gesture text. On success returns true and fills mods/vk (mods excludes NOREPEAT).
+    /// On failure (empty string, no main key, multiple main keys, unknown token, no modifier) returns false.
     /// </summary>
     public static bool TryParse(string? gesture, out uint mods, out uint vk)
     {
@@ -59,20 +61,21 @@ public static class HotkeyGesture
                     continue;
             }
 
-            // 走到这里 = 主键 token。只允许一个。
+            // Reaching here = a main-key token. Only one allowed.
             if (haveKey) return false;
             if (!TryParseKey(token, out vk)) return false;
             haveKey = true;
         }
 
-        // 必须有主键 + 至少一个修饰符。
+        // Must have a main key + at least one modifier.
         if (!haveKey || mods == 0) return false;
         return true;
     }
 
     /// <summary>
-    /// 把 (mods, vk) 反向格式化为规范文本(修饰符固定顺序 Ctrl+Alt+Shift+Win,便于显示/比较)。
-    /// vk 无法识别时仅输出修饰符 + 十六进制码兜底。mods 中的 NOREPEAT 被忽略。
+    /// Format (mods, vk) back into canonical text (modifiers in a fixed order Ctrl+Alt+Shift+Win, for easy
+    /// display/comparison). When vk can't be recognized, output the modifiers + a hex code as a fallback.
+    /// NOREPEAT in mods is ignored.
     /// </summary>
     public static string Format(uint mods, uint vk)
     {
@@ -90,7 +93,7 @@ public static class HotkeyGesture
         vk = 0;
         if (token.Length == 0) return false;
 
-        // 单字母 A-Z:VK 与 ASCII 大写一致。
+        // Single letter A-Z: VK matches the uppercase ASCII.
         if (token.Length == 1)
         {
             char c = token[0];
@@ -99,7 +102,7 @@ public static class HotkeyGesture
             return false;
         }
 
-        // 功能键 F1..F24:VK_F1 = 0x70。
+        // Function keys F1..F24: VK_F1 = 0x70.
         if (token[0] == 'F' && int.TryParse(token.AsSpan(1), out int n) && n >= 1 && n <= 24)
         {
             vk = (uint)(0x70 + (n - 1));

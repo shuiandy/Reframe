@@ -1,54 +1,62 @@
 namespace Reframe.Core;
 
 /// <summary>
-/// 防拉锯状态(每个被接管窗口一份)。可变,由调用方持有并在串行上下文(<see cref="Watcher"/> 的
-/// per-handle 锁)下传给 <see cref="ThrashPolicy.Evaluate"/>。字段公开是为了可单测、可序列化诊断。
+/// Anti-thrash state (one per managed window). Mutable; held by the caller and passed to
+/// <see cref="ThrashPolicy.Evaluate"/> in a serialized context (<see cref="Watcher"/>'s per-handle lock).
+/// Fields are public to allow unit testing and serializable diagnostics.
 /// </summary>
 public sealed class ThrashState
 {
-    /// <summary>当前 10s 计数窗口的起点(UTC)。</summary>
+    /// <summary>Start of the current 10s counting window (UTC).</summary>
     public DateTime WindowStartUtc;
-    /// <summary>当前窗口内已重新应用的次数。</summary>
+    /// <summary>Number of reapplies in the current window.</summary>
     public int Count;
-    /// <summary>该窗口生命周期内累计已记的告警条数(达上限后静默,直到衰减或重建)。</summary>
+    /// <summary>Total warnings recorded over this window's lifetime (silenced once the cap is hit, until decay or rebuild).</summary>
     public int TotalWarns;
-    /// <summary>最近一次记告警的时刻(UTC);用于 5min 衰减。默认 default 表示从未告警。</summary>
+    /// <summary>Time the most recent warning was recorded (UTC); used for the 5min decay. The default value means never warned.</summary>
     public DateTime LastWarnUtc;
 }
 
 /// <summary>
-/// 已接管窗口的"重新应用"节流策略(从 <see cref="Watcher"/> 抽出的纯逻辑,便于单测)。
-/// 规则:
+/// The "reapply" throttle policy for an already-managed window (pure logic extracted from
+/// <see cref="Watcher"/> for unit testing).
+/// Rules:
 /// <list type="bullet">
-/// <item>10s 滑动窗口内最多放行 <see cref="MaxApplies"/>(=3)次重新应用,超出本轮放过(返回 false)。</item>
-/// <item>同一 10s 窗口最多记 1 条告警;整个窗口生命周期累计最多 <see cref="MaxWarns"/>(=2)条,此后静默。</item>
-/// <item>衰减:开启新计数窗口时,若距上次告警已超过 <see cref="WarnDecay"/>(=5min)且上一窗口未触顶
-///       (即期间无持续拉锯),把 <see cref="ThrashState.TotalWarns"/> 清零,避免长时间运行后永久失声。</item>
+/// <item>Within a 10s sliding window, allow at most <see cref="MaxApplies"/> (=3) reapplies; beyond that,
+///       back off this round (return false).</item>
+/// <item>At most 1 warning per 10s window; at most <see cref="MaxWarns"/> (=2) over the window's whole
+///       lifetime, silent thereafter.</item>
+/// <item>Decay: when opening a new counting window, if it's been longer than <see cref="WarnDecay"/> (=5min)
+///       since the last warning AND the previous window didn't hit the cap (i.e. no sustained thrashing),
+///       reset <see cref="ThrashState.TotalWarns"/> to 0, to avoid going permanently silent after long uptime.</item>
 /// </list>
-/// 无副作用、不碰 Win32、不打日志;告警与否经 <paramref name="warn"/> 回传给调用方决定如何呈现。
+/// No side effects, no Win32, no logging; whether to warn is returned via <paramref name="warn"/> for the
+/// caller to decide how to surface it.
 /// </summary>
 public static class ThrashPolicy
 {
-    /// <summary>计数窗口长度:10s。</summary>
+    /// <summary>Counting-window length: 10s.</summary>
     public static readonly TimeSpan Window = TimeSpan.FromMilliseconds(10000);
-    /// <summary>单个 10s 窗口内最多放行的重新应用次数。</summary>
+    /// <summary>Max reapplies allowed within a single 10s window.</summary>
     public const int MaxApplies = 3;
-    /// <summary>窗口生命周期累计最多记的告警条数。</summary>
+    /// <summary>Max warnings recorded over the window's lifetime.</summary>
     public const int MaxWarns = 2;
-    /// <summary>告警衰减时长:距上次告警超过此值且期间无拉锯,则重置累计告警数。</summary>
+    /// <summary>Warning decay duration: if it's been longer than this since the last warning with no thrashing in between, reset the accumulated warning count.</summary>
     public static readonly TimeSpan WarnDecay = TimeSpan.FromMinutes(5);
 
     /// <summary>
-    /// 判定本次是否允许重新应用。<paramref name="warn"/> 回传"本次是否应记一条告警"。
-    /// 调用方须在串行上下文中对同一 <paramref name="s"/> 调用(状态非线程安全)。
+    /// Decide whether to allow a reapply this time. <paramref name="warn"/> returns "should a warning be
+    /// recorded this time". The caller must invoke this on the same <paramref name="s"/> within a serialized
+    /// context (the state is not thread-safe).
     /// </summary>
-    /// <returns>true = 允许本次重新应用;false = 触顶,本轮放过。</returns>
+    /// <returns>true = allow this reapply; false = at the cap, back off this round.</returns>
     public static bool Evaluate(ThrashState s, DateTime nowUtc, out bool warn)
     {
         warn = false;
 
-        // 当前窗口已过期:开新窗口。若上一窗口未触顶(Count < MaxApplies,即没有持续拉锯)
-        // 且距上次告警已超过衰减阈值,则把累计告警清零,让长期运行后能重新提示。
+        // The current window has expired: open a new one. If the previous window didn't hit the cap
+        // (Count < MaxApplies, i.e. no sustained thrashing) and it's been longer than the decay threshold
+        // since the last warning, reset the accumulated warnings so it can warn again after long uptime.
         if (nowUtc - s.WindowStartUtc > Window)
         {
             bool quietLastWindow = s.Count < MaxApplies;
@@ -63,7 +71,8 @@ public static class ThrashPolicy
 
         if (s.Count >= MaxApplies)
         {
-            // 本窗口已触顶:仅当本窗口尚未告警(LastWarnUtc 不在本窗口内)且累计未达上限时记一条。
+            // This window has hit the cap: record a warning only if this window hasn't warned yet
+            // (LastWarnUtc isn't within this window) and the accumulated count is below the cap.
             bool warnedThisWindow = s.LastWarnUtc >= s.WindowStartUtc;
             if (!warnedThisWindow && s.TotalWarns < MaxWarns)
             {

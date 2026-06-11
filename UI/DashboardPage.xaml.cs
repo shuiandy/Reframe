@@ -12,15 +12,16 @@ using Reframe.Services;
 namespace Reframe.UI;
 
 /// <summary>
-/// 仪表盘上"接管中的窗口"一张卡片的数据。
-/// 卡片按 Handle 复用(见 DashboardPage.RefreshLive 的 diff):Handle/ProcessId 身份不变,
-/// 文本字段(ProfileName/Title/RectText)与 Icon 经 INotifyPropertyChanged 原地更新,
-/// 既不重建集合也不闪图标。
+/// Backing data for one "active windows" card on the dashboard.
+/// Cards are reused by Handle (see the diff in DashboardPage.RefreshLive): Handle/ProcessId are the
+/// stable identity, while the text fields (ProfileName/Title/RectText) and Icon update in place via
+/// INotifyPropertyChanged — no collection rebuild and no icon flicker.
 /// <para>
-/// 绑定用经典 <c>{Binding ..., Mode=OneWay}</c> 而非 <c>x:Bind</c>:宿主是裸 ItemsControl
-/// (非 ListViewBase),不触发 ContainerContentChanging,x:Bind 的相位/DataContext 驱动在此场景下
-/// 初次渲染不可靠(曾导致文字全空);经典 Binding 走运行时 DataContext + INotifyPropertyChanged,
-/// 初次显示与原地更新都可靠。改动详见 DashboardPage.xaml 的 DataTemplate。
+/// Bindings use classic <c>{Binding ..., Mode=OneWay}</c> rather than <c>x:Bind</c>: the host is a bare
+/// ItemsControl (not a ListViewBase), so it never raises ContainerContentChanging, and x:Bind's
+/// phase/DataContext driving is unreliable for initial render here (it once left all text blank).
+/// Classic Binding goes through the runtime DataContext + INotifyPropertyChanged, so both the first
+/// paint and in-place updates are reliable. See the DataTemplate in DashboardPage.xaml.
 /// </para>
 /// </summary>
 public sealed partial class TakenCard : System.ComponentModel.INotifyPropertyChanged
@@ -42,8 +43,9 @@ public sealed partial class TakenCard : System.ComponentModel.INotifyPropertyCha
         set { if (_title != value) { _title = value; Raise(nameof(Title)); } }
     }
 
-    // 卡片副信息行(第二行)。规则见 DashboardPage.ComputeSubInfo:
-    // 进程名取到且标题==配置名(或空)→ 只显示进程名;不同 → "标题 · 进程名";进程名取不到 → 退回标题。
+    // Card sub-info line (second row). See DashboardPage.ComputeSubInfo for the rule:
+    // process name available and title == profile name (or empty) -> show process name only;
+    // different -> "title · process"; process name unavailable -> fall back to title.
     private string _subInfo = "";
     public string SubInfo
     {
@@ -51,8 +53,9 @@ public sealed partial class TakenCard : System.ComponentModel.INotifyPropertyCha
         set { if (_subInfo != value) { _subInfo = value; Raise(nameof(SubInfo)); } }
     }
 
-    // 进程名(含 .exe)查一次缓存在卡上,RefreshLive 每 tick 直接复用,不重复查进程表。
-    // null = 尚未查;""  = 查过但失败(进程已退/无权限),不再重试。
+    // Process name (with .exe) is looked up once and cached on the card; RefreshLive reuses it each
+    // tick instead of re-querying the process table.
+    // null = not looked up yet; "" = looked up but failed (process gone / no access), don't retry.
     public string? ProcessExeName { get; set; }
 
     private string _rectText = "";
@@ -62,7 +65,8 @@ public sealed partial class TakenCard : System.ComponentModel.INotifyPropertyCha
         set { if (_rectText != value) { _rectText = value; Raise(nameof(RectText)); } }
     }
 
-    // 图标:同步命中(TryGetCached)即刻设;未命中后台预热再回填(回填到复用的卡对象上,此后不再闪)。
+    // Icon: a synchronous cache hit (TryGetCached) sets it immediately; a miss prewarms in the
+    // background then backfills onto the reused card object (no flicker thereafter).
     private ImageSource? _icon;
     public ImageSource? Icon
     {
@@ -86,15 +90,17 @@ public sealed partial class TakenCard : System.ComponentModel.INotifyPropertyCha
 
 public sealed partial class DashboardPage : Page
 {
-    // 1.5s 轻量刷新:小地图 + 接管卡片(读快照即可)。
+    // Lightweight 1.5s refresh: mini-map + taken cards (reading snapshots is cheap).
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(1500) };
     private Action<string>? _logHandler;
     private Action? _changedHandler;
-    // 回放完成前 handler 不追加(增量全由缓冲快照覆盖),完成后才接增量,杜绝回放/增量重复。
+    // Before replay completes the handler appends nothing (the buffer snapshot covers all deltas);
+    // only after replay do we take deltas, so replay and live deltas never duplicate.
     private bool _logReplayed;
 
-    // 接管卡片:持久集合,按 Handle 复用。每 tick 做 diff(增/删/原地更新),不再清空重建,
-    // 故已有卡的图标不会因重建回到 null 占位而闪烁。ItemsSource 只在 OnLoaded 设一次。
+    // Taken cards: a persistent collection reused by Handle. Each tick diffs (add/remove/update in
+    // place) instead of clear-and-rebuild, so an existing card's icon never flickers back to a null
+    // placeholder on rebuild. ItemsSource is set once in OnLoaded.
     private readonly System.Collections.ObjectModel.ObservableCollection<TakenCard> _cards = new();
 
     public DashboardPage()
@@ -111,13 +117,14 @@ public sealed partial class DashboardPage : Page
         EngineToggle.IsOn = cfg.EngineEnabled;
         RefreshSummary();
 
-        // 概览随配置变化刷新(任意线程触发 → 切回 UI 线程)。
+        // Refresh the summary whenever config changes (may fire on any thread -> hop to the UI thread).
         _changedHandler = () => DispatcherQueue.TryEnqueue(RefreshSummary);
         ConfigService.Instance.Changed += _changedHandler;
 
-        // 日志流:最新在上,最多 200 条。msg 已由 Watcher.Emit 带 [HH:mm:ss] 时间戳,直接显示。
-        // 回放完成前(_logReplayed=false)丢弃增量:这些条目都在缓冲里,会被回放快照一并补上,
-        // 避免与回放重复;回放完成后才追加纯增量。
+        // Log stream: newest on top, capped at 200. msg already carries a [HH:mm:ss] timestamp from
+        // Watcher.Emit, so display it as-is.
+        // Drop deltas until replay finishes (_logReplayed=false): those entries are in the buffer and
+        // the replay snapshot will include them, so we avoid duplicating; only append pure deltas afterward.
         _logHandler = msg => DispatcherQueue.TryEnqueue(() =>
         {
             if (!_logReplayed) return;
@@ -125,16 +132,34 @@ public sealed partial class DashboardPage : Page
             while (LogList.Items.Count > 200)
                 LogList.Items.RemoveAt(LogList.Items.Count - 1);
         });
-        // 先订阅再回放:引擎在 App.OnLaunched 即启动并接管已运行的游戏,这些日志发生在订阅之前,
-        // 事件已错过。先挂上 handler(此后增量不漏),再从环形缓冲回放最近历史整体重建列表。
+        // Subscribe before replaying: the engine starts in App.OnLaunched and takes over already-running
+        // games, so those logs happen before we subscribe and the events are already missed. Attach the
+        // handler first (no deltas dropped from here on), then replay recent history from the ring buffer
+        // to rebuild the list wholesale.
         App.Engine.Log += _logHandler;
         ReplayLogBuffer();
 
-        TakenList.ItemsSource = _cards; // 持久集合,只设一次
+        TakenList.ItemsSource = _cards; // persistent collection, set once
 
         _timer.Tick += Timer_Tick;
         _timer.Start();
         RefreshLive();
+    }
+
+    // Engine toggle On/OffContent come from resw via Loc.T (attached On/OffContent x:Uid is unreliable
+    // in MRT Core). Set on Loaded so the runtime language override is already applied.
+    private void EngineToggle_Loaded(object sender, RoutedEventArgs e)
+    {
+        EngineToggle.OnContent = Loc.T("DashboardPage/EngineOn");
+        EngineToggle.OffContent = Loc.T("DashboardPage/EngineOff");
+    }
+
+    // The Rescan button lives inside a DataTemplate, so there's no x:Name to reach it; set its tooltip
+    // from code on Loaded. ToolTipService.ToolTip is an attached property that's brittle via x:Uid.
+    private void RescanButton_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button b)
+            ToolTipService.SetToolTip(b, Loc.T("DashboardPage/RescanTooltip"));
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
@@ -146,22 +171,24 @@ public sealed partial class DashboardPage : Page
     }
 
     /// <summary>
-    /// 用引擎环形缓冲回放最近日志并整体重建列表(去重)。
-    /// 排到 UI 队列尾部执行:此时订阅瞬间~现在之间已入队的 handler 回调都已跑完,
-    /// 我们再取一次缓冲快照(含这期间所有条目)整体替换列表,既补回订阅前丢失的历史,
-    /// 又避免与 handler 增量重复。此后只有新增量经 handler 追加。
+    /// Replay recent logs from the engine ring buffer and rebuild the list wholesale (deduped).
+    /// Runs at the tail of the UI queue: by then every handler callback enqueued between subscribing
+    /// and now has run, so we take one more buffer snapshot (covering all of those entries) and swap
+    /// the whole list — restoring the history lost before subscription while avoiding duplicates with
+    /// the handler deltas. From here on only new deltas are appended by the handler.
     /// </summary>
     private void ReplayLogBuffer()
     {
         DispatcherQueue.TryEnqueue(() =>
         {
-            var recent = App.Engine.GetRecentLog(); // 旧→新,已带时间戳
+            var recent = App.Engine.GetRecentLog(); // old -> new, already timestamped
             LogList.Items.Clear();
-            // 最新在上:倒序插入(最多 200 条,与增量上限一致)。
+            // Newest on top: insert in reverse (cap 200, matching the delta cap).
             int start = Math.Max(0, recent.Count - 200);
             for (int i = recent.Count - 1; i >= start; i--)
                 LogList.Items.Add(recent[i]);
-            // 快照之后的增量改由 handler 追加(此 lambda 与 handler 同在 UI 线程,无并发)。
+            // Deltas after this snapshot are appended by the handler (this lambda and the handler share
+            // the UI thread, so there's no concurrency).
             _logReplayed = true;
         });
     }
@@ -169,8 +196,8 @@ public sealed partial class DashboardPage : Page
     private void RefreshSummary()
     {
         var cfg = ConfigService.Instance.Config;
-        SummaryText.Text = $"{cfg.Profiles.Count} 个配置文件 · {cfg.Layouts.Count} 个布局";
-        // EngineEnabled 可能被外部改动,保持开关一致(IsOn 未变则不触发 Toggled)。
+        SummaryText.Text = Loc.T("DashboardPage/SummaryFormat", cfg.Profiles.Count, cfg.Layouts.Count);
+        // EngineEnabled may be changed externally; keep the toggle in sync (no Toggled fires if IsOn is unchanged).
         if (EngineToggle.IsOn != cfg.EngineEnabled)
             EngineToggle.IsOn = cfg.EngineEnabled;
     }
@@ -178,9 +205,11 @@ public sealed partial class DashboardPage : Page
     private void Timer_Tick(object? sender, object e) => RefreshLive();
 
     /// <summary>
-    /// 刷新小地图与接管卡片:读引擎快照 + 显示器快照,均为轻量调用。
-    /// 卡片不再清空重建,而是按 Handle 对 _cards 做 diff:消失的删、新增的加、仍在的原地更新文本字段。
-    /// 已有卡保留其 Icon 引用(不回 null),从根本上消除"清空→占位→异步回填→再清空"的无限闪烁。
+    /// Refresh the mini-map and taken cards: reads the engine snapshot + monitor snapshot, both cheap.
+    /// Cards are no longer cleared and rebuilt; instead _cards is diffed by Handle: drop vanished ones,
+    /// add new ones, update text fields in place for those still present. Existing cards keep their Icon
+    /// reference (never reset to null), which eliminates the "clear -> placeholder -> async backfill ->
+    /// clear again" endless flicker at the root.
     /// </summary>
     private void RefreshLive()
     {
@@ -188,33 +217,34 @@ public sealed partial class DashboardPage : Page
         var monitors = MonitorService.GetMonitors();
         var taken = App.Engine.GetTakenWindows();
 
-        // 小地图:把接管窗口降为 (Handle, ProfileId) 元组,控件内部自取实时矩形。
+        // Mini-map: reduce taken windows to (Handle, ProfileId) tuples; the control fetches live rects itself.
         var takenTuples = taken
             .Select(t => (t.Handle, t.ProfileId))
             .ToList();
         MonitorMap.Refresh(monitors, takenTuples, cfg);
 
-        // 当前应存在的句柄集合(用于删除消失项)。
+        // Set of handles that should currently exist (used to drop vanished items).
         var liveHandles = new HashSet<IntPtr>(taken.Select(t => t.Handle));
 
-        // 删:_cards 里已不在快照中的句柄。
+        // Remove: handles in _cards no longer present in the snapshot.
         for (int i = _cards.Count - 1; i >= 0; i--)
             if (!liveHandles.Contains(_cards[i].Handle))
                 _cards.RemoveAt(i);
 
-        // 增/原地更新:按句柄定位现有卡。
+        // Add / update in place: locate the existing card by handle.
         foreach (var t in taken)
         {
             var profile = cfg.Profiles.FirstOrDefault(p => p.Id == t.ProfileId);
-            // profile 查不到名字 = 该 profile 已被删除(外部改 config / 热重载丢了它),
-            // 但窗口仍登记在引擎 _takeover 里(孤儿)。显示「(已删除)」而非裸 "?",卡片的[还原]
-            // 按钮按 Handle 还原仍可用(WindowOps.Restore 不依赖 profile)。
-            string profileName = profile?.Name ?? "(已删除)";
+            // No profile name = the profile was deleted (external config edit / hot reload dropped it),
+            // but the window is still registered in the engine's _takeover (orphan). Show "(deleted)"
+            // rather than a bare "?"; the card's [Restore] button still works by Handle (WindowOps.Restore
+            // doesn't depend on the profile).
+            string profileName = profile?.Name ?? Loc.T("DashboardPage/ProfileDeleted");
             string title = WindowTitle(t.Handle);
-            title = string.IsNullOrEmpty(title) ? "(无标题)" : title;
+            title = string.IsNullOrEmpty(title) ? Loc.T("DashboardPage/WindowNoTitle") : title;
             string rectText = NativeMethods.GetWindowRect(t.Handle, out var rc)
                 ? $"{rc.Left},{rc.Top}  {rc.Right - rc.Left}×{rc.Bottom - rc.Top}"
-                : "(矩形不可用)";
+                : Loc.T("DashboardPage/RectUnavailable");
             NativeMethods.GetWindowThreadProcessId(t.Handle, out uint pid);
 
             var card = _cards.FirstOrDefault(c => c.Handle == t.Handle);
@@ -227,21 +257,23 @@ public sealed partial class DashboardPage : Page
                     ProfileName = profileName,
                     Title = title,
                     RectText = rectText,
-                    ProcessExeName = ProcessExeNameOf(pid), // 进程名查一次,缓存在卡上
+                    ProcessExeName = ProcessExeNameOf(pid), // look up process name once, cache on the card
                 };
                 card.SubInfo = ComputeSubInfo(profileName, title, card.ProcessExeName);
                 _cards.Add(card);
-                EnsureCardIcon(card, profile); // 新卡才需要拉图标
+                EnsureCardIcon(card, profile); // only a new card needs to fetch an icon
             }
             else
             {
-                // 原地更新会变的字段(经 INotifyPropertyChanged,只更文本不重建行,不碰 Icon)。
+                // Update the fields that change (via INotifyPropertyChanged: text only, no row rebuild, no touching Icon).
                 card.ProfileName = profileName;
                 card.Title = title;
                 card.RectText = rectText;
-                // 进程名已缓存(首帧查过);副信息行随标题/配置名变化重算,不再查进程表。
+                // Process name is already cached (looked up on the first frame); recompute the sub-info line
+                // as the title/profile name changes, without re-querying the process table.
                 card.SubInfo = ComputeSubInfo(profileName, title, card.ProcessExeName ?? "");
-                // 图标仍为空(此前未命中)时,补一次同步快取;仍不中则不在每 tick 重复异步(已在新卡时安排过)。
+                // If the icon is still null (previous miss), try one synchronous cache hit; if it still misses
+                // don't re-fire async every tick (already scheduled when the card was new).
                 if (card.Icon is null && IconCache.TryGetCached(ProcNameForProfile(profile), out var hit) && hit is not null)
                     card.Icon = hit;
             }
@@ -250,37 +282,41 @@ public sealed partial class DashboardPage : Page
         TakenEmpty.Visibility = _cards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    // 给一张新卡解析图标:先同步快取(命中即刻显示,不闪);未命中才后台预热 + 回填到该卡对象上。
+    // Resolve an icon for a new card: try the synchronous cache first (a hit shows instantly, no flicker);
+    // only on a miss prewarm in the background and backfill onto the card object.
     private void EnsureCardIcon(TakenCard card, Core.Profile? profile)
     {
         string? procName = ProcNameForProfile(profile);
 
-        // 1. 同步内存快路径:命中(非 null)直接用,零 IO、不走异步。
+        // 1. Synchronous in-memory fast path: a hit (non-null) is used directly, zero IO, no async.
         if (procName is not null && IconCache.TryGetCached(procName, out var cached) && cached is not null)
         {
             card.Icon = cached;
             return;
         }
-        // ExePath 已配:本地可直接出图,ByProfile 同步取(WriteableBitmap 在 UI 线程,很快)。
+        // ExePath is set: a local icon is available directly; ByProfile fetches synchronously
+        // (WriteableBitmap on the UI thread, fast).
         if (profile is not null && !string.IsNullOrWhiteSpace(profile.ExePath))
         {
             var icon = IconCache.ByProfile(profile);
             if (icon is not null) { card.Icon = icon; return; }
         }
 
-        // 2. 未命中:后台预热(可能慢的路径解析 / 联网),再切回 UI 线程构建并回填到这张卡。
+        // 2. Miss: prewarm in the background (potentially slow path resolution / network), then hop back
+        // to the UI thread to build and backfill onto this card.
         uint pid = card.ProcessId;
         string? apiKey = ConfigService.Instance.Config.SteamGridDbApiKey;
         var target = card;
         _ = Task.Run(async () =>
         {
-            // 预热进程路径(MainModule → QueryFullProcessImageName 兜底)。
+            // Prewarm the process path (MainModule, falling back to QueryFullProcessImageName).
             IconCache.PrewarmByProcessName(procName ?? ProcessNameOf(pid));
 
-            // UI 线程先取一次(命中本地链路:磁盘缓存 / 进程提取)。
+            // Fetch once on the UI thread (hits the local chain: disk cache / process extraction).
             DispatcherQueue.TryEnqueue(() => BackfillIcon(target, profile, pid));
 
-            // 仍可能没出图(反作弊读不到 + 无磁盘缓存)→ 最后兜底:SteamGridDB 在线(配了 key 才走)。
+            // Might still produce nothing (anti-cheat blocks the read + no disk cache) -> last resort:
+            // SteamGridDB online (only when an API key is configured).
             if (await IconCache.PrewarmFromSteamGridDbAsync(apiKey, profile).ConfigureAwait(false))
                 DispatcherQueue.TryEnqueue(() => BackfillIcon(target, profile, pid));
         });
@@ -288,7 +324,7 @@ public sealed partial class DashboardPage : Page
 
     private static void BackfillIcon(TakenCard card, Core.Profile? profile, uint pid)
     {
-        if (card.Icon is not null) return; // 已有图标,别覆盖
+        if (card.Icon is not null) return; // already has an icon, don't overwrite
         var icon = profile is not null ? IconCache.ByProfile(profile) : IconCache.ByProcessId(pid);
         icon ??= IconCache.ByProcessId(pid);
         if (icon is not null) card.Icon = icon;
@@ -309,7 +345,8 @@ public sealed partial class DashboardPage : Page
         catch { return null; }
     }
 
-    /// <summary>进程名 + ".exe"(供副信息行展示)。取不到(进程已退/无权限)返回 ""(空,不再重试)。</summary>
+    /// <summary>Process name + ".exe" (for the sub-info line). Returns "" if unavailable (process gone /
+    /// no access), and is not retried.</summary>
     private static string ProcessExeNameOf(uint pid)
     {
         var name = ProcessNameOf(pid);
@@ -317,22 +354,22 @@ public sealed partial class DashboardPage : Page
     }
 
     /// <summary>
-    /// 计算卡片副信息行(第二行)。规则:
-    /// 进程名取得到且(标题与配置名相同 或 标题为空)→ 只显示进程名,如 "StarRail.exe";
-    /// 进程名取得到且标题不同 → "窗口标题 · StarRail.exe";
-    /// 进程名取不到 → 退回显示标题(老行为)。
+    /// Compute the card sub-info line (second row). Rules:
+    /// process name available and (title == profile name OR title empty) -> show process name only, e.g. "StarRail.exe";
+    /// process name available and title differs -> "window title · StarRail.exe";
+    /// process name unavailable -> fall back to the title (legacy behavior).
     /// </summary>
     private static string ComputeSubInfo(string profileName, string title, string exeName)
     {
-        bool hasTitle = !string.IsNullOrEmpty(title) && title != "(无标题)";
+        bool hasTitle = !string.IsNullOrEmpty(title) && title != Loc.T("DashboardPage/WindowNoTitle");
         if (string.IsNullOrEmpty(exeName))
             return hasTitle ? title : "";
         if (!hasTitle || title == profileName)
             return exeName;
-        return $"{title} · {exeName}";
+        return Loc.T("DashboardPage/SubInfoFormat", title, exeName);
     }
 
-    /// <summary>按句柄取窗口标题(用现有 P/Invoke,不依赖全量枚举)。</summary>
+    /// <summary>Get a window title by handle (uses the existing P/Invoke, no full enumeration).</summary>
     private static string WindowTitle(IntPtr hwnd)
     {
         int len = NativeMethods.GetWindowTextLength(hwnd);
@@ -347,7 +384,7 @@ public sealed partial class DashboardPage : Page
         if (sender is Button { Tag: IntPtr handle } && handle != IntPtr.Zero)
         {
             WindowOps.Restore(handle);
-            RefreshLive(); // 立即反映还原结果(下次接管由引擎决定)
+            RefreshLive(); // reflect the restore immediately (the engine decides the next takeover)
         }
     }
 
