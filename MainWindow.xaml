@@ -16,24 +16,31 @@
             IsSettingsVisible="False"
             PaneDisplayMode="Left"
             IsPaneToggleButtonVisible="True"
-            OpenPaneLength="200"
+            OpenPaneLength="210"
             IsTitleBarAutoPaddingEnabled="False"
             SelectionChanged="Nav_SelectionChanged">
+
+            <!-- 导航项行高:默认 40 偏挤,提到 48 让图标(已放大到 20px)与文字更舒展,
+                 对标成熟应用(图吧工具箱)的标准 NavigationView 观感(经 44/48 截图比对,48 更贴近其舒展度)。
+                 OpenPaneLength 同步 200→210 平衡更大的行高。 -->
+            <muxc:NavigationView.Resources>
+                <x:Double x:Key="NavigationViewItemOnLeftMinHeight">48</x:Double>
+            </muxc:NavigationView.Resources>
 
             <muxc:NavigationView.MenuItems>
                 <muxc:NavigationViewItem Content="仪表盘" Tag="dashboard">
                     <muxc:NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE7F4;"/>
+                        <FontIcon Glyph="&#xE7F4;" FontSize="20"/>
                     </muxc:NavigationViewItem.Icon>
                 </muxc:NavigationViewItem>
                 <muxc:NavigationViewItem Content="配置文件" Tag="profiles">
                     <muxc:NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE7C1;"/>
+                        <FontIcon Glyph="&#xE7C1;" FontSize="20"/>
                     </muxc:NavigationViewItem.Icon>
                 </muxc:NavigationViewItem>
                 <muxc:NavigationViewItem Content="布局" Tag="layouts">
                     <muxc:NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE80A;"/>
+                        <FontIcon Glyph="&#xE80A;" FontSize="20"/>
                     </muxc:NavigationViewItem.Icon>
                 </muxc:NavigationViewItem>
             </muxc:NavigationView.MenuItems>
@@ -41,7 +48,7 @@
             <muxc:NavigationView.FooterMenuItems>
                 <muxc:NavigationViewItem Content="设置" Tag="settings">
                     <muxc:NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE713;"/>
+                        <FontIcon Glyph="&#xE713;" FontSize="20"/>
                     </muxc:NavigationViewItem.Icon>
                 </muxc:NavigationViewItem>
             </muxc:NavigationView.FooterMenuItems>
@@ -57,13 +64,13 @@
               VerticalAlignment="Top"
               Margin="48,0,0,0"
               Background="Transparent">
-            <StackPanel Orientation="Horizontal" Spacing="12"
+            <StackPanel Orientation="Horizontal" Spacing="10"
                         VerticalAlignment="Center"
                         Margin="4,0,0,0">
-                <Image x:Name="TitleBarIcon" Width="16" Height="16"
+                <Image x:Name="TitleBarIcon" Width="20" Height="20"
                        VerticalAlignment="Center"/>
                 <TextBlock x:Name="AppTitleText" Text="Reframe"
-                           Style="{ThemeResource CaptionTextBlockStyle}"
+                           Style="{ThemeResource BodyStrongTextBlockStyle}"
                            VerticalAlignment="Center"/>
             </StackPanel>
         </Grid>
