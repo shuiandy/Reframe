@@ -62,8 +62,15 @@ Reframe 给窗口去掉标题栏和边框,再按你定的位置摆好。重点�
 
 ## 安装
 
+**推荐 —— 安装程序**
+
+1. 从 [Releases](https://github.com/shuiandy/Reframe/releases) 下载最新的 `Reframe-Setup-v<版本>-win-x64.exe`。
+2. 运行它,按向导走完即可。若缺 .NET 9 桌面运行时,安装程序会自动下载并安装。
+
+**便携(绿色版)—— zip**
+
 1. 从 [Releases](https://github.com/shuiandy/Reframe/releases) 下载最新的 `Reframe-v<版本>-win-x64.zip`。
-2. 解压到任意位置,运行 `Reframe.exe`。
+2. 解压到任意位置,运行 `Reframe.exe`。(需自行安装 [.NET 9 桌面运行时](https://dotnet.microsoft.com/download/dotnet/9.0)。)
 
 **环境要求**
 

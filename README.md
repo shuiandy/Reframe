@@ -62,8 +62,15 @@ Most borderless tools store a fixed pixel position per game. Reframe is built ar
 
 ## Install
 
+**Recommended — installer**
+
+1. Download the latest `Reframe-Setup-v<version>-win-x64.exe` from [Releases](https://github.com/shuiandy/Reframe/releases).
+2. Run it and follow the wizard. If the .NET 9 Desktop Runtime is missing, the installer downloads and installs it for you.
+
+**Portable (green) — zip**
+
 1. Download the latest `Reframe-v<version>-win-x64.zip` from [Releases](https://github.com/shuiandy/Reframe/releases).
-2. Unzip anywhere and run `Reframe.exe`.
+2. Unzip anywhere and run `Reframe.exe`. (You'll need the [.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9.0) yourself.)
 
 **Requirements**
 

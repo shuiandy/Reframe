@@ -9,3 +9,5 @@ build_checkUI/
 dist/
 publish_out/
 tools/relaunch_log.txt
+# Inno Setup default output dir (only used if OutputDir override is ever dropped)
+tools/installer/Output/
