@@ -171,6 +171,14 @@
     <value>Hold Shift while dragging any window to show the zone overlay; release to snap the window into the zone under the cursor.</value>
   </data>
 
+  <!-- Window-position memory section -->
+  <data name="PersistenceHeader.Text" xml:space="preserve">
+    <value>Window-position memory</value>
+  </data>
+  <data name="PersistenceDesc.Text" xml:space="preserve">
+    <value>Remember where windows sit under each monitor configuration and put them back after a display/resolution change or returning from streaming, so you never reposition them by hand.</value>
+  </data>
+
   <!-- Window takeover (restore all) section -->
   <data name="TakeoverHeader.Text" xml:space="preserve">
     <value>Window takeover</value>

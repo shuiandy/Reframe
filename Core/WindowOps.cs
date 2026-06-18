@@ -180,7 +180,12 @@ public static class WindowOps
     public static void RestorePlacement(IntPtr hWnd, int left, int top, int right, int bottom, int showCmd)
     {
         if (!NativeMethods.IsWindow(hWnd)) return;
+        if (showCmd == NativeMethods.SW_SHOWMINIMIZED) return; // leave a minimized window minimized
         int w = Math.Max(1, right - left), h = Math.Max(1, bottom - top);
+
+        // Register suppression BEFORE the move, so the LOCATIONCHANGE it triggers is ignored even if it
+        // fires before this method returns (matters once capture becomes event-driven).
+        MarkEngineWrite(hWnd);
 
         if (showCmd == NativeMethods.SW_SHOWMAXIMIZED)
         {
@@ -202,7 +207,6 @@ public static class WindowOps
                 NativeMethods.SWP_NOOWNERZORDER | NativeMethods.SWP_FRAMECHANGED);
         }
 
-        MarkEngineWrite(hWnd); // PersistenceRestore is a non-User write: suppress the resulting LOCATIONCHANGE
         NativeMethods.RedrawWindow(hWnd, IntPtr.Zero, IntPtr.Zero,
             NativeMethods.RDW_INVALIDATE | NativeMethods.RDW_ERASE | NativeMethods.RDW_FRAME |
             NativeMethods.RDW_UPDATENOW | NativeMethods.RDW_ALLCHILDREN);

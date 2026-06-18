@@ -195,6 +195,7 @@ public partial class App : Application
             isEngineBusy: () => Engine.IsSystemMutationActive,
             isEnabled: () => ConfigService.Instance.Config.WindowPersistenceEnabled);
         Persistence = _persistence;
+        _persistence.Log += m => Engine.LogExternal(m); // surface restore activity in the dashboard log
         _persistence.Start();
 
         _window = new MainWindow();

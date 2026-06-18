@@ -66,13 +66,17 @@ public sealed class LayoutMemory
     /// </summary>
     public void PruneDead(Func<IntPtr, bool> isAlive)
     {
-        foreach (var bucket in _byKey.Values)
+        List<string>? emptyKeys = null;
+        foreach (var (key, bucket) in _byKey)
         {
             List<IntPtr>? dead = null;
             foreach (var h in bucket.Keys)
                 if (!isAlive(h)) (dead ??= new List<IntPtr>()).Add(h);
             if (dead != null)
                 foreach (var h in dead) bucket.Remove(h);
+            if (bucket.Count == 0) (emptyKeys ??= new List<string>()).Add(key);
         }
+        if (emptyKeys != null)
+            foreach (var k in emptyKeys) _byKey.Remove(k);
     }
 }

@@ -50,7 +50,7 @@ public sealed class DisplayChangeListener : IDisposable
 
         _thread = new Thread(ThreadProc) { IsBackground = true, Name = "Reframe.DisplayChange" };
         _thread.Start();
-        return _ready.Wait(2000);
+        return _ready.Wait(2000) && _hwnd != IntPtr.Zero;
     }
 
     /// <summary>Stop the pump and join the thread. Idempotent.</summary>
@@ -87,6 +87,15 @@ public sealed class DisplayChangeListener : IDisposable
                 (uint)NativeMethods.WS_EX_TOOLWINDOW, WindowClassName, "Reframe.DisplayChange",
                 0 /* WS_OVERLAPPED, no WS_VISIBLE */, 0, 0, 0, 0,
                 IntPtr.Zero, IntPtr.Zero, NativeMethods.GetModuleHandle(null), IntPtr.Zero);
+
+            if (_hwnd == IntPtr.Zero)
+            {
+                // Creation failed: bail without entering the pump. The finally sets _ready; Start() sees
+                // _hwnd == 0 and reports failure, and Stop()'s Join completes because the thread is exiting.
+                OnThreadError?.Invoke("DisplayChangeListener",
+                    new Exception($"CreateWindowEx failed (Win32 {Marshal.GetLastWin32Error()})"));
+                return;
+            }
 
             _ready.Set();
 

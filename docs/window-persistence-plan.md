@@ -49,6 +49,26 @@
 
 ---
 
+## 0c. P1 落地说明（第三轮 Codex review 后）
+
+> P1 已实现并通过第三轮 Codex（读真实现）review。下列代码级问题**已修**：
+> - `OnSettle` 仅在 DisplayKey **真变化**且仍启用时才还原（堵住"同 key 的 spurious `WM_DISPLAYCHANGE` 把窗口拉回 2s 前快照、覆盖用户刚做的移动"）；冻结期间用户关掉开关则中止还原。
+> - `DisplayChangeListener` 处理 `CreateWindowEx` 失败（不进泵、`Start` 返回 false、线程干净退出，不泄漏）。
+> - `RestorePlacement`：最小化窗口保持最小化；suppression 在移动**之前**登记。
+> - 多趟还原改为**校验到位、只重试未到位者**，全到位即提前退出。
+> - `DoRestore` 前 `PruneDead` 刷新存活；`LayoutMemory.PruneDead` 删空桶。
+> - `PersistenceEngine` mailbox 可在 `Stop→Start` 后重建。
+> - `PersistenceEngine.Log` 接入仪表盘日志（经 `Watcher.LogExternal`）。
+> - 设置页加"窗口位置记忆"开关（双语 resw），实时生效。
+
+**刻意的 P1 取舍（更新本计划决议）：**
+1. **捕获用周期 Timer（2s），非 WinEvent 驱动**。事件驱动捕获（plan §6 的 hook `ScheduleCapture`）**移至 P2**。代价：显示切换前 0~2s 内的窗口移动可能未被捕获（实践中可忽略——用户极少在移动窗口后 2s 内切显示器）。
+2. **协作不单独做 `BeginSystemMutation/EndSystemMutation`**：改用 source-tag suppression（覆盖**所有** `WindowOps` 写入，含热键/UI 快捷去框）+ `Watcher.IsSystemMutationActive`（粗粒度 tick 忙）。前者已在 per-window 粒度覆盖 codex 担心的"热键/页面直接写"，故显式 scope 冗余。
+3. **句柄复用的身份校验（进程/类/标题）仍属 P3**；P1 用 hWnd-keyed + 每轮 `PruneDead(IsWindow)` 缓解，残留窗口极短（≤2s）。
+4. **`PersistenceEngine` 的 Win32/actor 层未单测**（需注入 clock/window-ops/monitor provider，列入 P2 重构）；纯逻辑层 `LayoutKey`（8 例）+ `LayoutMemory`（9 例）已测。
+
+---
+
 ## 1. 范围与非目标
 
 ### 1.1 范围（完整移植，分阶段交付）

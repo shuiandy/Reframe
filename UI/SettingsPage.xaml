@@ -91,6 +91,14 @@
                               Toggled="DragSnapToggle_Toggled"/>
             </StackPanel>
 
+            <!-- 窗口位置记忆 -->
+            <StackPanel Spacing="6">
+                <TextBlock x:Uid="/SettingsPage/PersistenceHeader" FontWeight="SemiBold"/>
+                <TextBlock x:Uid="/SettingsPage/PersistenceDesc" Opacity="0.7" FontSize="12"/>
+                <ToggleSwitch x:Name="PersistenceToggle"
+                              Toggled="PersistenceToggle_Toggled"/>
+            </StackPanel>
+
             <!-- 还原全部 -->
             <StackPanel Spacing="6">
                 <TextBlock x:Uid="/SettingsPage/TakeoverHeader" FontWeight="SemiBold"/>

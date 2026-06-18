@@ -170,6 +170,12 @@
   <data name="DragSnapDesc.Text" xml:space="preserve">
     <value>按住 Shift 拖动任意窗口时显示分区覆盖层,松手把窗口吸进所在分区。</value>
   </data>
+  <data name="PersistenceHeader.Text" xml:space="preserve">
+    <value>窗口位置记忆</value>
+  </data>
+  <data name="PersistenceDesc.Text" xml:space="preserve">
+    <value>记住各显示器配置下的窗口位置,切换显示器/分辨率或串流回桌面后自动还原,免去每次手动归位。</value>
+  </data>
 
   <!-- 窗口接管(还原全部) -->
   <data name="TakeoverHeader.Text" xml:space="preserve">

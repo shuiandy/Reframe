@@ -48,7 +48,7 @@ public sealed class PersistenceEngine : IDisposable
 
     // ---- Actor mailbox + worker ----
     private enum Msg { Capture, DisplayChanged, Settle, ResumeCapture }
-    private readonly BlockingCollection<Msg> _mailbox = new();
+    private BlockingCollection<Msg> _mailbox = new();
     private Thread? _worker;
     private Timer? _captureTimer;
     private Timer? _settleTimer;
@@ -76,6 +76,9 @@ public sealed class PersistenceEngine : IDisposable
     {
         if (_started) return;
         _started = true;
+
+        // A prior Stop() completes the mailbox (terminal); a fresh Start() needs one that accepts posts again.
+        if (_mailbox.IsAddingCompleted) _mailbox = new BlockingCollection<Msg>();
 
         _worker = new Thread(WorkerLoop) { IsBackground = true, Name = "Reframe.Persistence" };
         _worker.Start();
@@ -179,45 +182,67 @@ public sealed class PersistenceEngine : IDisposable
     {
         if (_state != State.Frozen) return; // superseded by a later transition
 
+        // Disabled mid-freeze (user turned persistence off after the display changed): abort without restoring.
+        if (!_isEnabled()) { _state = State.Idle; return; }
+
         // If the borderless engine is mid-tick (it also reacts to the display change), let it finish first so
         // we don't race its re-placement of game windows; retry shortly.
         if (_isEngineBusy()) { _settleTimer?.Change(EngineBusyRetryMs, Timeout.Infinite); return; }
 
-        string key = ComputeKey();
-        _currentKey = key;
+        string newKey = ComputeKey();
+        bool topologyChanged = newKey != _currentKey;
+        _currentKey = newKey;
 
-        if (_memory.HasSnapshot(key))
+        // Only restore when the configuration actually changed AND we have a remembered layout for it. A
+        // spurious / same-key WM_DISPLAYCHANGE must not pull windows back over the user's recent moves.
+        if (topologyChanged && _memory.HasSnapshot(newKey))
         {
             _state = State.Restoring;
-            int restored = DoRestore(key);
-            Log?.Invoke($"Restored {restored} window(s) for display {key}");
+            int restored = DoRestore(newKey);
+            Log?.Invoke($"Restored {restored} window(s) for display {newKey}");
             _state = State.Settling;
             _graceTimer?.Change(GraceMs, Timeout.Infinite); // absorb late scrambling, then resume capture
         }
         else
         {
-            // A configuration we have no memory of yet: just start capturing it.
+            // Same config, or one we have no memory of yet: just (resume) capturing it.
             _state = State.Idle;
         }
     }
 
     private int DoRestore(string key)
     {
-        int applied = 0;
+        _memory.PruneDead(NativeMethods.IsWindow); // fresh liveness before matching handles to records
+        int restoredCount = 0;
         for (int pass = 0; pass < RestorePasses; pass++)
         {
             var owned = _getEngineOwned();
             var live = EligibleHandles(owned);
             var plan = _memory.GetRestorePlan(key, live);
+            if (plan.Count == 0) break;
+
+            int movedThisPass = 0;
             foreach (var (h, t) in plan)
             {
+                if (IsAtTarget(h, t)) continue; // already in place: verify-then-retry-only-misses
                 WindowOps.RestorePlacement(h, t.Left, t.Top, t.Right, t.Bottom, t.ShowCmd);
-                if (pass == 0) applied++;
+                movedThisPass++;
             }
-            if (plan.Count == 0) break;
+            if (pass == 0) restoredCount = movedThisPass;
+            if (movedThisPass == 0) break; // everything reached its target
             if (pass < RestorePasses - 1) Thread.Sleep(RestorePassDelayMs);
         }
-        return applied;
+        return restoredCount;
+    }
+
+    /// <summary>Whether the window already sits within tolerance of its remembered rect (a maximized record always re-asserts).</summary>
+    private static bool IsAtTarget(IntPtr h, WindowRecord t)
+    {
+        if (t.ShowCmd == NativeMethods.SW_SHOWMAXIMIZED) return false;
+        if (!NativeMethods.GetWindowRect(h, out var r)) return false;
+        const int tol = 2;
+        return Math.Abs(r.Left - t.Left) <= tol && Math.Abs(r.Top - t.Top) <= tol &&
+               Math.Abs(r.Right - t.Right) <= tol && Math.Abs(r.Bottom - t.Bottom) <= tol;
     }
 
     private string ComputeKey() => LayoutKey.Compute(_getMonitors());

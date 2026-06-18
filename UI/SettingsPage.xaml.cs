@@ -38,6 +38,7 @@ public sealed partial class SettingsPage : Page
             StartMinimizedToggle.OnContent = on;   StartMinimizedToggle.OffContent = off;
             StartMinimizedToggle.Header = Loc.T("SettingsPage/StartMinimizedToggle"); // Header 走代码本地化(ToggleSwitch 上的 x:Uid 较脆)
             DragSnapToggle.OnContent = on;         DragSnapToggle.OffContent = off;
+            PersistenceToggle.OnContent = on;      PersistenceToggle.OffContent = off;
 
             var cfg = ConfigService.Instance.Config;
             LoadConfigControls(cfg);
@@ -96,6 +97,7 @@ public sealed partial class SettingsPage : Page
         SgdbKeyBox.Text = cfg.SteamGridDbApiKey ?? "";
         PollBox.Value = cfg.PollIntervalMs;
         DragSnapToggle.IsOn = cfg.DragSnapEnabled;
+        PersistenceToggle.IsOn = cfg.WindowPersistenceEnabled;
         // 「随登录启动时缩到托盘」是普通配置项,外部热重载也读回(IsEnabled 联动开机自启的 OS 任务态,
         // 与版本/路径同属静态范畴,不在此处随配置刷新)。
         StartMinimizedToggle.IsOn = cfg.StartMinimizedOnLogin;
@@ -407,6 +409,17 @@ public sealed partial class SettingsPage : Page
         if (svc.Config.DragSnapEnabled == on) return;
         svc.Config.DragSnapEnabled = on;
         svc.Save();
+    }
+
+    private void PersistenceToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+
+        var svc = ConfigService.Instance;
+        bool on = PersistenceToggle.IsOn;
+        if (svc.Config.WindowPersistenceEnabled == on) return;
+        svc.Config.WindowPersistenceEnabled = on;
+        svc.Save(); // PersistenceEngine reads WindowPersistenceEnabled live via its isEnabled callback
     }
 
     private async void StartupToggle_Toggled(object sender, RoutedEventArgs e)
