@@ -27,6 +27,24 @@ public partial class App : Application
     /// <summary>The current App instance (non-null after OnLaunched). Lets static entry points such as <see cref="RequestExit"/> forward to instance methods.</summary>
     private static App? _current;
 
+    /// <summary>Informational version (csproj &lt;InformationalVersion&gt;, e.g. "1.2.0"), read from the
+    /// entry assembly's attribute; falls back to the file version then "?" so the session marker never throws.</summary>
+    private static string AppVersion
+    {
+        get
+        {
+            try
+            {
+                var asm = System.Reflection.Assembly.GetEntryAssembly() ?? typeof(App).Assembly;
+                var info = System.Reflection.CustomAttributeExtensions
+                    .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(asm)?.InformationalVersion;
+                if (!string.IsNullOrWhiteSpace(info)) return info;
+                return asm.GetName().Version?.ToString() ?? "?";
+            }
+            catch { return "?"; }
+        }
+    }
+
     /// <summary>
     /// Programmatically trigger a normal exit (equivalent to the tray "Exit"): restore all managed
     /// windows + clear the tray + Application.Exit. For scenarios like "restart immediately after a
@@ -56,17 +74,38 @@ public partial class App : Application
 
         InitializeComponent();
 
-        // Crash log: write unhandled exceptions to %LOCALAPPDATA%\Reframe\crash.log.
-        // XAML/WinRT-layer exceptions (0xc000027b stowed exception) would otherwise show only a module name in Event Viewer, with no stack.
+        // Crash log: write unhandled exceptions to %LOCALAPPDATA%\Reframe\crash.log (shared sink in
+        // Services.CrashLog). XAML/WinRT-layer exceptions (0xc000027b stowed exception) would otherwise
+        // show only a module name in Event Viewer, with no stack.
         UnhandledException += (_, e) =>
         {
-            LogCrash("XAML UnhandledException", e.Exception);
+            CrashLog.Write("XAML UnhandledException", e.Exception);
             // Don't set e.Handled = true: let the process crash as usual, but we've captured the stack.
         };
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
-            LogCrash("AppDomain UnhandledException", e.ExceptionObject as Exception);
+            CrashLog.Write("AppDomain UnhandledException", e.ExceptionObject as Exception);
         System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (_, e) =>
-            LogCrash("UnobservedTaskException", e.Exception);
+            CrashLog.Write("UnobservedTaskException", e.Exception);
+
+        // Manually-created background threads (the tray / hotkey message pumps, the WinEvent / DragSnap
+        // hook pumps, the watcher's poll loop + debounce timers) don't surface through the three handlers
+        // above — a raw-thread throw fast-fails the process before any managed handler logs it. Services
+        // classes call CrashLog directly; Core classes can't reference Services (the Tests project links
+        // Core sources standalone), so they expose a static OnThreadError callback we wire here. Done in
+        // the ctor so it's set before OnLaunched starts any of those threads.
+        Reframe.Core.WinEventHook.OnThreadError = CrashLog.Write;
+        Reframe.Core.DragSnapService.OnThreadError = CrashLog.Write;
+        Reframe.Core.Watcher.OnThreadError = CrashLog.Write;
+
+        // Clean-shutdown / vanish discriminator: a ProcessExit marker means the CLR ran a normal exit
+        // path (tray Exit, restart, or host teardown). If the process disappears and crash.log shows
+        // neither a crash entry nor this marker, it was killed externally or fast-failed in native code —
+        // which narrows the investigation. ProcessExit handlers get a short, best-effort budget; keep it tiny.
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => CrashLog.Note("ProcessExit (clean shutdown)");
+
+        // Native catch-all: register WER LocalDumps so even a native access violation that bypasses the
+        // managed layer leaves a .dmp. Best-effort; failures (no registry permission) are swallowed.
+        RegisterWerLocalDumps();
     }
 
     /// <summary>
@@ -91,24 +130,43 @@ public partial class App : Application
         catch { /* override failed: fall back to the system language, don't block startup */ }
     }
 
-    private static void LogCrash(string source, Exception? ex)
+    /// <summary>
+    /// Best-effort self-registration of WER LocalDumps for this exe, so a native crash that bypasses the
+    /// managed exception handlers (e.g. an access violation in a P/Invoke'd DLL) still drops a full
+    /// minidump. Writes <c>HKCU\Software\Microsoft\Windows\Windows Error Reporting\LocalDumps\Reframe.exe</c>
+    /// with DumpType=2 (full), DumpFolder=%LOCALAPPDATA%\Reframe\dumps, DumpCount=5. HKCU needs no elevation,
+    /// but any failure is swallowed — a diagnostics nicety must never block startup. Idempotent (overwrites).
+    /// </summary>
+    private static void RegisterWerLocalDumps()
     {
         try
         {
-            string dir = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Reframe");
-            System.IO.Directory.CreateDirectory(dir);
-            string text = $"=== {DateTime.Now:yyyy-MM-dd HH:mm:ss} [{source}] ==={Environment.NewLine}" +
-                          (ex?.ToString() ?? "(null exception)") + Environment.NewLine + Environment.NewLine;
-            System.IO.File.AppendAllText(System.IO.Path.Combine(dir, "crash.log"), text);
+            string exe = System.IO.Path.GetFileName(Environment.ProcessPath ?? "Reframe.exe");
+            if (string.IsNullOrEmpty(exe)) exe = "Reframe.exe";
+
+            string dumpFolder = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Reframe", "dumps");
+
+            using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(
+                @"Software\Microsoft\Windows\Windows Error Reporting\LocalDumps\" + exe);
+            if (key is null) return;
+            key.SetValue("DumpFolder", dumpFolder, Microsoft.Win32.RegistryValueKind.ExpandString);
+            key.SetValue("DumpType", 2, Microsoft.Win32.RegistryValueKind.DWord);   // 2 = full dump
+            key.SetValue("DumpCount", 5, Microsoft.Win32.RegistryValueKind.DWord);  // keep the most recent 5
         }
-        catch { /* a logging failure must not throw again */ }
+        catch { /* no permission / policy-locked: skip silently */ }
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         // Single instance: do this first. An existing instance is brought to the front, and this process Environment.Exits here.
         if (!SingleInstance.EnsureSingle()) return;
+
+        // Session marker: one line that brackets each run in crash.log, so the log reads as a sequence of
+        // sessions (and a later "ProcessExit" line confirms a clean close vs. a vanish). Written right after
+        // the single-instance gate so a secondary instance that exits early doesn't emit a misleading line.
+        bool startMinimized = StartupOptions.IsMinimized(Environment.GetCommandLineArgs());
+        CrashLog.Note($"Started v{AppVersion} minimized={startMinimized}");
 
         // First access to Instance triggers Load. Engine always takes the latest config reference.
         _ = ConfigService.Instance;
@@ -136,7 +194,7 @@ public partial class App : Application
         // never Activated can fail to render when shown later; activating first then hiding gives a normal
         // lifecycle and a later ShowMainWindow (tray "Open") reliably brings it up interactive. The brief
         // activate→hide happens within a single message-loop turn, so there's no visible window flash.
-        bool startMinimized = StartupOptions.IsMinimized(Environment.GetCommandLineArgs());
+        // (startMinimized was already parsed above for the session marker.)
         _window.Activate();
         if (startMinimized)
             _window.AppWindow.Hide();
@@ -207,6 +265,11 @@ public partial class App : Application
     {
         if (_exiting) return;
         _exiting = true;
+
+        // Exit marker: a deliberate exit (tray "Exit", or RequestExit for a language-change restart). Paired
+        // with the later AppDomain.ProcessExit "clean shutdown" line, this tells a clean teardown apart from a
+        // crash or external kill when reading crash.log after the fact.
+        CrashLog.Note("Exit via tray/RequestExit");
 
         // 1) Hide the window immediately for instant feedback (still on the UI thread here).
         try { _window?.AppWindow.Hide(); } catch { /* ignore */ }

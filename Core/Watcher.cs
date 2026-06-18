@@ -11,6 +11,17 @@ namespace Reframe.Core;
 /// </summary>
 public sealed class Watcher : IDisposable
 {
+    /// <summary>
+    /// Injectable last-resort error sink for the watcher's own background threads: the poll-loop
+    /// Task and the two debounce Timer callbacks. <see cref="SafeTick"/> already catches errors from
+    /// the inner scan and routes them to the dashboard log, but an exception in the surrounding
+    /// machinery (config fetch, edge detection, the timer/poll dispatch itself) would escape to a
+    /// thread-pool thread and be swallowed (Timer) or deferred to GC (Task) with no crash.log trace.
+    /// App wires this to <c>Services.CrashLog.Write</c> at startup; Core keeps zero Services
+    /// dependency (Tests link these Core sources standalone). Static: process-wide diagnostics.
+    /// </summary>
+    public static Action<string, Exception?>? OnThreadError;
+
     private readonly Func<AppConfig> _getConfig;
 
     private WinEventHook? _hook;
@@ -240,37 +251,54 @@ public sealed class Watcher : IDisposable
     private void ForegroundRefreshTick()
     {
         if (!_running) return;
-
-        // While the engine is paused (EngineEnabled=false), foreground events must not apply new Clip/Mute —
-        // only release existing ones. (SafeTick's edge detection already called ReleaseAll once when it
-        // flipped to false; this catches foreground events that arrive during the paused period.)
-        if (!_getConfig().EngineEnabled)
+        // Whole-callback guard: this runs on the _fgDebounce Timer thread and touches config + COM
+        // (UpdateMute) + ClipCursor; a throw here would otherwise be swallowed by the pool with no trace.
+        try
         {
-            List<uint> toUnmute;
-            lock (_gate)
+            // While the engine is paused (EngineEnabled=false), foreground events must not apply new Clip/Mute —
+            // only release existing ones. (SafeTick's edge detection already called ReleaseAll once when it
+            // flipped to false; this catches foreground events that arrive during the paused period.)
+            if (!_getConfig().EngineEnabled)
             {
-                ReleaseClipLocked();
-                toUnmute = DrainMutedLocked();
+                List<uint> toUnmute;
+                lock (_gate)
+                {
+                    ReleaseClipLocked();
+                    toUnmute = DrainMutedLocked();
+                }
+                UnmuteOutsideLock(toUnmute);
+                return;
             }
-            UnmuteOutsideLock(toUnmute);
-            return;
-        }
 
-        var fg = NativeMethods.GetForegroundWindow();
-        UpdateClip(fg);
-        UpdateMute(fg);
+            var fg = NativeMethods.GetForegroundWindow();
+            UpdateClip(fg);
+            UpdateMute(fg);
+        }
+        catch (Exception ex) { OnThreadError?.Invoke("Watcher ForegroundRefreshTick", ex); }
     }
 
     private async Task PollLoopAsync(CancellationToken ct)
     {
-        while (!ct.IsCancellationRequested)
+        // Whole-loop guard: an exception escaping here becomes an unobserved Task exception, surfaced
+        // only at GC finalization (TaskScheduler.UnobservedTaskException) if ever — record it eagerly so
+        // a watcher-thread crash leaves a trace. SafeTick already guards the per-tick work; this catches
+        // the surrounding machinery (config fetch, the delay/dispatch). Cancellation exits cleanly.
+        try
         {
-            var cfg = _getConfig();
-            int interval = Math.Max(MinPollMs, cfg.PollIntervalMs);
-            try { await Task.Delay(interval, ct); }
-            catch (TaskCanceledException) { break; }
+            while (!ct.IsCancellationRequested)
+            {
+                var cfg = _getConfig();
+                int interval = Math.Max(MinPollMs, cfg.PollIntervalMs);
+                try { await Task.Delay(interval, ct); }
+                catch (TaskCanceledException) { break; }
 
-            SafeTick();
+                SafeTick();
+            }
+        }
+        catch (OperationCanceledException) { /* normal shutdown */ }
+        catch (Exception ex)
+        {
+            OnThreadError?.Invoke("Watcher poll loop", ex);
         }
     }
 
@@ -312,6 +340,10 @@ public sealed class Watcher : IDisposable
             try { Tick(cfg); }
             catch (Exception ex) { Emit("Scan error: " + ex.Message); }
         }
+        // Last-resort guard for the machinery around the inner Tick (config fetch, edge detection):
+        // SafeTick runs on the debounce Timer / poll thread, where a throw here would otherwise be
+        // swallowed by the pool with no trace. The inner scan keeps its own Emit-to-dashboard path.
+        catch (Exception ex) { OnThreadError?.Invoke("Watcher SafeTick", ex); }
         finally { Interlocked.Exchange(ref _ticking, 0); }
     }
 

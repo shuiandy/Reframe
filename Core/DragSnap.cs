@@ -28,6 +28,16 @@ namespace Reframe.Core;
 /// </summary>
 public static class DragSnapService
 {
+    /// <summary>
+    /// Injectable last-resort error sink for the dedicated hook thread and the cursor-poll timer
+    /// callback. An exception escaping the raw hook thread fast-fails the process without reaching
+    /// App/AppDomain handlers, leaving no crash.log entry; a throw on the thread-pool poll callback is
+    /// merely swallowed by the pool, so neither case is otherwise recorded. App wires this to
+    /// <c>Services.CrashLog.Write</c> at startup; Core keeps zero Services dependency (Tests link
+    /// these Core sources standalone).
+    /// </summary>
+    public static Action<string, Exception?>? OnThreadError;
+
     private static Func<AppConfig>? _getConfig;
     private static DispatcherQueue? _ui;
 
@@ -103,24 +113,37 @@ public static class DragSnapService
 
     private static void ThreadProc()
     {
-        _threadId = NativeMethods.GetCurrentThreadId();
-
-        // One hook covers the contiguous MOVESIZESTART (0x000A)..MOVESIZEEND (0x000B) range.
-        _hook = NativeMethods.SetWinEventHook(
-            NativeMethods.EVENT_SYSTEM_MOVESIZESTART, NativeMethods.EVENT_SYSTEM_MOVESIZEEND,
-            IntPtr.Zero, _proc!, 0, 0,
-            NativeMethods.WINEVENT_OUTOFCONTEXT | NativeMethods.WINEVENT_SKIPOWNPROCESS);
-
-        _ready.Set();
-
-        while (NativeMethods.GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0)
+        // Whole-proc guard: an exception escaping this raw background thread fast-fails the process
+        // without reaching App/AppDomain handlers — record it so a crash leaves a trace. _ready is
+        // always Set so a startup failure surfaces as a Start() timeout (zombie cleanup) rather than a hang.
+        try
         {
-            NativeMethods.TranslateMessage(in msg);
-            NativeMethods.DispatchMessage(in msg);
-        }
+            _threadId = NativeMethods.GetCurrentThreadId();
 
-        if (_hook != IntPtr.Zero) NativeMethods.UnhookWinEvent(_hook);
-        _hook = IntPtr.Zero;
+            // One hook covers the contiguous MOVESIZESTART (0x000A)..MOVESIZEEND (0x000B) range.
+            _hook = NativeMethods.SetWinEventHook(
+                NativeMethods.EVENT_SYSTEM_MOVESIZESTART, NativeMethods.EVENT_SYSTEM_MOVESIZEEND,
+                IntPtr.Zero, _proc!, 0, 0,
+                NativeMethods.WINEVENT_OUTOFCONTEXT | NativeMethods.WINEVENT_SKIPOWNPROCESS);
+
+            _ready.Set();
+
+            while (NativeMethods.GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0)
+            {
+                NativeMethods.TranslateMessage(in msg);
+                NativeMethods.DispatchMessage(in msg);
+            }
+        }
+        catch (Exception ex)
+        {
+            OnThreadError?.Invoke("DragSnap hook thread", ex);
+        }
+        finally
+        {
+            _ready.Set(); // idempotent; unblocks Start() if we threw before reaching the pump
+            if (_hook != IntPtr.Zero) NativeMethods.UnhookWinEvent(_hook);
+            _hook = IntPtr.Zero;
+        }
     }
 
     private static void OnWinEvent(IntPtr hWinEventHook, uint eventType, IntPtr hwnd,
@@ -206,7 +229,15 @@ public static class DragSnapService
     private static void StartPoll()
     {
         StopPoll();
-        _pollTimer = new System.Threading.Timer(_ => PollTick(), null, 0, 100);
+        // Wrap the timer callback: a throw here runs on the thread pool and would otherwise be
+        // swallowed with no trace. PollTick's own body stays unguarded so the logic reads cleanly.
+        _pollTimer = new System.Threading.Timer(_ => SafePollTick(), null, 0, 100);
+    }
+
+    private static void SafePollTick()
+    {
+        try { PollTick(); }
+        catch (Exception ex) { OnThreadError?.Invoke("DragSnap poll timer", ex); }
     }
 
     private static void StopPoll()

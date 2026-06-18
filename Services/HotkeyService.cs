@@ -185,18 +185,33 @@ public sealed class HotkeyService : IDisposable
 
     private void ThreadProc()
     {
-        _threadId = GetCurrentThreadId();
-        RegisterWindowClass();
-
-        _hwnd = CreateWindowEx(0, WindowClassName, "Reframe.Hotkey", 0,
-            0, 0, 0, 0, HWND_MESSAGE, IntPtr.Zero, GetModuleHandle(null), IntPtr.Zero);
-
-        _ready.Set();
-
-        while (GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0)
+        // Whole-proc guard: this is a raw background thread, so an escaping exception (e.g. from the
+        // WM_APP_REREGISTER → ReRegisterAll path that runs on the pump) fast-fails the process without
+        // reaching App/AppDomain handlers — record it to crash.log so a crash leaves a trace. _ready is
+        // always Set (in finally) so a startup failure surfaces as Start()'s 3s timeout, not a hang.
+        try
         {
-            TranslateMessage(in msg);
-            DispatchMessage(in msg);
+            _threadId = GetCurrentThreadId();
+            RegisterWindowClass();
+
+            _hwnd = CreateWindowEx(0, WindowClassName, "Reframe.Hotkey", 0,
+                0, 0, 0, 0, HWND_MESSAGE, IntPtr.Zero, GetModuleHandle(null), IntPtr.Zero);
+
+            _ready.Set();
+
+            while (GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0)
+            {
+                TranslateMessage(in msg);
+                DispatchMessage(in msg);
+            }
+        }
+        catch (Exception ex)
+        {
+            CrashLog.Write("Hotkey thread", ex);
+        }
+        finally
+        {
+            _ready.Set(); // idempotent; unblocks Start() if we threw before reaching the pump
         }
     }
 

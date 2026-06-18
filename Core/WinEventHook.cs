@@ -11,6 +11,16 @@ namespace Reframe.Core;
 public sealed class WinEventHook : IDisposable
 {
     /// <summary>
+    /// Injectable last-resort error sink for the dedicated hook thread. An exception escaping the
+    /// hook pump would otherwise fast-fail the process without reaching any managed handler (a raw
+    /// <see cref="Thread"/> bypasses App/AppDomain handlers), leaving no crash.log entry. App wires
+    /// this to <c>Services.CrashLog.Write</c> at startup; Core itself stays free of any Services
+    /// dependency (the Tests project links these Core sources standalone, so the red line matters).
+    /// Static because the callback is process-wide diagnostics, not per-instance state.
+    /// </summary>
+    public static Action<string, Exception?>? OnThreadError;
+
+    /// <summary>
     /// The matched event: (eventType, hwnd). eventType lets the consumer distinguish a foreground switch
     /// (EVENT_SYSTEM_FOREGROUND) from a window shown/title/location change. Already filtered to the window
     /// itself (idObject==OBJID_WINDOW). Raised on a background thread.
@@ -65,32 +75,46 @@ public sealed class WinEventHook : IDisposable
 
     private void ThreadProc()
     {
-        _threadId = NativeMethods.GetCurrentThreadId();
-
-        // One hook covers the contiguous SHOW..NAMECHANGE range (0x8002..0x800C), including LOCATIONCHANGE
-        // (0x800B); FOREGROUND (0x0003) needs a separate hook.
-        _hook = NativeMethods.SetWinEventHook(
-            NativeMethods.EVENT_OBJECT_SHOW, NativeMethods.EVENT_OBJECT_NAMECHANGE,
-            IntPtr.Zero, _proc, 0, 0,
-            NativeMethods.WINEVENT_OUTOFCONTEXT | NativeMethods.WINEVENT_SKIPOWNPROCESS);
-
-        IntPtr hookFg = NativeMethods.SetWinEventHook(
-            NativeMethods.EVENT_SYSTEM_FOREGROUND, NativeMethods.EVENT_SYSTEM_FOREGROUND,
-            IntPtr.Zero, _proc, 0, 0,
-            NativeMethods.WINEVENT_OUTOFCONTEXT | NativeMethods.WINEVENT_SKIPOWNPROCESS);
-
-        _ready.Set();
-
-        // Message pump: GetMessage blocks until WM_QUIT (returns 0).
-        while (NativeMethods.GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0)
+        // Whole-proc guard: an exception escaping a raw background thread fast-fails the process
+        // without reaching App/AppDomain handlers — record it so a crash leaves a trace. _ready is
+        // always Set so a startup failure surfaces as a Start() timeout (degraded mode) rather than a hang.
+        IntPtr hookFg = IntPtr.Zero;
+        try
         {
-            NativeMethods.TranslateMessage(in msg);
-            NativeMethods.DispatchMessage(in msg);
-        }
+            _threadId = NativeMethods.GetCurrentThreadId();
 
-        if (_hook != IntPtr.Zero) NativeMethods.UnhookWinEvent(_hook);
-        if (hookFg != IntPtr.Zero) NativeMethods.UnhookWinEvent(hookFg);
-        _hook = IntPtr.Zero;
+            // One hook covers the contiguous SHOW..NAMECHANGE range (0x8002..0x800C), including LOCATIONCHANGE
+            // (0x800B); FOREGROUND (0x0003) needs a separate hook.
+            _hook = NativeMethods.SetWinEventHook(
+                NativeMethods.EVENT_OBJECT_SHOW, NativeMethods.EVENT_OBJECT_NAMECHANGE,
+                IntPtr.Zero, _proc, 0, 0,
+                NativeMethods.WINEVENT_OUTOFCONTEXT | NativeMethods.WINEVENT_SKIPOWNPROCESS);
+
+            hookFg = NativeMethods.SetWinEventHook(
+                NativeMethods.EVENT_SYSTEM_FOREGROUND, NativeMethods.EVENT_SYSTEM_FOREGROUND,
+                IntPtr.Zero, _proc, 0, 0,
+                NativeMethods.WINEVENT_OUTOFCONTEXT | NativeMethods.WINEVENT_SKIPOWNPROCESS);
+
+            _ready.Set();
+
+            // Message pump: GetMessage blocks until WM_QUIT (returns 0).
+            while (NativeMethods.GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0)
+            {
+                NativeMethods.TranslateMessage(in msg);
+                NativeMethods.DispatchMessage(in msg);
+            }
+        }
+        catch (Exception ex)
+        {
+            OnThreadError?.Invoke("WinEventHook thread", ex);
+        }
+        finally
+        {
+            _ready.Set(); // idempotent; unblocks Start() if we threw before reaching the pump
+            if (_hook != IntPtr.Zero) NativeMethods.UnhookWinEvent(_hook);
+            if (hookFg != IntPtr.Zero) NativeMethods.UnhookWinEvent(hookFg);
+            _hook = IntPtr.Zero;
+        }
     }
 
     private void OnWinEvent(IntPtr hWinEventHook, uint eventType, IntPtr hwnd,
