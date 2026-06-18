@@ -46,8 +46,11 @@ public sealed class DisplayChangeListener : IDisposable
     public bool Start()
     {
         if (_disposed) return false;
-        if (_thread != null) return true;
+        if (_thread is { IsAlive: true }) return _hwnd != IntPtr.Zero; // already running
 
+        // Reset state so a restart — or a retry after a failed CreateWindowEx left a dead thread — starts clean.
+        _ready.Reset();
+        _hwnd = IntPtr.Zero;
         _thread = new Thread(ThreadProc) { IsBackground = true, Name = "Reframe.DisplayChange" };
         _thread.Start();
         return _ready.Wait(2000) && _hwnd != IntPtr.Zero;
@@ -61,6 +64,7 @@ public sealed class DisplayChangeListener : IDisposable
             NativeMethods.PostMessage(_hwnd, NativeMethods.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
         try { _thread.Join(2000); } catch { /* ignore */ }
         _thread = null;
+        _hwnd = IntPtr.Zero; // clear so a later Start() doesn't see a stale handle
     }
 
     public void Dispose()
