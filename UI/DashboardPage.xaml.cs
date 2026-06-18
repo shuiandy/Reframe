@@ -383,7 +383,7 @@ public sealed partial class DashboardPage : Page
     {
         if (sender is Button { Tag: IntPtr handle } && handle != IntPtr.Zero)
         {
-            WindowOps.Restore(handle);
+            WindowOps.Restore(handle, MutationSource.Takeover);
             RefreshLive(); // reflect the restore immediately (the engine decides the next takeover)
         }
     }

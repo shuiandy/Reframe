@@ -39,6 +39,17 @@ public sealed class Watcher : IDisposable
     private int _ticking;
 
     /// <summary>
+    /// Coarse "the engine may be moving windows right now" signal for the window-persistence engine to
+    /// defer a restore pass that would otherwise race the engine's own re-placement on the same display
+    /// change. True for the duration of a <see cref="SafeTick"/> (the only time the engine takes over /
+    /// repositions windows). Deliberately broad (covers the whole tick, not just the apply loop) so the
+    /// persistence engine errs on the side of waiting. Per-window correctness is handled more precisely by
+    /// source-tagged write suppression (<see cref="WindowOps.WasRecentlyMutatedByEngine"/>) plus the
+    /// takeover set (<see cref="GetTakenWindows"/>); this is just the cheap "engine is busy" gate.
+    /// </summary>
+    public bool IsSystemMutationActive => Volatile.Read(ref _ticking) != 0;
+
+    /// <summary>
     /// Log callback for the UI (raised on a background thread; the UI marshals to its own thread).
     /// The string already carries an <c>[HH:mm:ss]</c> timestamp prefix (added uniformly by
     /// <see cref="Emit"/>), so the UI can display it as-is without adding another timestamp.
@@ -206,7 +217,7 @@ public sealed class Watcher : IDisposable
 
         if (restoreWindows)
         {
-            WindowOps.RestoreAll();
+            WindowOps.RestoreAll(MutationSource.Takeover);
             _takeover.Clear();
             Emit("All managed windows restored");
         }
@@ -393,7 +404,7 @@ public sealed class Watcher : IDisposable
                     break;
 
                 var target = PlacementResolver.Resolve(w, p, cfg);
-                var outcome = WindowOps.Apply(w.Handle, in target);
+                var outcome = WindowOps.Apply(w.Handle, in target, MutationSource.Takeover);
 
                 if (outcome == ApplyOutcome.Failed)
                 {
@@ -677,7 +688,7 @@ public sealed class Watcher : IDisposable
 
         foreach (var h in hwnds)
         {
-            WindowOps.Restore(h);
+            WindowOps.Restore(h, MutationSource.Takeover);
             _takeover.TryRemove(h, out _);
             _thrash.TryRemove(h, out _);
 
@@ -710,7 +721,7 @@ public sealed class Watcher : IDisposable
         // Restore every engine-managed window (only those under _takeover; manual quick-borderless is not included).
         var hwnds = _takeover.Keys.ToList();
         foreach (var h in hwnds)
-            WindowOps.Restore(h);
+            WindowOps.Restore(h, MutationSource.Takeover);
 
         _takeover.Clear();
         _firstSeen.Clear();

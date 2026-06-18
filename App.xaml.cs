@@ -18,9 +18,13 @@ public partial class App : Application
     /// <summary>The global hotkey service (non-null after OnLaunched). The Settings page queries the post-"Apply" registration state from it.</summary>
     public static HotkeyService? Hotkeys { get; private set; }
 
+    /// <summary>The window-position persistence engine (non-null after OnLaunched).</summary>
+    public static PersistenceEngine? Persistence { get; private set; }
+
     private MainWindow? _window;
     private TrayIcon? _tray;
     private HotkeyService? _hotkeys;
+    private PersistenceEngine? _persistence;
     private DispatcherQueue? _ui;
     private bool _exiting;
 
@@ -96,6 +100,8 @@ public partial class App : Application
         Reframe.Core.WinEventHook.OnThreadError = CrashLog.Write;
         Reframe.Core.DragSnapService.OnThreadError = CrashLog.Write;
         Reframe.Core.Watcher.OnThreadError = CrashLog.Write;
+        Reframe.Core.PersistenceEngine.OnThreadError = CrashLog.Write;
+        Reframe.Core.DisplayChangeListener.OnThreadError = CrashLog.Write;
 
         // Clean-shutdown / vanish discriminator: a ProcessExit marker means the CLR ran a normal exit
         // path (tray Exit, restart, or host teardown). If the process disappears and crash.log shows
@@ -178,6 +184,18 @@ public partial class App : Application
 
         // Config change (UI save / external config.json edit) → immediately rewrite the Unity resolution preset (the game is usually not running, so the write takes effect).
         ConfigService.Instance.Changed += () => Engine?.OnConfigChanged();
+
+        // Window-position persistence: remember/restore ordinary window layout across display-topology changes
+        // (resolution / monitor add-remove / streaming VDD return). Started after the engine so its
+        // getEngineOwned/isEngineBusy callbacks see a live engine; it only polls the engine (no event
+        // subscription), so ordering relative to the engine's first tick is not load-bearing.
+        _persistence = new PersistenceEngine(
+            getMonitors: MonitorService.GetMonitors,
+            getEngineOwned: () => new HashSet<IntPtr>(Engine.GetTakenWindows().Select(w => w.Handle)),
+            isEngineBusy: () => Engine.IsSystemMutationActive,
+            isEnabled: () => ConfigService.Instance.Config.WindowPersistenceEnabled);
+        Persistence = _persistence;
+        _persistence.Start();
 
         _window = new MainWindow();
         Main = _window;
@@ -280,6 +298,7 @@ public partial class App : Application
         {
             try { ConfigService.Instance.Shutdown(); } catch { /* stop the hot-reload watch/debounce, to avoid callbacks during exit */ }
             try { DragSnapService.Stop(); } catch { /* stop the snap hooks first, then tear down the engine */ }
+            try { _persistence?.Stop(); } catch { /* stop the persistence worker/listener before the engine it polls */ }
             try { _hotkeys?.Stop(); } catch { /* unregister all hotkeys */ }
             try { Engine?.Stop(restoreWindows: true); } catch { /* best-effort restore */ }
 

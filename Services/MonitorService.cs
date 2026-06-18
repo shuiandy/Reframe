@@ -1,14 +1,11 @@
 using System.Runtime.InteropServices;
+using Reframe.Core;
 using Reframe.Interop;
 
 namespace Reframe.Services;
 
-/// <summary>The geometry of one monitor (physical pixels).</summary>
-public sealed record MonitorDesc(string DeviceName, bool IsPrimary,
-    int X, int Y, int Width, int Height,            // rcMonitor
-    int WorkX, int WorkY, int WorkW, int WorkH);    // rcWork
-
-/// <summary>Enumerate the current monitor layout. Fetch-on-use, not cached (hot-plug / resolution can change).</summary>
+/// <summary>Enumerate the current monitor layout. Fetch-on-use, not cached (hot-plug / resolution can change).
+/// Returns <see cref="MonitorDesc"/> (defined in Core so pure-logic code can consume it without a Services dependency).</summary>
 public static class MonitorService
 {
     public static IReadOnlyList<MonitorDesc> GetMonitors()

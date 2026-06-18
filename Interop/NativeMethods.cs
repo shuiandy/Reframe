@@ -189,6 +189,89 @@ public static class NativeMethods
 
     public const uint WM_QUIT = 0x0012;
 
+    // ---- Hidden host-window creation (Core.DisplayChangeListener) ----
+    // A real (non-message-only) hidden top-level window is required to receive broadcast messages such as
+    // WM_DISPLAYCHANGE: a HWND_MESSAGE window does NOT get broadcasts. These declarations live here (Interop)
+    // because DisplayChangeListener is in Core. HotkeyService/TrayIcon keep their own private copies for their
+    // message-only windows — those are intentionally left untouched (no conflict; different declaring types).
+    public delegate IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct WNDCLASSEX
+    {
+        public int cbSize;
+        public uint style;
+        public IntPtr lpfnWndProc;
+        public int cbClsExtra;
+        public int cbWndExtra;
+        public IntPtr hInstance;
+        public IntPtr hIcon;
+        public IntPtr hCursor;
+        public IntPtr hbrBackground;
+        public string? lpszMenuName;
+        public string lpszClassName;
+        public IntPtr hIconSm;
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern ushort RegisterClassEx(ref WNDCLASSEX lpwcx);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern IntPtr CreateWindowEx(uint exStyle, string className, string windowName,
+        uint style, int x, int y, int width, int height,
+        IntPtr parent, IntPtr menu, IntPtr instance, IntPtr param);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern IntPtr DefWindowProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    public static extern bool DestroyWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern void PostQuitMessage(int exitCode);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    public static extern IntPtr GetModuleHandle(string? lpModuleName);
+
+    public const uint WM_DESTROY = 0x0002;
+    public const uint WM_CLOSE = 0x0010;
+    public const uint WM_DISPLAYCHANGE = 0x007E;
+
+    // ---- Window placement (capture show-state, restore maximized on the right monitor) ----
+    [StructLayout(LayoutKind.Sequential)]
+    public struct WINDOWPLACEMENT
+    {
+        public int length;       // must be set to Marshal.SizeOf<WINDOWPLACEMENT>() before Get/SetWindowPlacement
+        public int flags;
+        public int showCmd;
+        public POINT ptMinPosition;
+        public POINT ptMaxPosition;
+        public RECT rcNormalPosition; // NOTE: workspace coordinates — never feed this straight to SetWindowPos
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool GetWindowPlacement(IntPtr hWnd, ref WINDOWPLACEMENT lpwndpl);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool SetWindowPlacement(IntPtr hWnd, ref WINDOWPLACEMENT lpwndpl);
+
+    public const int SW_SHOWNORMAL = 1;
+    public const int SW_SHOWMINIMIZED = 2;
+    public const int SW_SHOWMAXIMIZED = 3;
+
+    // ---- Force a frame repaint (clears the "black canvas at old size" artifact after a resolution change) ----
+    [DllImport("user32.dll")]
+    public static extern bool RedrawWindow(IntPtr hWnd, IntPtr lprcUpdate, IntPtr hrgnUpdate, uint flags);
+
+    public const uint RDW_INVALIDATE = 0x0001;
+    public const uint RDW_ERASE = 0x0004;
+    public const uint RDW_FRAME = 0x0400;
+    public const uint RDW_UPDATENOW = 0x0100;
+    public const uint RDW_ALLCHILDREN = 0x0080;
+
     // ---- Drag snapping: key state / cursor position ----
     // The high bit (0x8000) means the key is currently down. Reads the instantaneous state only; doesn't affect the input queue.
     [DllImport("user32.dll")]

@@ -6,6 +6,7 @@ verify/
 build_check/
 build_check*.xbf
 build_checkUI/
+build_verify/
 dist/
 publish_out/
 tools/relaunch_log.txt

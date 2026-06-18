@@ -462,7 +462,7 @@ public sealed partial class SettingsPage : Page
 
     private void RestoreAllButton_Click(object sender, RoutedEventArgs e)
     {
-        WindowOps.RestoreAll();
+        WindowOps.RestoreAll(MutationSource.Takeover);
     }
 
     private void OpenFolderButton_Click(object sender, RoutedEventArgs e)

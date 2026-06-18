@@ -712,9 +712,9 @@ public sealed partial class ProfilesPage : Page
         if (w.Handle == IntPtr.Zero || !NativeMethods.IsWindow(w.Handle)) return;
 
         if (WindowOps.IsTracked(w.Handle))
-            WindowOps.Restore(w.Handle);
+            WindowOps.Restore(w.Handle, MutationSource.Takeover);
         else
-            WindowOps.Apply(w.Handle, new PlacementResolver.Target(true, null, false));
+            WindowOps.Apply(w.Handle, new PlacementResolver.Target(true, null, false), MutationSource.Takeover);
     }
 
     private static string StripExe(string s)

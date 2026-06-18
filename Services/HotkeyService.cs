@@ -392,13 +392,13 @@ public sealed class HotkeyService : IDisposable
         if (h == IntPtr.Zero) return;
         if (WindowOps.IsTracked(h))
         {
-            WindowOps.Restore(h);
+            WindowOps.Restore(h, MutationSource.Takeover);
         }
         else
         {
             // Only strip the border: don't change geometry, don't set topmost; Apply keeps the snapshot internally.
             var target = new PlacementResolver.Target(MakeBorderless: true, Rect: null, Topmost: false);
-            WindowOps.Apply(h, in target);
+            WindowOps.Apply(h, in target, MutationSource.Takeover);
         }
     }
 

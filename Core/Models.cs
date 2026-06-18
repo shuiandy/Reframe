@@ -166,6 +166,13 @@ public sealed class AppConfig
     public bool DragSnapEnabled { get; set; } = true;
 
     /// <summary>
+    /// Window-position persistence (PersistentWindows-style): remember where ordinary top-level windows sit
+    /// per monitor configuration and restore them after a display-topology change (resolution / monitor
+    /// add-remove / streaming VDD return) scrambles them. P1 is in-memory for the current session. Default on.
+    /// </summary>
+    public bool WindowPersistenceEnabled { get; set; } = true;
+
+    /// <summary>
     /// Whether the logon autostart should start silently minimized to the tray. Only affects the
     /// <c>--minimized</c> argument baked into the start-on-login scheduled task: true (default) adds the
     /// flag so a logon launch goes straight to the tray; false omits it so the logon launch shows the
