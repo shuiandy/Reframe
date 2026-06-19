@@ -176,6 +176,18 @@
   <data name="PersistenceDesc.Text" xml:space="preserve">
     <value>记住各显示器配置下的窗口位置,切换显示器/分辨率或串流回桌面后自动还原,免去每次手动归位。</value>
   </data>
+  <data name="CaptureIntervalLabel.Text" xml:space="preserve">
+    <value>捕获间隔(秒):多久自动记一次当前布局,1~30。</value>
+  </data>
+  <data name="CaptureNowButton" xml:space="preserve">
+    <value>立即捕获</value>
+  </data>
+  <data name="RestoreNowButton" xml:space="preserve">
+    <value>立即还原</value>
+  </data>
+  <data name="PersistenceIgnoreLabel.Text" xml:space="preserve">
+    <value>排除的进程(每行一个,不含 .exe):这些窗口不纳入记忆与还原。</value>
+  </data>
 
   <!-- 窗口接管(还原全部) -->
   <data name="TakeoverHeader.Text" xml:space="preserve">

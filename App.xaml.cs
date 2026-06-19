@@ -193,7 +193,9 @@ public partial class App : Application
             getMonitors: MonitorService.GetMonitors,
             getEngineOwned: () => new HashSet<IntPtr>(Engine.GetTakenWindows().Select(w => w.Handle)),
             isEngineBusy: () => Engine.IsSystemMutationActive,
-            isEnabled: () => ConfigService.Instance.Config.WindowPersistenceEnabled);
+            isEnabled: () => ConfigService.Instance.Config.WindowPersistenceEnabled,
+            getCaptureSeconds: () => ConfigService.Instance.Config.WindowPersistenceCaptureSeconds,
+            getIgnoredProcesses: () => ConfigService.Instance.Config.PersistenceIgnoredProcesses);
         Persistence = _persistence;
         _persistence.Log += m => Engine.LogExternal(m); // surface restore activity in the dashboard log
         _persistence.Start();

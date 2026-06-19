@@ -39,6 +39,8 @@ public sealed partial class SettingsPage : Page
             StartMinimizedToggle.Header = Loc.T("SettingsPage/StartMinimizedToggle"); // Header 走代码本地化(ToggleSwitch 上的 x:Uid 较脆)
             DragSnapToggle.OnContent = on;         DragSnapToggle.OffContent = off;
             PersistenceToggle.OnContent = on;      PersistenceToggle.OffContent = off;
+            CaptureNowButton.Content = Loc.T("SettingsPage/CaptureNowButton"); // Button.Content via code (x:Uid on ContentControl is fragile here)
+            RestoreNowButton.Content = Loc.T("SettingsPage/RestoreNowButton");
 
             var cfg = ConfigService.Instance.Config;
             LoadConfigControls(cfg);
@@ -98,6 +100,8 @@ public sealed partial class SettingsPage : Page
         PollBox.Value = cfg.PollIntervalMs;
         DragSnapToggle.IsOn = cfg.DragSnapEnabled;
         PersistenceToggle.IsOn = cfg.WindowPersistenceEnabled;
+        CaptureIntervalBox.Value = cfg.WindowPersistenceCaptureSeconds;
+        PersistenceIgnoreBox.Text = string.Join(Environment.NewLine, cfg.PersistenceIgnoredProcesses);
         // 「随登录启动时缩到托盘」是普通配置项,外部热重载也读回(IsEnabled 联动开机自启的 OS 任务态,
         // 与版本/路径同属静态范畴,不在此处随配置刷新)。
         StartMinimizedToggle.IsOn = cfg.StartMinimizedOnLogin;
@@ -420,6 +424,38 @@ public sealed partial class SettingsPage : Page
         if (svc.Config.WindowPersistenceEnabled == on) return;
         svc.Config.WindowPersistenceEnabled = on;
         svc.Save(); // PersistenceEngine reads WindowPersistenceEnabled live via its isEnabled callback
+    }
+
+    private void CaptureIntervalBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
+    {
+        if (_loading) return;
+        if (double.IsNaN(args.NewValue)) return;
+
+        var svc = ConfigService.Instance;
+        int v = Math.Clamp((int)Math.Round(args.NewValue), 1, 30);
+        if (svc.Config.WindowPersistenceCaptureSeconds == v) return;
+        svc.Config.WindowPersistenceCaptureSeconds = v;
+        svc.Save();
+    }
+
+    private void CaptureNowButton_Click(object sender, RoutedEventArgs e) => App.Persistence?.CaptureNow();
+    private void RestoreNowButton_Click(object sender, RoutedEventArgs e) => App.Persistence?.RestoreNow();
+
+    private void PersistenceIgnoreBox_LostFocus(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+
+        var svc = ConfigService.Instance;
+        var list = PersistenceIgnoreBox.Text
+            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(s => s.ToLowerInvariant())
+            .Select(s => s.EndsWith(".exe") ? s[..^4] : s)
+            .Where(s => s.Length > 0)
+            .Distinct()
+            .ToList();
+        if (svc.Config.PersistenceIgnoredProcesses.SequenceEqual(list)) return;
+        svc.Config.PersistenceIgnoredProcesses = list;
+        svc.Save();
     }
 
     private async void StartupToggle_Toggled(object sender, RoutedEventArgs e)

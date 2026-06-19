@@ -97,6 +97,25 @@
                 <TextBlock x:Uid="/SettingsPage/PersistenceDesc" Opacity="0.7" FontSize="12"/>
                 <ToggleSwitch x:Name="PersistenceToggle"
                               Toggled="PersistenceToggle_Toggled"/>
+
+                <TextBlock x:Uid="/SettingsPage/CaptureIntervalLabel" Opacity="0.7" FontSize="12" Margin="0,4,0,0"/>
+                <NumberBox x:Name="CaptureIntervalBox"
+                           Minimum="1" Maximum="30"
+                           SmallChange="1" LargeChange="5"
+                           SpinButtonPlacementMode="Inline"
+                           ValueChanged="CaptureIntervalBox_ValueChanged"
+                           Width="200" HorizontalAlignment="Left"/>
+
+                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+                    <Button x:Name="CaptureNowButton" Click="CaptureNowButton_Click"/>
+                    <Button x:Name="RestoreNowButton" Click="RestoreNowButton_Click"/>
+                </StackPanel>
+
+                <TextBlock x:Uid="/SettingsPage/PersistenceIgnoreLabel" Opacity="0.7" FontSize="12" Margin="0,4,0,0"/>
+                <TextBox x:Name="PersistenceIgnoreBox"
+                         AcceptsReturn="True" TextWrapping="Wrap"
+                         Height="80" Width="320" HorizontalAlignment="Left"
+                         LostFocus="PersistenceIgnoreBox_LostFocus"/>
             </StackPanel>
 
             <!-- 还原全部 -->

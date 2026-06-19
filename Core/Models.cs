@@ -172,6 +172,16 @@ public sealed class AppConfig
     /// </summary>
     public bool WindowPersistenceEnabled { get; set; } = true;
 
+    /// <summary>How often (seconds) window persistence snapshots the current layout. Clamped 1–30; default 2.</summary>
+    public int WindowPersistenceCaptureSeconds { get; set; } = 2;
+
+    /// <summary>
+    /// Process names (lowercase, without .exe) excluded from window-position persistence — their windows are
+    /// neither remembered nor restored. Separate from <see cref="IgnoredProcesses"/> (the profile-candidate
+    /// filter): a window can be a profile candidate yet opt out of position memory, or vice versa.
+    /// </summary>
+    public List<string> PersistenceIgnoredProcesses { get; set; } = new();
+
     /// <summary>
     /// Whether the logon autostart should start silently minimized to the tray. Only affects the
     /// <c>--minimized</c> argument baked into the start-on-login scheduled task: true (default) adds the

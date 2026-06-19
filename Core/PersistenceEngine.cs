@@ -30,7 +30,7 @@ public sealed class PersistenceEngine : IDisposable
     public event Action<string>? Log;
 
     // ---- Tunables ----
-    private const int CaptureIntervalMs = 2000; // periodic snapshot of the current layout
+    // Capture interval is user-configurable (WindowPersistenceCaptureSeconds, clamped 1–30s) — see CurrentIntervalMs().
     private const int SettleMs = 800;           // quiet period after a display change before restoring
     private const int GraceMs = 1000;           // after a restore, keep capture frozen to absorb late scrambling
     private const int EngineBusyRetryMs = 200;  // if the borderless engine is mid-tick at settle, retry shortly
@@ -42,12 +42,14 @@ public sealed class PersistenceEngine : IDisposable
     private readonly Func<ISet<IntPtr>> _getEngineOwned;
     private readonly Func<bool> _isEngineBusy;
     private readonly Func<bool> _isEnabled;
+    private readonly Func<int> _getCaptureSeconds;
+    private readonly Func<IEnumerable<string>> _getIgnoredProcesses;
 
     private readonly LayoutMemory _memory = new();
     private readonly DisplayChangeListener _listener = new();
 
     // ---- Actor mailbox + worker ----
-    private enum Msg { Capture, DisplayChanged, Settle, ResumeCapture }
+    private enum Msg { Capture, CaptureNow, RestoreNow, DisplayChanged, Settle, ResumeCapture }
     private BlockingCollection<Msg> _mailbox = new();
     private Thread? _worker;
     private Timer? _captureTimer;
@@ -64,12 +66,16 @@ public sealed class PersistenceEngine : IDisposable
         Func<IReadOnlyList<MonitorDesc>> getMonitors,
         Func<ISet<IntPtr>> getEngineOwned,
         Func<bool> isEngineBusy,
-        Func<bool> isEnabled)
+        Func<bool> isEnabled,
+        Func<int> getCaptureSeconds,
+        Func<IEnumerable<string>> getIgnoredProcesses)
     {
         _getMonitors = getMonitors;
         _getEngineOwned = getEngineOwned;
         _isEngineBusy = isEngineBusy;
         _isEnabled = isEnabled;
+        _getCaptureSeconds = getCaptureSeconds;
+        _getIgnoredProcesses = getIgnoredProcesses;
     }
 
     public void Start()
@@ -89,7 +95,8 @@ public sealed class PersistenceEngine : IDisposable
         // Timers fire on the thread pool and only post to the mailbox; all work happens on the worker.
         _settleTimer = new Timer(_ => Post(Msg.Settle), null, Timeout.Infinite, Timeout.Infinite);
         _graceTimer = new Timer(_ => Post(Msg.ResumeCapture), null, Timeout.Infinite, Timeout.Infinite);
-        _captureTimer = new Timer(_ => Post(Msg.Capture), null, CaptureIntervalMs, CaptureIntervalMs);
+        // One-shot, re-armed after each capture with the current configured interval (so changes take effect live).
+        _captureTimer = new Timer(_ => Post(Msg.Capture), null, CurrentIntervalMs(), Timeout.Infinite);
     }
 
     public void Stop()
@@ -114,6 +121,12 @@ public sealed class PersistenceEngine : IDisposable
         Stop();
         try { _mailbox.Dispose(); } catch { /* ignore */ }
     }
+
+    /// <summary>Manually snapshot the current layout as the remembered layout for the current display (Settings "Capture now").</summary>
+    public void CaptureNow() => Post(Msg.CaptureNow);
+
+    /// <summary>Manually re-apply the remembered layout for the current display (Settings "Restore now").</summary>
+    public void RestoreNow() => Post(Msg.RestoreNow);
 
     private void OnDisplayChangedSignal() => Post(Msg.DisplayChanged);
 
@@ -144,7 +157,12 @@ public sealed class PersistenceEngine : IDisposable
         switch (m)
         {
             case Msg.DisplayChanged: if (_isEnabled()) EnterFreeze(); break;
-            case Msg.Capture: OnCapture(); break;
+            case Msg.Capture:
+                try { OnCapture(); }
+                finally { _captureTimer?.Change(CurrentIntervalMs(), Timeout.Infinite); } // re-arm with the current interval
+                break;
+            case Msg.CaptureNow: OnCaptureNow(); break;
+            case Msg.RestoreNow: OnRestoreNow(); break;
             case Msg.Settle: OnSettle(); break;
             case Msg.ResumeCapture: if (_state == State.Settling) _state = State.Idle; break;
         }
@@ -155,6 +173,35 @@ public sealed class PersistenceEngine : IDisposable
         _state = State.Frozen;
         // (Re)arm the settle timer; re-arming on each display-change event debounces a burst into one restore.
         _settleTimer?.Change(SettleMs, Timeout.Infinite);
+    }
+
+    private int CurrentIntervalMs() => Math.Clamp(_getCaptureSeconds(), 1, 30) * 1000;
+
+    /// <summary>Manual capture: snapshot the current layout under the current key, bypassing the Idle guard (explicit user intent).</summary>
+    private void OnCaptureNow()
+    {
+        if (!_isEnabled()) return;
+        string key = ComputeKey();
+        if (key == LayoutKey.None) return;
+        _currentKey = key;
+        _memory.PruneDead(NativeMethods.IsWindow);
+        var snap = CaptureEligibleWindows();
+        if (snap.Count > 0) _memory.Capture(key, snap);
+        Log?.Invoke($"Captured {snap.Count} window(s) for display {key}");
+    }
+
+    /// <summary>Manual restore: re-apply the remembered layout for the current key on demand (e.g. Windows scrambled without an event).</summary>
+    private void OnRestoreNow()
+    {
+        if (!_isEnabled()) return;
+        string key = ComputeKey();
+        _currentKey = key;
+        if (!_memory.HasSnapshot(key)) { Log?.Invoke("No remembered layout for the current display"); return; }
+        _state = State.Restoring;
+        int n = DoRestore(key);
+        Log?.Invoke($"Restored {n} window(s) for display {key}");
+        _state = State.Settling;
+        _graceTimer?.Change(GraceMs, Timeout.Infinite);
     }
 
     private void OnCapture()
@@ -253,7 +300,7 @@ public sealed class PersistenceEngine : IDisposable
     private List<IntPtr> EligibleHandles(ISet<IntPtr> owned)
     {
         var list = new List<IntPtr>();
-        foreach (var w in WindowScanner.EnumerateCandidates())
+        foreach (var w in WindowScanner.EnumerateCandidates(_getIgnoredProcesses()))
         {
             var h = w.Handle;
             if (owned.Contains(h)) continue;

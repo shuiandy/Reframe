@@ -178,6 +178,18 @@
   <data name="PersistenceDesc.Text" xml:space="preserve">
     <value>Remember where windows sit under each monitor configuration and put them back after a display/resolution change or returning from streaming, so you never reposition them by hand.</value>
   </data>
+  <data name="CaptureIntervalLabel.Text" xml:space="preserve">
+    <value>Capture interval (seconds): how often the current layout is snapshotted, 1-30.</value>
+  </data>
+  <data name="CaptureNowButton" xml:space="preserve">
+    <value>Capture now</value>
+  </data>
+  <data name="RestoreNowButton" xml:space="preserve">
+    <value>Restore now</value>
+  </data>
+  <data name="PersistenceIgnoreLabel.Text" xml:space="preserve">
+    <value>Excluded processes (one per line, without .exe): these windows are neither remembered nor restored.</value>
+  </data>
 
   <!-- Window takeover (restore all) section -->
   <data name="TakeoverHeader.Text" xml:space="preserve">
