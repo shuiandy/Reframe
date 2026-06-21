@@ -123,6 +123,25 @@ public static class NativeMethods
     [DllImport("user32.dll")]
     public static extern IntPtr GetForegroundWindow();
 
+    // ---- Shell user-notification state: detect an exclusive (D3D) full-screen app in front ----
+    // SHQueryUserNotificationState reports what's currently presenting full-screen. We use it only to
+    // distinguish *exclusive* D3D full-screen (where there is no manipulable bordered window — SetWindowPos
+    // would just fight the game) from a borderless-fullscreen window (which we CAN take over). It's a
+    // process-wide query (not per-window), so the caller confirms the foreground window is actually our
+    // target before trusting the verdict.
+    [DllImport("shell32.dll")]
+    public static extern int SHQueryUserNotificationState(out int pquns);
+
+    // QUERY_USER_NOTIFICATION_STATE values (winuser.h). Only QUNS_RUNNING_D3D_FULL_SCREEN (3) matters here:
+    // "a full-screen (exclusive) D3D application is running". The rest are listed for documentation.
+    public const int QUNS_NOT_PRESENT = 1;             // not yet logged in / no shell
+    public const int QUNS_BUSY = 2;                    // a full-screen non-D3D app is running
+    public const int QUNS_RUNNING_D3D_FULL_SCREEN = 3; // a full-screen exclusive D3D app is running
+    public const int QUNS_PRESENTATION_MODE = 4;       // presentation mode
+    public const int QUNS_ACCEPTS_NOTIFICATIONS = 5;   // normal desktop, notifications allowed
+    public const int QUNS_QUIET_TIME = 6;              // quiet time
+    public const int QUNS_APP = 7;                     // a Windows Store app is running full-screen
+
     // ClipCursor(NULL) releases the clip; passing a rect clamps the cursor inside that screen rect. Coordinates are virtual-desktop pixels.
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool ClipCursor(in RECT lpRect);

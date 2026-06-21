@@ -371,6 +371,14 @@ public sealed class Watcher : IDisposable
     /// <summary>Dedupe set of (window, profile) pairs already reported as "no permission" (value is a placeholder), to avoid spamming every tick. Pruned alongside dead-window cleanup.</summary>
     private readonly ConcurrentDictionary<(IntPtr, string), byte> _noPermLogged = new();
 
+    /// <summary>
+    /// Per-handle dedupe for the "exclusive fullscreen — switch to windowed/borderless" hint: while a matched
+    /// window stays in exclusive D3D full-screen we emit the hint once, not every tick. The handle is removed
+    /// the moment the window is seen NOT in exclusive full-screen (Normal/Borderless), so re-entering exclusive
+    /// later prompts again. Pruned alongside dead-window cleanup (value is a placeholder).
+    /// </summary>
+    private readonly ConcurrentDictionary<IntPtr, byte> _exclusiveHinted = new();
+
     /// <summary>Handle of the window whose cursor is currently clipped; IntPtr.Zero = none. Read/written only under _gate.</summary>
     private IntPtr _clippedHwnd = IntPtr.Zero;
 
@@ -397,6 +405,23 @@ public sealed class Watcher : IDisposable
                 var key = (w.Handle, p.Id);
                 var first = _firstSeen.GetOrAdd(key, DateTime.UtcNow);
                 if ((DateTime.UtcNow - first).TotalMilliseconds < p.DelayMs) break;
+
+                // Fullscreen classification (see DESIGN: exclusive vs. borderless-fullscreen vs. normal):
+                //  - Exclusive  → there is no manipulable bordered window; don't fight it with SetWindowPos.
+                //                 Emit a one-time "switch to windowed/borderless" hint and skip takeover.
+                //  - Borderless → a real top-level window covering the monitor: take it over (force-borderless +
+                //                 snap to the rule target), exactly what the user wants. Falls through.
+                //  - Normal     → unchanged behaviour. Falls through.
+                var fsKind = FullscreenDetector.Classify(w.Handle);
+                if (fsKind == FullscreenKind.Exclusive)
+                {
+                    // One-time per-handle hint; clears when the window leaves exclusive full-screen (below).
+                    if (_exclusiveHinted.TryAdd(w.Handle, 0))
+                        Emit($"\"{w.Title}\" is in exclusive fullscreen - set it to Windowed or Borderless in the game's display options for Reframe to place it.");
+                    break; // Don't attempt takeover; nothing to position.
+                }
+                // Not exclusive: allow a future re-entry into exclusive full-screen to prompt again.
+                _exclusiveHinted.TryRemove(w.Handle, out _);
 
                 // Already-managed window: cap reapplies per unit time to avoid a fight-to-the-death loop
                 // with the game's own window management.
@@ -535,6 +560,10 @@ public sealed class Watcher : IDisposable
         foreach (var key in _noPermLogged.Keys)
             if (!NativeMethods.IsWindow(key.Item1))
                 _noPermLogged.TryRemove(key, out _);
+
+        foreach (var h in _exclusiveHinted.Keys)
+            if (!NativeMethods.IsWindow(h))
+                _exclusiveHinted.TryRemove(h, out _);
 
         // Prune WindowOps' raw snapshots in lockstep: handles get reused, so if a destroyed window's
         // snapshot isn't cleared, a new window grabbing the same HWND would have its EnsureSnapshot blocked
@@ -727,6 +756,7 @@ public sealed class Watcher : IDisposable
         _firstSeen.Clear();
         _thrash.Clear();
         _noPermLogged.Clear();
+        _exclusiveHinted.Clear();
 
         // Release the cursor clip + collect the pids to unmute (COM done after releasing the lock).
         List<uint> toUnmute;

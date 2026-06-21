@@ -148,7 +148,7 @@ Reframe only changes window *styles* and *position* through documented Win32 API
 The app needs a `requireAdministrator` manifest to manipulate elevated game windows (see [Why administrator?](#why-administrator)). MSIX packaging is incompatible with `requireAdministrator`, so Reframe ships as a plain unpackaged executable instead.
 
 **Known limitations**
-- Games in *exclusive* fullscreen have no manipulable bordered window — launch them in windowed / borderless mode. (The miHoYo titles in the default config are already borderless/windowed.)
+- Games in *exclusive* fullscreen have no manipulable bordered window — launch them in windowed / borderless mode. (The miHoYo titles in the default config are already borderless/windowed.) Reframe now detects this and prompts you to switch the game's display mode; *borderless* fullscreen, by contrast, is taken over normally.
 - UWP and protected-process windows can't be modified; Reframe reports a lack of permission rather than failing silently.
 - Some advanced options aren't implemented yet (preserve client area, span-all-monitors, hide taskbar, remove menu, etc.). See the status column in [DESIGN.md](DESIGN.md) §4.
 

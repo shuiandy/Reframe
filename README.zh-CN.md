@@ -148,7 +148,7 @@ Reframe 只通过有文档的 Win32 API(`SetWindowLongPtr`、`SetWindowPos`)改�
 应用需要 `requireAdministrator` 清单才能操作提权的游戏窗口(见[为什么要管理员?](#为什么要管理员))。MSIX 打包与 `requireAdministrator` 冲突,所以 Reframe 以普通 unpackaged 可执行文件分发。
 
 **已知限制**
-- 独占全屏的游戏没有可操作的带边框窗口——请以窗口 / 无边框模式启动。(默认配置里的米哈游三件套本就是 borderless/windowed。)
+- 独占全屏的游戏没有可操作的带边框窗口——请以窗口 / 无边框模式启动。(默认配置里的米哈游三件套本就是 borderless/windowed。)Reframe 现在会检测独占全屏并提示你改窗口模式;无边框全屏则可被正常接管。
 - UWP 与受保护进程的窗口动不了;Reframe 会报「无权限」而非静默失败。
 - 部分高级选项暂未实现(保持客户区、跨所有屏、隐藏任务栏、移除菜单等),详见 [DESIGN.md](DESIGN.md) §4 状态列。
 
