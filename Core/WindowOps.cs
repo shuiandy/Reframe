@@ -177,39 +177,51 @@ public static class WindowOps
     /// otherwise the window is un-minimized/-maximized as needed and moved to the exact rect. Finishes with a
     /// frame redraw to clear the "black canvas at the old size" some apps leave after a resolution change.
     /// </summary>
-    public static void RestorePlacement(IntPtr hWnd, int left, int top, int right, int bottom, int showCmd)
+    public static void RestorePlacement(IntPtr hWnd, WindowRecord r)
     {
         if (!NativeMethods.IsWindow(hWnd)) return;
-        if (showCmd == NativeMethods.SW_SHOWMINIMIZED) return; // leave a minimized window minimized
-        int w = Math.Max(1, right - left), h = Math.Max(1, bottom - top);
 
         // Register suppression BEFORE the move, so the LOCATIONCHANGE it triggers is ignored even if it
         // fires before this method returns (matters once capture becomes event-driven).
         MarkEngineWrite(hWnd);
 
-        if (showCmd == NativeMethods.SW_SHOWMAXIMIZED)
-        {
-            // Move onto the target monitor (so the maximize lands there), then maximize.
-            NativeMethods.SetWindowPos(hWnd, IntPtr.Zero, left, top, w, h,
-                NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_NOOWNERZORDER);
-            NativeMethods.ShowWindow(hWnd, NativeMethods.SW_SHOWMAXIMIZED);
-        }
-        else
-        {
-            // A currently minimized/maximized window must be restored to normal before a precise move.
-            var wp = new NativeMethods.WINDOWPLACEMENT { length = Marshal.SizeOf<NativeMethods.WINDOWPLACEMENT>() };
-            if (NativeMethods.GetWindowPlacement(hWnd, ref wp) &&
-                (wp.showCmd == NativeMethods.SW_SHOWMINIMIZED || wp.showCmd == NativeMethods.SW_SHOWMAXIMIZED))
-                NativeMethods.ShowWindow(hWnd, NativeMethods.SW_RESTORE);
+        bool visible = NativeMethods.IsWindowVisible(hWnd);
+        bool iconic = NativeMethods.IsIconic(hWnd);
 
-            NativeMethods.SetWindowPos(hWnd, IntPtr.Zero, left, top, w, h,
+        // Common case — a visible, non-minimized, non-maximized window: precise screen-coordinate move with no
+        // activation or z-order change (the proven path).
+        if (visible && !iconic && r.ShowCmd != NativeMethods.SW_SHOWMAXIMIZED)
+        {
+            int w = Math.Max(1, r.Right - r.Left), h = Math.Max(1, r.Bottom - r.Top);
+            NativeMethods.SetWindowPos(hWnd, IntPtr.Zero, r.Left, r.Top, w, h,
                 NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE |
                 NativeMethods.SWP_NOOWNERZORDER | NativeMethods.SWP_FRAMECHANGED);
+            NativeMethods.RedrawWindow(hWnd, IntPtr.Zero, IntPtr.Zero,
+                NativeMethods.RDW_INVALIDATE | NativeMethods.RDW_ERASE | NativeMethods.RDW_FRAME |
+                NativeMethods.RDW_UPDATENOW | NativeMethods.RDW_ALLCHILDREN);
+            return;
         }
 
-        NativeMethods.RedrawWindow(hWnd, IntPtr.Zero, IntPtr.Zero,
-            NativeMethods.RDW_INVALIDATE | NativeMethods.RDW_ERASE | NativeMethods.RDW_FRAME |
-            NativeMethods.RDW_UPDATENOW | NativeMethods.RDW_ALLCHILDREN);
+        // Minimized to taskbar, hidden to tray, or maximized: a display change resets these windows' restore
+        // rectangle (rcNormalPosition), which is why a tray app comes back tiny in the top-left. Fix
+        // rcNormalPosition via WINDOWPLACEMENT WITHOUT changing visibility — a tray app stays hidden and a
+        // minimized window stays minimized; the corrected size/position takes effect when the user brings it back.
+        var wp = new NativeMethods.WINDOWPLACEMENT { length = Marshal.SizeOf<NativeMethods.WINDOWPLACEMENT>() };
+        if (!NativeMethods.GetWindowPlacement(hWnd, ref wp)) return;
+        wp.rcNormalPosition = new NativeMethods.RECT
+        {
+            Left = r.NormLeft, Top = r.NormTop, Right = r.NormRight, Bottom = r.NormBottom
+        };
+        if (!visible)
+            wp.showCmd = NativeMethods.SW_HIDE;                  // keep a tray app hidden while fixing its restore rect
+        else if (r.ShowCmd == NativeMethods.SW_SHOWMAXIMIZED && !iconic)
+            wp.showCmd = NativeMethods.SW_SHOWMAXIMIZED;         // re-maximize on the monitor of the restore rect
+        // else (currently iconic): leave wp.showCmd as read so it stays minimized
+        NativeMethods.SetWindowPlacement(hWnd, ref wp);
+
+        // Safety net: if updating placement somehow un-hid a tray window, hide it again.
+        if (!visible && NativeMethods.IsWindowVisible(hWnd))
+            NativeMethods.ShowWindow(hWnd, NativeMethods.SW_HIDE);
     }
 
     public static bool IsTracked(IntPtr hWnd) => _originals.ContainsKey(hWnd);

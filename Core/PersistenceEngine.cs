@@ -264,15 +264,20 @@ public sealed class PersistenceEngine : IDisposable
         for (int pass = 0; pass < RestorePasses; pass++)
         {
             var owned = _getEngineOwned();
-            var live = EligibleHandles(owned);
-            var plan = _memory.GetRestorePlan(key, live);
+            // Iterate ALL remembered windows (not just currently-visible ones) so tray-hidden / minimized
+            // windows get their restore rect fixed too; filter out engine-owned, just-engine-moved, and dead.
+            var plan = _memory.GetAll(key)
+                .Where(p => NativeMethods.IsWindow(p.Handle)
+                            && !owned.Contains(p.Handle)
+                            && !WindowOps.WasRecentlyMutatedByEngine(p.Handle))
+                .ToList();
             if (plan.Count == 0) break;
 
             int movedThisPass = 0;
             foreach (var (h, t) in plan)
             {
                 if (IsAtTarget(h, t)) continue; // already in place: verify-then-retry-only-misses
-                WindowOps.RestorePlacement(h, t.Left, t.Top, t.Right, t.Bottom, t.ShowCmd);
+                WindowOps.RestorePlacement(h, t);
                 movedThisPass++;
             }
             if (pass == 0) restoredCount = movedThisPass;
@@ -285,7 +290,10 @@ public sealed class PersistenceEngine : IDisposable
     /// <summary>Whether the window already sits within tolerance of its remembered rect (a maximized record always re-asserts).</summary>
     private static bool IsAtTarget(IntPtr h, WindowRecord t)
     {
+        // Hidden / minimized / maximized windows are restored via SetWindowPlacement (idempotent) and their
+        // on-screen rect isn't meaningful, so always (re)assert them.
         if (t.ShowCmd == NativeMethods.SW_SHOWMAXIMIZED) return false;
+        if (!NativeMethods.IsWindowVisible(h) || NativeMethods.IsIconic(h)) return false;
         if (!NativeMethods.GetWindowRect(h, out var r)) return false;
         const int tol = 2;
         return Math.Abs(r.Left - t.Left) <= tol && Math.Abs(r.Top - t.Top) <= tol &&
@@ -318,10 +326,12 @@ public sealed class PersistenceEngine : IDisposable
         foreach (var h in EligibleHandles(owned))
         {
             var wp = new NativeMethods.WINDOWPLACEMENT { length = Marshal.SizeOf<NativeMethods.WINDOWPLACEMENT>() };
-            int showCmd = NativeMethods.GetWindowPlacement(h, ref wp) ? wp.showCmd : NativeMethods.SW_SHOWNORMAL;
-            if (showCmd == NativeMethods.SW_SHOWMINIMIZED) continue; // already filtered by IsIconic, belt-and-suspenders
+            bool gotWp = NativeMethods.GetWindowPlacement(h, ref wp);
+            int showCmd = gotWp ? wp.showCmd : NativeMethods.SW_SHOWNORMAL;
+            if (showCmd == NativeMethods.SW_SHOWMINIMIZED) continue; // capture while normal; a tray app's good record is kept after it later hides
             if (!NativeMethods.GetWindowRect(h, out var r)) continue;
-            result.Add((h, new WindowRecord(r.Left, r.Top, r.Right, r.Bottom, showCmd)));
+            var n = gotWp ? wp.rcNormalPosition : r; // restore rect (workspace); fall back to the screen rect if placement is unavailable
+            result.Add((h, new WindowRecord(r.Left, r.Top, r.Right, r.Bottom, n.Left, n.Top, n.Right, n.Bottom, showCmd)));
         }
         return result;
     }

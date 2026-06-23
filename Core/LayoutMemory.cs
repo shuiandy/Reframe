@@ -1,13 +1,19 @@
 namespace Reframe.Core;
 
 /// <summary>
-/// One window's remembered geometry under a given <see cref="LayoutKey"/>. P1 stores the absolute
-/// virtual-desktop rect plus the show-state: because a layout is only ever restored under an <b>identical</b>
-/// DisplayKey (same monitors at the same virtual positions ⇒ same per-monitor DPI), absolute physical pixels
-/// map back exactly, so no monitor-relative remapping or DPI math is needed. A later phase (cross-reboot
-/// persistence) enriches this with window identity (exe path / class / title) + monitor-relative coordinates.
+/// One window's remembered geometry under a given <see cref="LayoutKey"/>. Stores two rectangles, both in
+/// physical pixels: the on-screen rect (from <c>GetWindowRect</c>) used for the precise, non-activating
+/// <c>SetWindowPos</c> restore of a visible normal window; and the <c>WINDOWPLACEMENT.rcNormalPosition</c>
+/// restore rectangle (workspace coords) used to fix windows that are minimized / hidden-to-tray / maximized
+/// via <c>SetWindowPlacement</c> — a display change resets <i>their</i> restore rect, which is why a tray app
+/// comes back tiny in the top-left. Because a layout is only restored under an <b>identical</b> DisplayKey
+/// (same monitors ⇒ same DPI and the same workspace↔screen mapping), both rectangles round-trip exactly with
+/// no remapping. A later phase enriches this with window identity (exe path / class / title).
 /// </summary>
-public sealed record WindowRecord(int Left, int Top, int Right, int Bottom, int ShowCmd);
+public sealed record WindowRecord(
+    int Left, int Top, int Right, int Bottom,                  // GetWindowRect (screen) — visible-normal SetWindowPos path
+    int NormLeft, int NormTop, int NormRight, int NormBottom,  // WINDOWPLACEMENT.rcNormalPosition (workspace) — hidden/minimized/maximized SetWindowPlacement path
+    int ShowCmd);
 
 /// <summary>
 /// In-memory layout store: <c>DisplayKey → (window handle → remembered geometry)</c>. Pure data + lookup,
@@ -51,6 +57,20 @@ public sealed class LayoutMemory
             if (bucket.TryGetValue(h, out var rec))
                 plan.Add((h, rec));
         return plan;
+    }
+
+    /// <summary>
+    /// Every remembered (handle, record) under this key — including windows that are currently hidden to the
+    /// tray or minimized (which a live-window scan would miss). The restore pass uses this and filters by
+    /// liveness/ownership itself, so a tray app captured while visible still gets its restore rect fixed.
+    /// </summary>
+    public IReadOnlyList<(IntPtr Handle, WindowRecord Record)> GetAll(string displayKey)
+    {
+        var list = new List<(IntPtr, WindowRecord)>();
+        if (_byKey.TryGetValue(displayKey, out var bucket))
+            foreach (var kv in bucket)
+                list.Add((kv.Key, kv.Value));
+        return list;
     }
 
     /// <summary>Drop a handle from every bucket (called when a window is destroyed; handles get reused).</summary>

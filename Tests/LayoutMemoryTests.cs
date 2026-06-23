@@ -7,8 +7,10 @@ namespace Reframe.Core.Tests;
 
 public class LayoutMemoryTests
 {
+    // Screen rect and normal (restore) rect are set equal here — the memory store doesn't care about the
+    // distinction (that's WindowOps.RestorePlacement's concern), so the tests keep them simple.
     private static (IntPtr, WindowRecord) W(int handle, int x, int y, int w = 100, int h = 100, int showCmd = 1)
-        => (new IntPtr(handle), new WindowRecord(x, y, x + w, y + h, showCmd));
+        => (new IntPtr(handle), new WindowRecord(x, y, x + w, y + h, x, y, x + w, y + h, showCmd));
 
     [Fact]
     public void Capture_then_restore_plan_returns_record_for_live_handle()
@@ -110,6 +112,20 @@ public class LayoutMemoryTests
 
         Assert.Empty(m.GetRestorePlan("a", new[] { new IntPtr(1) }));
         Assert.Empty(m.GetRestorePlan("b", new[] { new IntPtr(1) }));
+    }
+
+    [Fact]
+    public void GetAll_returns_every_remembered_window_independent_of_a_live_set()
+    {
+        var m = new LayoutMemory();
+        m.Capture("K", new[] { W(1, 10, 20), W(2, 30, 40) });
+
+        // GetAll does not take a live-handle set — so a tray-hidden window (which a live scan would miss) is still included.
+        var all = m.GetAll("K");
+        Assert.Equal(2, all.Count);
+        Assert.Contains(all, p => p.Handle == new IntPtr(1));
+        Assert.Contains(all, p => p.Handle == new IntPtr(2));
+        Assert.Empty(m.GetAll("other"));
     }
 
     [Fact]

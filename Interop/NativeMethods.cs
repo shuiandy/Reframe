@@ -277,6 +277,7 @@ public static class NativeMethods
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool SetWindowPlacement(IntPtr hWnd, ref WINDOWPLACEMENT lpwndpl);
 
+    public const int SW_HIDE = 0;
     public const int SW_SHOWNORMAL = 1;
     public const int SW_SHOWMINIMIZED = 2;
     public const int SW_SHOWMAXIMIZED = 3;
