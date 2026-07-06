@@ -36,6 +36,7 @@
     <Compile Include="..\Core\WindowScanner.cs" LinkBase="Linked" />
     <Compile Include="..\Interop\NativeMethods.cs" LinkBase="Linked" />
     <Compile Include="..\Services\StartupOptions.cs" LinkBase="Linked" />
+    <Compile Include="..\Services\StartupTaskService.cs" LinkBase="Linked" />
   </ItemGroup>
 
   <ItemGroup>

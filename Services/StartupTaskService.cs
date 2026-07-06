@@ -1,4 +1,7 @@
 using System.Diagnostics;
+using System.Security;
+using System.Security.Principal;
+using System.Text;
 
 namespace Reframe.Services;
 
@@ -33,18 +36,105 @@ public static class StartupTaskService
     /// existing task of the same name, so toggling start-on-login off→on (or flipping the minimized
     /// option) always rebuilds the action with the current arguments — this is also how an older task
     /// created before the <c>--minimized</c> flag existed gets migrated.
+    ///
+    /// Implemented with <c>schtasks /Create /XML</c> (rather than the flag form) because only the XML
+    /// definition lets us set <c>ExecutionTimeLimit=PT0S</c> (unlimited). The command-line flag form has
+    /// no way to disable the limit, so a task created that way inherits Task Scheduler's default 3-day
+    /// (<c>PT72H</c>) limit and the running process is terminated after three days of uptime — the
+    /// "silently exits after a few days" bug. The XML also disables the on-battery restrictions.
     /// </summary>
     public static bool Enable(bool minimized)
     {
         string? exe = Environment.ProcessPath;
         if (string.IsNullOrEmpty(exe)) return false;
 
-        // /F overwrites a task of the same name; /TR needs an extra layer of quotes when the path contains
-        // spaces. When present, the trailing " --minimized" sits outside the path quotes so it's parsed as
-        // a separate arg.
-        string tail = minimized ? $" {MinimizedArg}" : "";
-        string args = $"/Create /TN \"{TaskName}\" /SC ONLOGON /RL HIGHEST /TR \"\\\"{exe}\\\"{tail}\" /F";
-        return Run(args) == 0;
+        try
+        {
+            string userId = WindowsIdentity.GetCurrent().Name;
+            string xml = BuildTaskXml(exe, userId, minimized);
+
+            // schtasks /XML requires the file be Unicode (UTF-16); UTF-8 is rejected.
+            string tmp = Path.Combine(Path.GetTempPath(), $"Reframe_task_{Guid.NewGuid():N}.xml");
+            try
+            {
+                File.WriteAllText(tmp, xml, Encoding.Unicode);
+                // /F overwrites any existing task of the same name.
+                return Run($"/Create /TN \"{TaskName}\" /XML \"{tmp}\" /F") == 0;
+            }
+            finally
+            {
+                try { File.Delete(tmp); } catch { /* best-effort cleanup */ }
+            }
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Build a Task Scheduler 1.2 XML definition for the start-on-login task. Pure function (no
+    /// environment/registry access) so it can be unit tested. Key settings:
+    /// <list type="bullet">
+    /// <item><c>ExecutionTimeLimit=PT0S</c> — unlimited; this is the whole point (see <see cref="Enable"/>).</item>
+    /// <item>battery flags false — don't refuse to start or stop when running on battery.</item>
+    /// <item>a <c>LogonTrigger</c> for <paramref name="userId"/> — equivalent to the old <c>/SC ONLOGON</c>.</item>
+    /// <item>a Principal with <c>HighestAvailable</c> + <c>InteractiveToken</c> — equivalent to <c>/RL HIGHEST</c>,
+    /// launching silently at logon with the highest privileges, no UAC.</item>
+    /// </list>
+    /// <paramref name="exePath"/> and <paramref name="userId"/> are XML-escaped, so paths containing
+    /// <c>&amp; &lt; &gt; " '</c> are safe. The declaration is UTF-16 because the file is written as Unicode.
+    /// </summary>
+    public static string BuildTaskXml(string exePath, string userId, bool minimized)
+    {
+        string exe = SecurityElement.Escape(exePath) ?? string.Empty;
+        string user = SecurityElement.Escape(userId) ?? string.Empty;
+        string argsElement = minimized ? $"\n      <Arguments>{MinimizedArg}</Arguments>" : "";
+
+        return
+            "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\n" +
+            "<Task version=\"1.2\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">\n" +
+            "  <RegistrationInfo>\n" +
+            "    <Description>Reframe start-on-login</Description>\n" +
+            "  </RegistrationInfo>\n" +
+            "  <Triggers>\n" +
+            "    <LogonTrigger>\n" +
+            "      <Enabled>true</Enabled>\n" +
+            $"      <UserId>{user}</UserId>\n" +
+            "    </LogonTrigger>\n" +
+            "  </Triggers>\n" +
+            "  <Principals>\n" +
+            "    <Principal id=\"Author\">\n" +
+            $"      <UserId>{user}</UserId>\n" +
+            "      <LogonType>InteractiveToken</LogonType>\n" +
+            "      <RunLevel>HighestAvailable</RunLevel>\n" +
+            "    </Principal>\n" +
+            "  </Principals>\n" +
+            "  <Settings>\n" +
+            "    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>\n" +
+            "    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>\n" +
+            "    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>\n" +
+            "    <AllowHardTerminate>true</AllowHardTerminate>\n" +
+            "    <StartWhenAvailable>false</StartWhenAvailable>\n" +
+            "    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>\n" +
+            "    <IdleSettings>\n" +
+            "      <StopOnIdleEnd>false</StopOnIdleEnd>\n" +
+            "      <RestartOnIdle>false</RestartOnIdle>\n" +
+            "    </IdleSettings>\n" +
+            "    <AllowStartOnDemand>true</AllowStartOnDemand>\n" +
+            "    <Enabled>true</Enabled>\n" +
+            "    <Hidden>false</Hidden>\n" +
+            "    <RunOnlyIfIdle>false</RunOnlyIfIdle>\n" +
+            "    <WakeToRun>false</WakeToRun>\n" +
+            "    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>\n" +
+            "    <Priority>7</Priority>\n" +
+            "  </Settings>\n" +
+            "  <Actions Context=\"Author\">\n" +
+            "    <Exec>\n" +
+            $"      <Command>{exe}</Command>{argsElement}\n" +
+            "    </Exec>\n" +
+            "  </Actions>\n" +
+            "</Task>\n";
     }
 
     /// <summary>Delete the scheduled task.</summary>
@@ -54,22 +144,23 @@ public static class StartupTaskService
     }
 
     /// <summary>
-    /// Reconcile an existing start-on-login task's <c>--minimized</c> argument with the user's current
-    /// preference (<paramref name="minimized"/>), so a user who already enabled autostart gets the
-    /// behaviour their config asks for without having to re-toggle it. This is how an older task created
-    /// before the flag existed picks up the silent default, and how flipping the option later takes
-    /// effect on the next launch.
+    /// Reconcile an existing start-on-login task with the user's current preference and, crucially, heal
+    /// a stale execution time limit. Two things are checked against the task XML:
+    /// <list type="number">
+    /// <item>the action's <c>--minimized</c> flag presence matches <paramref name="minimized"/> — so a
+    /// user who already enabled autostart gets the behaviour their config asks for without re-toggling
+    /// (an older task created before the flag existed picks up the silent default, and flipping the
+    /// option later takes effect on the next launch);</item>
+    /// <item>the settings carry <c>ExecutionTimeLimit=PT0S</c> (unlimited) — so a task created by the old
+    /// flag-based code, which inherited Task Scheduler's default 3-day (<c>PT72H</c>) limit and was
+    /// therefore terminated after three days of uptime, is silently rebuilt with no limit.</item>
+    /// </list>
+    /// If either check fails we rebuild via <see cref="Enable"/> (which writes the corrected XML). We
+    /// only leave the task alone when both are already satisfied.
     ///
-    /// Target state: the task exists AND its action's <c>--minimized</c> presence equals
-    /// <paramref name="minimized"/>. We query the task XML and check whether the flag is present; if that
-    /// disagrees with the desired state we rebuild via <see cref="Enable"/> (which adds or omits the flag
-    /// accordingly). This covers both directions — adding the flag to a stale task and removing it when
-    /// the user turned the option off.
-    ///
-    /// No-op when the task doesn't exist (nothing to migrate) or already matches. Best-effort and
-    /// non-throwing; safe to call on every startup. Returns true when a rebuild was actually performed.
-    /// Any failure is swallowed: a migration hiccup must never block startup, and the worst case is the
-    /// pre-existing behaviour the user already had.
+    /// No-op when the task doesn't exist (nothing to migrate). Best-effort and non-throwing; safe to call
+    /// on every startup. Returns true when a rebuild was actually performed. Any failure is swallowed: a
+    /// migration hiccup must never block startup, and the worst case is the pre-existing behaviour.
     /// </summary>
     public static bool MigrateIfNeeded(bool minimized)
     {
@@ -81,11 +172,17 @@ public static class StartupTaskService
 
             // Does the current action carry the flag? (case-insensitive; XML is exe path + args text).
             bool hasFlag = xml.Contains(MinimizedArg, StringComparison.OrdinalIgnoreCase);
+            bool flagMatches = hasFlag == minimized;
 
-            // Already matches the desired state → leave it alone.
-            if (hasFlag == minimized) return false;
+            // Is the execution time limit already unlimited? schtasks /Query /XML emits exactly
+            // "<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>" for an unlimited task; a stale (old
+            // flag-created) task has PT72H, which fails this check and triggers a rebuild.
+            bool unlimited = xml.Contains("<ExecutionTimeLimit>PT0S", StringComparison.OrdinalIgnoreCase);
 
-            // Disagrees → rebuild with the current exe and the desired flag state.
+            // Both already correct → leave it alone.
+            if (flagMatches && unlimited) return false;
+
+            // Disagrees on either axis → rebuild with the current exe, the desired flag, and no limit.
             return Enable(minimized);
         }
         catch
