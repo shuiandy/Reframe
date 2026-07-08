@@ -30,6 +30,14 @@ public sealed class TrayIcon : IDisposable
 
     private Thread? _thread;
     private IntPtr _hwnd;
+
+    // Forensic: the tick at which we last actually popped the context menu (TrackPopupMenu). A genuine
+    // menu command (WM_COMMAND CmdToggle/CmdExit) is always preceded by the user opening this menu, so
+    // this field is refreshed just before the popup. If a WM_COMMAND arrives with no recent popup, the
+    // command was injected by something else (an external PostMessage(WM_COMMAND)) rather than a real
+    // click — the smoking gun for a synthetic exit/toggle. Written on the tray thread, read on the same
+    // thread in WndProc, so no synchronisation is needed.
+    private long _lastMenuShownTick;
     private readonly ManualResetEventSlim _ready = new(false);
     private volatile bool _disposed;
 
@@ -212,6 +220,19 @@ public sealed class TrayIcon : IDisposable
             case WM_COMMAND:
             {
                 uint cmd = (uint)(wParam.ToInt64() & 0xFFFF);
+                // Authenticity check for the state-changing commands (toggle / exit): a genuine click on a
+                // menu item is always preceded by us popping the menu (TrackPopupMenu). If more than a
+                // minute has passed since the last popup — or we never popped one — a WM_COMMAND for these
+                // ids was almost certainly injected from outside (external PostMessage(WM_COMMAND)). We only
+                // record it and then proceed exactly as before; behaviour is unchanged, this is pure forensics.
+                if (cmd == CmdToggle || cmd == CmdExit)
+                {
+                    long sinceMenu = Environment.TickCount64 - _lastMenuShownTick;
+                    if (sinceMenu > 60_000)
+                        CrashLog.Note(
+                            $"Tray WM_COMMAND cmd={cmd} WITHOUT recent menu (synthetic?) sinceMenuMs={sinceMenu} " +
+                            ForensicProbe.ForensicContext());
+                }
                 switch (cmd)
                 {
                     case CmdOpen:
@@ -279,6 +300,9 @@ public sealed class TrayIcon : IDisposable
             // TrackPopupMenu convention: bring the host window to the foreground first, otherwise the
             // menu won't dismiss correctly when the user clicks outside it.
             SetForegroundWindow(_hwnd);
+            // Stamp the moment a real menu is shown, so WM_COMMAND can verify a command actually followed
+            // a user-opened menu (see WndProcImpl WM_COMMAND) rather than an injected message.
+            _lastMenuShownTick = Environment.TickCount64;
             TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_BOTTOMALIGN, pt.X, pt.Y, 0, _hwnd, IntPtr.Zero);
             PostMessage(_hwnd, WM_NULL, IntPtr.Zero, IntPtr.Zero);
         }

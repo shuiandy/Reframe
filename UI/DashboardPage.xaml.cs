@@ -397,6 +397,9 @@ public sealed partial class DashboardPage : Page
     {
         var svc = ConfigService.Instance;
         if (svc.Config.EngineEnabled == EngineToggle.IsOn) return;
+        // Forensic marker (only on a real change; matches App.SetEngineEnabled's format), recorded before
+        // the Save so the crash.log entry precedes the config write it explains.
+        CrashLog.Note($"Engine -> {(EngineToggle.IsOn ? "true" : "false")} (dashboard) {ForensicProbe.ForensicContext()}");
         svc.Config.EngineEnabled = EngineToggle.IsOn;
         svc.Save();
     }

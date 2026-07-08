@@ -60,7 +60,7 @@ public partial class App : Application
         var app = _current;
         if (app is null) return;
         var ui = app._ui;
-        if (ui is null || !ui.TryEnqueue(app.ExitApp)) app.ExitApp();
+        if (ui is null || !ui.TryEnqueue(() => app.ExitApp("RequestExit"))) app.ExitApp("RequestExit");
     }
 
     public App()
@@ -139,9 +139,19 @@ public partial class App : Application
     /// <summary>
     /// Best-effort self-registration of WER LocalDumps for this exe, so a native crash that bypasses the
     /// managed exception handlers (e.g. an access violation in a P/Invoke'd DLL) still drops a full
-    /// minidump. Writes <c>HKCU\Software\Microsoft\Windows\Windows Error Reporting\LocalDumps\Reframe.exe</c>
-    /// with DumpType=2 (full), DumpFolder=%LOCALAPPDATA%\Reframe\dumps, DumpCount=5. HKCU needs no elevation,
-    /// but any failure is swallowed — a diagnostics nicety must never block startup. Idempotent (overwrites).
+    /// minidump. Writes <c>HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\Reframe.exe</c>
+    /// with DumpType=2 (full), DumpFolder=%LOCALAPPDATA%\Reframe\dumps, DumpCount=5. Idempotent (overwrites).
+    ///
+    /// <para><b>Why HKLM and not HKCU:</b> WER only consults <b>LocalDumps under HKLM</b> — the per-user
+    /// HKCU hive is <i>not</i> read for LocalDumps. The previous implementation wrote to HKCU, so
+    /// <c>CreateSubKey</c> succeeded (no exception → the catch never fired), the key was really there, yet
+    /// WER ignored it and no .dmp was ever produced: a silent no-op. Writing HKLM needs elevation, which
+    /// this process has (app.manifest requestedExecutionLevel). We open the base key with an explicit
+    /// 64-bit view so a 32-bit run couldn't get WOW64-redirected into the Wow6432Node mirror.</para>
+    ///
+    /// <para>The outcome (success or the failure message) is written once to crash.log at startup so the
+    /// registration can be verified after the fact. Any failure is swallowed — a diagnostics nicety must
+    /// never block startup.</para>
     /// </summary>
     private static void RegisterWerLocalDumps()
     {
@@ -153,14 +163,25 @@ public partial class App : Application
             string dumpFolder = System.IO.Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Reframe", "dumps");
 
-            using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(
-                @"Software\Microsoft\Windows\Windows Error Reporting\LocalDumps\" + exe);
-            if (key is null) return;
+            using var baseKey = Microsoft.Win32.RegistryKey.OpenBaseKey(
+                Microsoft.Win32.RegistryHive.LocalMachine, Microsoft.Win32.RegistryView.Registry64);
+            using var key = baseKey.CreateSubKey(
+                @"SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\" + exe);
+            if (key is null)
+            {
+                CrashLog.Note($"WER LocalDumps register: CreateSubKey returned null for HKLM ...\\LocalDumps\\{exe}");
+                return;
+            }
             key.SetValue("DumpFolder", dumpFolder, Microsoft.Win32.RegistryValueKind.ExpandString);
             key.SetValue("DumpType", 2, Microsoft.Win32.RegistryValueKind.DWord);   // 2 = full dump
             key.SetValue("DumpCount", 5, Microsoft.Win32.RegistryValueKind.DWord);  // keep the most recent 5
+            CrashLog.Note($"WER LocalDumps registered (HKLM64): {exe} -> {dumpFolder}");
         }
-        catch { /* no permission / policy-locked: skip silently */ }
+        catch (Exception ex)
+        {
+            // Most likely UnauthorizedAccessException if somehow not elevated, or policy-locked.
+            CrashLog.Note($"WER LocalDumps register FAILED: {ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
@@ -229,8 +250,8 @@ public partial class App : Application
         _tray = new TrayIcon
         {
             OnOpen = () => _ui!.TryEnqueue(ShowMainWindow),
-            OnToggleEngine = on => _ui!.TryEnqueue(() => SetEngineEnabled(on)),
-            OnExit = () => _ui!.TryEnqueue(ExitApp),
+            OnToggleEngine = on => _ui!.TryEnqueue(() => SetEngineEnabled(on, "tray-menu")),
+            OnExit = () => _ui!.TryEnqueue(() => ExitApp("tray-menu")),
             EngineEnabledProvider = () => ConfigService.Instance.Config.EngineEnabled,
         };
         _tray.Start(tooltip: "Reframe");
@@ -261,11 +282,15 @@ public partial class App : Application
         WindowActivation.BringToFront(_window);
     }
 
-    /// <summary>Toggle the engine-enabled config flag and write to disk. Watcher.SafeTick applies it immediately.</summary>
-    private void SetEngineEnabled(bool on)
+    /// <summary>Toggle the engine-enabled config flag and write to disk. Watcher.SafeTick applies it immediately.
+    /// <paramref name="source"/> identifies who requested the change (e.g. "tray-menu") for the forensic marker.</summary>
+    private void SetEngineEnabled(bool on, string source)
     {
         var cfg = ConfigService.Instance.Config;
-        if (cfg.EngineEnabled == on) return;
+        if (cfg.EngineEnabled == on) return;   // no-op: only mark & persist a real change
+        // Forensic marker: a real engine flip, with who asked and the ambient input/foreground context.
+        // idleMs large + fg unexpected at a "disable" is the tell for a synthetic/unattended toggle.
+        CrashLog.Note($"Engine -> {(on ? "true" : "false")} ({source}) {ForensicProbe.ForensicContext()}");
         cfg.EngineEnabled = on;
         ConfigService.Instance.Save();
     }
@@ -282,15 +307,17 @@ public partial class App : Application
     ///   3) When done, marshal back to the UI thread for tray Dispose (to keep its thread affinity) +
     ///      Application.Exit (which must run on the UI thread).
     /// </summary>
-    private void ExitApp()
+    private void ExitApp(string source)
     {
         if (_exiting) return;
         _exiting = true;
 
-        // Exit marker: a deliberate exit (tray "Exit", or RequestExit for a language-change restart). Paired
-        // with the later AppDomain.ProcessExit "clean shutdown" line, this tells a clean teardown apart from a
-        // crash or external kill when reading crash.log after the fact.
-        CrashLog.Note("Exit via tray/RequestExit");
+        // Exit marker: a deliberate exit. <paramref name="source"/> distinguishes the tray "Exit" menu
+        // ("tray-menu") from a programmatic RequestExit ("RequestExit", e.g. a language-change restart).
+        // The forensic context (idle time + foreground process) lets a later read tell a genuine user
+        // click apart from an unattended/synthetic exit. Paired with the later AppDomain.ProcessExit
+        // "clean shutdown" line, this also tells a clean teardown apart from a crash or external kill.
+        CrashLog.Note($"Exit requested ({source}) {ForensicProbe.ForensicContext()}");
 
         // 1) Hide the window immediately for instant feedback (still on the UI thread here).
         try { _window?.AppWindow.Hide(); } catch { /* ignore */ }
