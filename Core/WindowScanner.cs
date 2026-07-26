@@ -194,6 +194,23 @@ public static class WindowScanner
         return result;
     }
 
+    /// <summary>
+    /// The window's Win32 class name, or "" if it can't be read. Not part of <see cref="WindowInfo"/> on
+    /// purpose: <see cref="EnumerateTopLevel"/> runs on the borderless engine's per-tick hot path and would pay
+    /// an extra P/Invoke per window, whereas only the window-persistence capture (every few seconds) needs the
+    /// class name — as half of <see cref="WindowIdentity"/>.
+    /// </summary>
+    public static string ClassNameOf(IntPtr hWnd)
+    {
+        try
+        {
+            var sb = new StringBuilder(256); // WNDCLASS names are capped at 256 chars by Win32
+            int n = NativeMethods.GetClassName(hWnd, sb, sb.Capacity);
+            return n > 0 ? sb.ToString() : "";
+        }
+        catch { return ""; }
+    }
+
     /// <summary>Whether the window is DWM-cloaked (hidden). If the attribute can't be read, treat it as "not hidden" (no false positives).</summary>
     private static bool IsCloaked(IntPtr hWnd)
     {

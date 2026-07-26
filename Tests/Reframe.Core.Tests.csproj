@@ -28,6 +28,9 @@
     <Compile Include="..\Core\MonitorDesc.cs" LinkBase="Linked" />
     <Compile Include="..\Core\LayoutKey.cs" LinkBase="Linked" />
     <Compile Include="..\Core\LayoutMemory.cs" LinkBase="Linked" />
+    <Compile Include="..\Core\WindowIdentity.cs" LinkBase="Linked" />
+    <Compile Include="..\Core\WindowMatcher.cs" LinkBase="Linked" />
+    <Compile Include="..\Core\LayoutStore.cs" LinkBase="Linked" />
     <Compile Include="..\Core\HotkeyGesture.cs" LinkBase="Linked" />
     <Compile Include="..\Core\PlacementResolver.cs" LinkBase="Linked" />
     <Compile Include="..\Core\FullscreenDetector.cs" LinkBase="Linked" />
