@@ -178,6 +178,69 @@ public class LayoutStoreTests : IDisposable
     }
 
     [Fact]
+    public void Legacy_pre_dpi_display_keys_load_safely_and_age_out_without_polluting_new_buckets()
+    {
+        // Files written before the DisplayKey carried a '#dpi' segment contain keys like "7680x2160@0,0*".
+        // We deliberately do NOT migrate them (guessing which scale factor they were recorded at would
+        // restore wrong geometry silently). This pins what we do instead: load them, keep them inert, let
+        // the normal aging rules delete them.
+        Directory.CreateDirectory(_dir);
+        File.WriteAllText(File_, """
+        {
+          "Version": 1,
+          "Layouts": [
+            {
+              "DisplayKey": "7680x2160@0,0*",
+              "Windows": [
+                {
+                  "Process": "chrome", "Class": "chrome_widgetwin_1", "Ordinal": 0, "Title": "old",
+                  "Left": 10, "Top": 20, "Right": 810, "Bottom": 620,
+                  "NormLeft": 10, "NormTop": 20, "NormRight": 810, "NormBottom": 620,
+                  "ShowCmd": 1, "LastSeenUtc": "2026-01-05T08:00:00Z"
+                }
+              ]
+            }
+          ]
+        }
+        """);
+
+        // 1. It loads. No exception, no data loss, no special-casing.
+        var file = LayoutStore.Load(File_);
+        var mem = new LayoutMemory();
+        mem.ImportFromDisk(file);
+        Assert.Equal(new[] { "7680x2160@0,0*" }, mem.Keys);
+        Assert.True(mem.HasSnapshot("7680x2160@0,0*"));
+
+        // 2. It does not pollute the bucket the same monitor produces today (at any scale factor): a key
+        //    computed now always carries '#dpi', so the old bucket can never be matched or written into.
+        string live150 = LayoutKey.Compute(new[] { new MonitorDesc("\\\\.\\DISPLAY1", true, 0, 0, 7680, 2160, 0, 0, 7680, 2160, 144) });
+        string live175 = LayoutKey.Compute(new[] { new MonitorDesc("\\\\.\\DISPLAY1", true, 0, 0, 7680, 2160, 0, 0, 7680, 2160, 168) });
+        Assert.False(mem.HasSnapshot(live150));
+        Assert.False(mem.HasSnapshot(live175));
+        Assert.Empty(mem.GetAll("7680x2160@0,0*")); // imported ⇒ unbound ⇒ nothing to act on
+
+        // A capture under today's key creates its own bucket and leaves the orphan untouched.
+        mem.Capture(live175, new[] { Win(0x100, "chrome", "chrome_widgetwin_1", "new", 500, 60) }, T0);
+        Assert.Equal(1, mem.CountFor(live175));
+        Assert.Equal(500, mem.EntriesFor(live175)[0].Record.Left);
+        Assert.Equal(10, mem.EntriesFor("7680x2160@0,0*")[0].Record.Left); // untouched
+
+        // 3. It ages out on its own: unbound + older than maxAge ⇒ dropped, and the empty key disappears.
+        //    (The fresh bucket survives — this is aging, not a purge of old-format keys.)
+        int dropped = mem.Trim(LayoutMemory.DefaultMaxPerKey, LayoutMemory.DefaultMaxAge, T0.AddDays(60));
+        Assert.Equal(1, dropped);
+        Assert.DoesNotContain("7680x2160@0,0*", mem.Keys);
+        Assert.False(mem.HasSnapshot("7680x2160@0,0*"));
+        Assert.True(mem.HasSnapshot(live175));
+
+        // And the trimmed shape round-trips to disk without the orphan coming back.
+        Assert.True(LayoutStore.Save(mem.ExportForDisk(), File_));
+        var after = new LayoutMemory();
+        after.ImportFromDisk(LayoutStore.Load(File_));
+        Assert.Equal(new[] { live175 }, after.Keys);
+    }
+
+    [Fact]
     public void Real_store_path_sits_next_to_config_json()
     {
         // Path derivation only — nothing is read or written here.

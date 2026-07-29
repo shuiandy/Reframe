@@ -110,6 +110,17 @@ public static class NativeMethods
 
     public const uint MONITORINFOF_PRIMARY = 0x00000001;
 
+    // Per-monitor DPI (shcore.dll, Windows 8.1+). Returns an HRESULT (S_OK = 0) and writes the monitor's DPI
+    // into dpiX/dpiY; for MDT_EFFECTIVE_DPI both axes carry the same value on every shipping configuration,
+    // so callers read dpiX only. The process is PerMonitorV2 (see app.manifest), so this reports the scale
+    // factor the user actually picked in Settings rather than a virtualized 96.
+    // Callers must treat any failure as "96" — never let a DPI query break monitor enumeration.
+    public const int MDT_EFFECTIVE_DPI = 0;   // MONITOR_DPI_TYPE: the scale factor applied to that display
+    public const int USER_DEFAULT_SCREEN_DPI = 96; // 100% scaling
+
+    [DllImport("shcore.dll")]
+    public static extern int GetDpiForMonitor(IntPtr hMonitor, int dpiType, out uint dpiX, out uint dpiY);
+
     [DllImport("user32.dll")]
     public static extern bool IsWindow(IntPtr hWnd); // Whether the handle still refers to a valid window
 
