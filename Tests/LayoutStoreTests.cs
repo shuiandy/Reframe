@@ -75,7 +75,7 @@ public class LayoutStoreTests : IDisposable
         Assert.Equal(1, reloaded.CountFor("desk"));
         // ...but nothing is actionable yet: last session's handle was never written to the file, so the record
         // cannot sneak into the HWND fast path.
-        Assert.Empty(reloaded.GetAll("desk"));
+        Assert.Empty(reloaded.GetRestorable("desk"));
         Assert.Empty(reloaded.GetRestorePlan("desk", new[] { new IntPtr(0x100) }));
         Assert.All(reloaded.EntriesFor("desk"), e => Assert.Equal(IntPtr.Zero, e.Handle));
 
@@ -217,7 +217,7 @@ public class LayoutStoreTests : IDisposable
         string live175 = LayoutKey.Compute(new[] { new MonitorDesc("\\\\.\\DISPLAY1", true, 0, 0, 7680, 2160, 0, 0, 7680, 2160, 168) });
         Assert.False(mem.HasSnapshot(live150));
         Assert.False(mem.HasSnapshot(live175));
-        Assert.Empty(mem.GetAll("7680x2160@0,0*")); // imported ⇒ unbound ⇒ nothing to act on
+        Assert.Empty(mem.GetRestorable("7680x2160@0,0*")); // imported ⇒ unbound ⇒ nothing to act on
 
         // A capture under today's key creates its own bucket and leaves the orphan untouched.
         mem.Capture(live175, new[] { Win(0x100, "chrome", "chrome_widgetwin_1", "new", 500, 60) }, T0);

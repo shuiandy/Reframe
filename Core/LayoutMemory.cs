@@ -60,8 +60,55 @@ public sealed class RememberedWindow
     /// <b>session-scoped</b> and is never persisted: records read back from disk always start unbound (last
     /// session's handle values are meaningless — possibly reused by an unrelated window), and a record whose
     /// window died is unbound rather than deleted so its geometry survives until the app restarts and reclaims it.
+    ///
+    /// <para>Clearing the handle also clears <see cref="ConfidentBinding"/> — confidence is a property of a
+    /// binding, not of the record, so it can never outlive the binding it describes.</para>
     /// </summary>
-    public IntPtr Handle { get; set; }
+    public IntPtr Handle
+    {
+        get => _handle;
+        set
+        {
+            _handle = value;
+            if (value == IntPtr.Zero) _confidentBinding = false; // no binding ⇒ no confidence in one
+        }
+    }
+
+    /// <summary>
+    /// Whether the matcher was <b>sure</b> that <see cref="Handle"/> is the same window this record was
+    /// captured from (same HWND within a session, a group-unique exact caption match, or a forced 1:1) — as
+    /// opposed to a positional ordinal pairing, which is bookkeeping and no evidence at all. See
+    /// <see cref="WindowMatcher"/>.
+    ///
+    /// <para><b>This is what a restore is allowed to act on.</b> Moving a window is destructive: get it wrong
+    /// and a QQ chat window is reshaped into the main panel's tall strip. So both the adoption restore
+    /// (<see cref="LayoutMemory.Capture"/>'s return value) and the display-change / manual restore
+    /// (<see cref="LayoutMemory.GetRestorable"/>) are gated on this flag, while ordinary capture tracking is
+    /// not: a non-confidently bound record keeps following its window and recording where it is, it just never
+    /// tells anyone to move it.</para>
+    ///
+    /// <para><b>Session-scoped, like <see cref="Handle"/>, and never written to disk.</b> A record read back
+    /// from the file starts unbound, and an unbound record has no binding to be confident about — so there is
+    /// nothing to persist, and no way for a stale "we were sure last week" to leak into a new session.</para>
+    /// </summary>
+    public bool ConfidentBinding
+    {
+        get => _handle != IntPtr.Zero && _confidentBinding;
+        set => _confidentBinding = value;
+    }
+
+    private IntPtr _handle;
+    private bool _confidentBinding;
+
+    /// <summary>Bind this record to a live window, recording whether the matcher was sure it is the same one.</summary>
+    public void Bind(IntPtr handle, bool confident)
+    {
+        Handle = handle;
+        ConfidentBinding = confident;
+    }
+
+    /// <summary>Drop the session-scoped binding — and with it any confidence in it. The geometry is kept.</summary>
+    public void Unbind() => Handle = IntPtr.Zero;
 }
 
 /// <summary>
@@ -200,19 +247,22 @@ public sealed class LayoutMemory
 
                 e.Title = w.Title;
                 e.LastSeenUtc = nowUtc;
-                e.Handle = w.Handle;
+                // (the binding — handle + confidence — was already applied by BindHandles)
             }
             else
             {
-                bucket.Add(new RememberedWindow
+                var fresh = new RememberedWindow
                 {
                     Identity = w.Identity,
                     Ordinal = NextOrdinal(bucket, w.Identity, null),
                     Title = w.Title,
                     Record = w.Record,
                     LastSeenUtc = nowUtc,
-                    Handle = w.Handle,
-                });
+                };
+                // A brand-new record is created *from* this window, so it is trivially the same window: this
+                // is what makes an ordinary session's records restorable on the next display change.
+                fresh.Bind(w.Handle, confident: true);
+                bucket.Add(fresh);
             }
         }
 
@@ -258,7 +308,7 @@ public sealed class LayoutMemory
         var map = new Dictionary<IntPtr, (int, bool)>(candidates.Count);
         foreach (var a in WindowMatcher.Assign(refs, candidates))
         {
-            bucket[a.Id].Handle = a.Handle;
+            bucket[a.Id].Bind(a.Handle, a.Confident);
             map[a.Handle] = (a.Id, a.Confident);
         }
         return map;
@@ -281,6 +331,12 @@ public sealed class LayoutMemory
     /// <summary>
     /// Whether we have any remembered windows for this key (i.e. a layout worth restoring). Counts unbound
     /// records too — a layout just read off disk is entirely unbound and must still count as "we know this display".
+    ///
+    /// <para><b>Deliberately not filtered by binding or confidence.</b> This is the "do we know this display
+    /// at all" gate that decides whether the settle path even attempts a restore; the binding state at that
+    /// instant is irrelevant, because <see cref="Reclaim"/> runs first and is what turns records into
+    /// something actionable. Filtering here would mean a freshly-loaded layout could never be restored — the
+    /// engine would give up before ever trying to claim its windows.</para>
     /// </summary>
     public bool HasSnapshot(string displayKey)
         => _byKey.TryGetValue(displayKey, out var b) && b.Count > 0;
@@ -298,8 +354,10 @@ public sealed class LayoutMemory
 
     /// <summary>
     /// For the windows currently alive under <paramref name="displayKey"/>, return each one we have a
-    /// remembered record for, paired with its target geometry. Windows with no record are omitted (we never
-    /// invent a position); remembered windows that are no longer alive are simply not in the live set.
+    /// <b>confidently bound</b> record for, paired with its target geometry. Windows with no record are
+    /// omitted (we never invent a position); remembered windows that are no longer alive are simply not in the
+    /// live set; and windows whose record was claimed by a guess are omitted too — see
+    /// <see cref="GetRestorable"/> for why moving on a guess is the bug this gate exists to stop.
     /// </summary>
     public IReadOnlyList<(IntPtr Handle, WindowRecord Target)> GetRestorePlan(
         string displayKey, IEnumerable<IntPtr> liveHandles)
@@ -309,7 +367,7 @@ public sealed class LayoutMemory
 
         var byHandle = new Dictionary<IntPtr, RememberedWindow>(bucket.Count);
         foreach (var e in bucket)
-            if (e.Handle != IntPtr.Zero) byHandle[e.Handle] = e;
+            if (e.ConfidentBinding) byHandle[e.Handle] = e;
 
         foreach (var h in liveHandles)
             if (byHandle.TryGetValue(h, out var e))
@@ -318,17 +376,29 @@ public sealed class LayoutMemory
     }
 
     /// <summary>
-    /// Every currently-bound (handle, record) under this key — including windows that are hidden to the tray or
-    /// minimized (which a live-window scan would miss), which is why the restore pass uses this rather than a
-    /// fresh scan and filters by liveness/ownership itself. Unbound records (no window to act on right now) are
-    /// omitted; they are picked up by <see cref="Reclaim"/> once their app is back.
+    /// Every (handle, record) under this key that a restore may actually act on: bound to a live window
+    /// <b>and</b> bound confidently. Includes windows hidden to the tray or minimized (which a live-window
+    /// scan would miss), which is why the restore pass uses this rather than a fresh scan and filters by
+    /// liveness/ownership itself.
+    ///
+    /// <para><b>Why confidence gates this and not just the adoption path.</b> The two restore paths reach the
+    /// same windows by different routes. Adoption fires from <see cref="Capture"/> when a record goes from
+    /// unbound to bound; the display-change / manual restore instead runs <see cref="Reclaim"/> and then moves
+    /// everything bound. Gating only the first left the identical bug alive on the second: after a reboot the
+    /// disk layout loads unbound, the monitor wakes, <see cref="Reclaim"/> binds QQ's four same-class records
+    /// to whatever windows exist by ordinal, and the restore reshapes a chat window into the image viewer's
+    /// box. Both routes now ask the same question — <see cref="RememberedWindow.ConfidentBinding"/>.</para>
+    ///
+    /// <para>Unbound records (nothing to act on right now) and non-confidently bound ones (we cannot tell
+    /// which window is which) are both omitted. The latter still take part in ordinary capture tracking: they
+    /// follow their window and record where it is, they are just never moved.</para>
     /// </summary>
-    public IReadOnlyList<(IntPtr Handle, WindowRecord Record)> GetAll(string displayKey)
+    public IReadOnlyList<(IntPtr Handle, WindowRecord Record)> GetRestorable(string displayKey)
     {
         var list = new List<(IntPtr, WindowRecord)>();
         if (_byKey.TryGetValue(displayKey, out var bucket))
             foreach (var e in bucket)
-                if (e.Handle != IntPtr.Zero)
+                if (e.ConfidentBinding)
                     list.Add((e.Handle, e.Record));
         return list;
     }
@@ -345,7 +415,7 @@ public sealed class LayoutMemory
         if (handle == IntPtr.Zero) return;
         foreach (var bucket in _byKey.Values)
             foreach (var e in bucket)
-                if (e.Handle == handle) e.Handle = IntPtr.Zero;
+                if (e.Handle == handle) e.Unbind(); // clears the confidence flag with it
     }
 
     /// <summary>
@@ -358,14 +428,16 @@ public sealed class LayoutMemory
     /// re-claimed by identity; only <see cref="Trim"/> ever deletes anything.</para>
     ///
     /// <para>Callers run this immediately before matching, which gives the matcher its key invariant: a
-    /// non-zero binding means that window is alive.</para>
+    /// non-zero binding means that window is alive. Unbinding also clears
+    /// <see cref="RememberedWindow.ConfidentBinding"/>, so a record can never carry "we were sure" over from
+    /// the window that just died into whatever claims it next.</para>
     /// </summary>
     public void PruneDead(Func<IntPtr, bool> isAlive)
     {
         foreach (var bucket in _byKey.Values)
             foreach (var e in bucket)
                 if (e.Handle != IntPtr.Zero && !isAlive(e.Handle))
-                    e.Handle = IntPtr.Zero;
+                    e.Unbind();
     }
 
     /// <summary>
@@ -448,6 +520,11 @@ public sealed class LayoutMemory
     /// therefore never written to the file in the first place, and every imported record starts
     /// <b>unbound</b> (<c>Handle == IntPtr.Zero</c>), which keeps it out of the matcher's HWND fast path: an
     /// imported layout can only ever be claimed by identity. Nothing else in the engine may assume otherwise.</para>
+    ///
+    /// <para>The same goes for <see cref="RememberedWindow.ConfidentBinding"/>: it describes <i>this</i>
+    /// session's binding, so there is nothing to write and nothing to read back. An imported record is unbound
+    /// and therefore not confident, and it can only become confident by being claimed again on evidence
+    /// available right now.</para>
     /// </summary>
     public void ImportFromDisk(LayoutFile? file)
     {

@@ -115,17 +115,18 @@ public class LayoutMemoryTests
     }
 
     [Fact]
-    public void GetAll_returns_every_remembered_window_independent_of_a_live_set()
+    public void GetRestorable_returns_every_actionable_window_independent_of_a_live_set()
     {
         var m = new LayoutMemory();
         m.Capture("K", new[] { W(1, 10, 20), W(2, 30, 40) });
 
-        // GetAll does not take a live-handle set — so a tray-hidden window (which a live scan would miss) is still included.
-        var all = m.GetAll("K");
+        // GetRestorable does not take a live-handle set — so a tray-hidden window (which a live scan would
+        // miss) is still included.
+        var all = m.GetRestorable("K");
         Assert.Equal(2, all.Count);
         Assert.Contains(all, p => p.Handle == new IntPtr(1));
         Assert.Contains(all, p => p.Handle == new IntPtr(2));
-        Assert.Empty(m.GetAll("other"));
+        Assert.Empty(m.GetRestorable("other"));
     }
 
     [Fact]

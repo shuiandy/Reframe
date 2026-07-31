@@ -354,9 +354,17 @@ public sealed class PersistenceEngine : IDisposable
         int restoredCount = 0;
         for (int pass = 0; pass < RestorePasses; pass++)
         {
-            // Iterate ALL remembered windows (not just currently-visible ones) so tray-hidden / minimized
-            // windows get their restore rect fixed too; filter out engine-owned, just-engine-moved, and dead.
-            var plan = FilterWritable(_memory.GetAll(key), _getEngineOwned());
+            // Iterate every remembered window we may actually act on (not just currently-visible ones) so
+            // tray-hidden / minimized windows get their restore rect fixed too; filter out engine-owned,
+            // just-engine-moved, and dead.
+            //
+            // GetRestorable — not "everything bound". Reclaim above binds records whether or not it can tell
+            // which window is which, because binding is what stops duplicate records piling up. Moving on
+            // such a binding is the bug: after a reboot the disk layout arrives unbound, the monitor wakes,
+            // and QQ's four same-class records would be dealt out by ordinal and then physically applied,
+            // reshaping a chat window into the image viewer's box. Same rule as the adoption restore: no
+            // confidence, no move — the window is still tracked, just not touched.
+            var plan = FilterWritable(_memory.GetRestorable(key), _getEngineOwned());
             if (plan.Count == 0) break;
 
             int movedThisPass = ApplyPlacements(plan);
