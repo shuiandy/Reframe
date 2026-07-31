@@ -211,16 +211,161 @@ public class LayoutAdoptionTests
     }
 
     [Fact]
-    public void Multiple_restarted_windows_of_one_app_are_adopted_onto_their_own_records()
+    public void Multiple_restarted_windows_of_one_app_are_adopted_when_their_captions_identify_them()
     {
+        // Two windows of one app, each wearing a caption unique in the group: that is enough to know which
+        // record is which, so both go home — note the handles come back in the *opposite* order, and the
+        // captions (not the handles) decide.
         var m = new LayoutMemory();
-        m.Capture("desk", new[] { W(0x100, Chrome, 100, 0), W(0x200, Chrome, 200, 0) }, T0);
+        m.Capture("desk", new[] { W(0x100, Chrome, 100, 0, "Docs"), W(0x200, Chrome, 200, 0, "Mail") }, T0);
         m.PruneDead(_ => false);
 
-        var adopted = m.Capture("desk", new[] { W(0x820, Chrome, 0, 0), W(0x810, Chrome, 0, 0) }, T0.AddMinutes(1));
+        var adopted = m.Capture("desk", new[]
+        {
+            W(0x820, Chrome, 0, 0, "Docs"),
+            W(0x810, Chrome, 0, 0, "Mail"),
+        }, T0.AddMinutes(1));
 
         Assert.Equal(2, adopted.Count);
-        Assert.Equal(100, adopted.Single(a => a.Handle == new IntPtr(0x810)).Target.Left); // ordinal 0 ↔ lower handle
-        Assert.Equal(200, adopted.Single(a => a.Handle == new IntPtr(0x820)).Target.Left);
+        Assert.Equal(100, adopted.Single(a => a.Handle == new IntPtr(0x820)).Target.Left); // "Docs"
+        Assert.Equal(200, adopted.Single(a => a.Handle == new IntPtr(0x810)).Target.Left); // "Mail"
+    }
+
+    // ---- (6) Ambiguity: bind, but never move ----
+    //
+    // Identity is (process, class), and an Electron app puts everything in one class. When several records of
+    // one identity are indistinguishable, an ordinal-order pairing is a coin flip — and a coin flip that
+    // *moves windows*. So ambiguity binds (records must not pile up) and reports nothing.
+
+    /// <summary>The exact shape observed on the machine that showed the bug — see the class remarks.</summary>
+    private static CapturedWindow Q(int handle, int x, int y, int w, int h, string title)
+        => new(new IntPtr(handle), QQ, title, new WindowRecord(x, y, x + w, y + h, x, y, x + w, y + h, 1));
+
+    private static WindowIdentity QQ => WindowIdentity.Create("qq", "Chrome_WidgetWin_1");
+
+    [Fact]
+    public void Indistinguishable_windows_of_one_app_are_bound_and_recorded_but_never_moved()
+    {
+        // QQ NT: main panel, chat windows and the image viewer all live in chrome_widgetwin_1 with wildly
+        // different sizes, so (process, class) cannot tell them apart. Two records share the caption
+        // "这是个什么群"; the main panel restarted into the tray (minimized ⇒ never offered to capture) and the
+        // image viewer wasn't reopened. Ordinal pairing used to hand a reopened chat window the main panel's
+        // 574x2002 strip or the viewer's 1921x1152 box — photographed on real hardware.
+        var m = new LayoutMemory();
+        m.Capture("desk", new[]
+        {
+            Q(0x100, 0, 0, 1015, 1015, "这是个什么群"),
+            Q(0x200, 0, 0,  574, 2002, "QQ"),
+            Q(0x300, 0, 0, 2220, 1487, "这是个什么群"),
+            Q(0x400, 0, 0, 1921, 1152, "图片查看器"),
+        }, T0);
+        m.PruneDead(_ => false); // QQ restarts: every record is unbound
+
+        var adopted = m.Capture("desk", new[]
+        {
+            Q(0x4400, 0, 0, 900, 900, "这是个什么群"),
+            Q(0x8800, 0, 0, 900, 900, "这是个什么群"),
+        }, T0.AddMinutes(1));
+
+        Assert.Empty(adopted);                    // not one window is reshaped
+        Assert.Equal(4, m.CountFor("desk"));      // ...yet no duplicate records pile up
+        var bound = m.EntriesFor("desk").Where(e => e.Handle != IntPtr.Zero).ToList();
+        Assert.Equal(2, bound.Count);
+        // The two claimed records now describe the windows as they actually are (ordinary capture semantics).
+        Assert.All(bound, e => Assert.Equal(900, e.Record.Right - e.Record.Left));
+        // ...and the records nothing claimed keep their memory for a later, better-evidenced round.
+        var untouched = m.EntriesFor("desk").Where(e => e.Handle == IntPtr.Zero).Select(e => e.Record.Right - e.Record.Left).OrderBy(v => v).ToList();
+        Assert.Equal(new[] { 1921, 2220 }, untouched);
+    }
+
+    [Fact]
+    public void Within_an_ambiguous_group_a_uniquely_captioned_window_is_still_adopted()
+    {
+        // The other half of the same rule: ambiguity is per caption, not per app. QQ's main panel is the only
+        // window called "QQ" on either side, so it — and only it — goes back to its 574x2002 strip.
+        var m = new LayoutMemory();
+        m.Capture("desk", new[]
+        {
+            Q(0x100, 0, 0, 1015, 1015, "这是个什么群"),
+            Q(0x200, 0, 0,  574, 2002, "QQ"),
+            Q(0x300, 0, 0, 2220, 1487, "这是个什么群"),
+        }, T0);
+        m.PruneDead(_ => false);
+
+        var adopted = m.Capture("desk", new[]
+        {
+            Q(0x4400, 0, 0, 900, 900, "QQ"),
+            Q(0x5500, 0, 0, 900, 900, "这是个什么群"),
+            Q(0x6600, 0, 0, 900, 900, "这是个什么群"),
+        }, T0.AddMinutes(1));
+
+        var one = Assert.Single(adopted);
+        Assert.Equal(new IntPtr(0x4400), one.Handle);
+        Assert.Equal(574, one.Target.Right - one.Target.Left);
+        Assert.Equal(2002, one.Target.Bottom - one.Target.Top);
+    }
+
+    [Fact]
+    public void Two_records_sharing_a_caption_adopt_nothing_even_one_at_a_time()
+    {
+        // Only one of the two same-captioned windows is back. It is still not knowable *which* one, and the
+        // 1:1 rule must not paper over that: two unbound records is not one.
+        var m = new LayoutMemory();
+        m.Capture("desk", new[] { W(0x100, Chrome, 10, 20, "Untitled"), W(0x200, Chrome, 500, 600, "Untitled") }, T0);
+        m.PruneDead(_ => false);
+
+        var adopted = m.Capture("desk", new[] { W(0x900, Chrome, 0, 0, "Untitled") }, T0.AddMinutes(1));
+
+        Assert.Empty(adopted);
+        Assert.Equal(2, m.CountFor("desk"));
+    }
+
+    [Fact]
+    public void A_single_window_app_is_still_adopted_when_its_caption_changed_completely()
+    {
+        // The original reported scenario, and the reason the 1:1 rule exists: one record, one window, and a
+        // caption that follows the content (Chrome on another tab, charmap, an editor with another file).
+        // There is nothing else either could be, so the window goes home despite matching no caption.
+        var m = new LayoutMemory();
+        m.Capture("desk", new[] { W(0x100, Chrome, 10, 20, "Inbox - Gmail") }, T0);
+        m.PruneDead(_ => false);
+
+        var adopted = m.Capture("desk", new[] { W(0x900, Chrome, 0, 0, "Reframe - GitHub") }, T0.AddMinutes(1));
+
+        var one = Assert.Single(adopted);
+        Assert.Equal(new IntPtr(0x900), one.Handle);
+        Assert.Equal(10, one.Target.Left);
+    }
+
+    [Fact]
+    public void The_handle_fast_path_is_untouched_by_the_confidence_rules()
+    {
+        // Same session, nothing restarted, and a maximally ambiguous group: identical captions, several
+        // windows, one identity. Every record keeps tracking its own handle exactly as before, nothing is
+        // reported for adoption, and geometry follows the windows.
+        var m = new LayoutMemory();
+        m.Capture("desk", new[]
+        {
+            Q(0x100, 0, 0, 1015, 1015, "这是个什么群"),
+            Q(0x200, 0, 0,  574, 2002, "这是个什么群"),
+            Q(0x300, 0, 0, 2220, 1487, "这是个什么群"),
+        }, T0);
+
+        var adopted = m.Capture("desk", new[]
+        {
+            Q(0x300, 30, 0, 2220, 1487, "这是个什么群"),
+            Q(0x100, 10, 0, 1015, 1015, "这是个什么群"),
+            Q(0x200, 20, 0,  574, 2002, "这是个什么群"),
+        }, T0.AddSeconds(2));
+
+        Assert.Empty(adopted);
+        Assert.Equal(3, m.CountFor("desk"));
+        foreach (var e in m.EntriesFor("desk"))
+        {
+            // Each record still holds its own window, and learned that window's new position.
+            int width = e.Record.Right - e.Record.Left;
+            int expectedLeft = width == 1015 ? 10 : width == 574 ? 20 : 30;
+            Assert.Equal(expectedLeft, e.Record.Left);
+        }
     }
 }

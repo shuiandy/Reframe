@@ -30,17 +30,22 @@ public sealed class RememberedWindow
     public WindowIdentity Identity { get; set; } = WindowIdentity.Unknown;
 
     /// <summary>
-    /// Position of this record inside its identity group, assigned when the record is created and stable for
-    /// its lifetime. This is what lets three Chrome windows come back to three <i>different</i> remembered
-    /// rectangles instead of fighting over one: at capture time ordinals are handed out in ascending-HWND
-    /// order (deterministic, and needs no window creation timestamp), and at restore time records and live
-    /// windows are paired by ordinal — see <see cref="WindowMatcher"/>.
+    /// Slot number of this record inside its identity group, assigned when the record is created and stable
+    /// for its lifetime: it keeps several windows of one app in several <i>separate</i> records instead of
+    /// fighting over one, and gives the matcher a deterministic order for its last-resort pairing. Handed out
+    /// in ascending-HWND order at capture time (deterministic, and needs no window creation timestamp).
+    ///
+    /// <para><b>An ordinal is bookkeeping, not identity.</b> Handle values are arbitrary across a restart, so
+    /// "same ordinal" says nothing about "same window" — pairing by ordinal alone is never enough to justify
+    /// <i>moving</i> a window, only to bind a record to it. See <see cref="WindowMatcher"/>.</para>
     /// </summary>
     public int Ordinal { get; set; }
 
     /// <summary>
-    /// Last seen window caption. <b>Diagnostics / future scoring only</b> — deliberately not part of
-    /// <see cref="Identity"/> and never consulted by matching (a browser caption follows the active tab).
+    /// Last seen window caption. Deliberately <b>not</b> part of <see cref="Identity"/> (a browser caption
+    /// follows the active tab, so identity would drift on every tab switch), but it <i>is</i> the evidence the
+    /// matcher uses to tell same-class sibling windows apart: an exact, group-unique caption match is one of
+    /// the two ways a pairing can become confident enough to move a window. See <see cref="WindowMatcher"/>.
     /// </summary>
     public string Title { get; set; } = "";
 
@@ -106,25 +111,39 @@ public sealed class LayoutMemory
     /// the new window of the same identity instead of a duplicate entry piling up next to it.</para>
     ///
     /// <para><b>Adoption ⇒ restore, never overwrite</b> (<paramref name="adoptGeometry"/> = true, the periodic
-    /// path). When a record that was <i>unbound at the start of this call</i> gets claimed, the right meaning is
-    /// "move that window to the remembered place", not "the remembered place is now wherever the window
-    /// happens to be". Overwriting is what made the whole feature invisible: Chrome restarts in the squashed
-    /// position, the next 2 s capture claims its record and stamps the bad geometry over the good one, and
-    /// nothing ever restores it — and after a reboot the entire disk layout would be destroyed within one
-    /// capture tick of startup. So such a record keeps its remembered <see cref="RememberedWindow.Record"/>
-    /// (only handle / title / timestamp are refreshed) and is <b>returned to the caller</b> as a pending
-    /// adoption restore. Records that were already bound keep the old behaviour: their geometry tracks the
-    /// window, which is what makes this the live layout for this display.</para>
+    /// path). When a record that was <i>unbound at the start of this call</i> gets claimed <b>confidently</b>,
+    /// the right meaning is "move that window to the remembered place", not "the remembered place is now
+    /// wherever the window happens to be". Overwriting is what made the whole feature invisible: Chrome
+    /// restarts in the squashed position, the next 2 s capture claims its record and stamps the bad geometry
+    /// over the good one, and nothing ever restores it — and after a reboot the entire disk layout would be
+    /// destroyed within one capture tick of startup. So such a record keeps its remembered
+    /// <see cref="RememberedWindow.Record"/> (only handle / title / timestamp are refreshed) and is
+    /// <b>returned to the caller</b> as a pending adoption restore. Records that were already bound keep the
+    /// old behaviour: their geometry tracks the window, which is what makes this the live layout for this
+    /// display.</para>
+    ///
+    /// <para><b>Binding and adoption are two different things.</b> Every window the matcher pairs is bound —
+    /// that is what stops a duplicate record piling up next to the old one on each restart. Only a pairing the
+    /// matcher marks <see cref="WindowAssignment.Confident"/> (same HWND, a group-unique exact caption match,
+    /// or a 1:1 leftover — see <see cref="WindowMatcher"/>) is reported for an adoption restore. A record
+    /// claimed by a window we cannot actually tell apart from its same-class siblings — QQ NT's main panel,
+    /// chat windows and image viewer all live in <c>chrome_widgetwin_1</c> — takes the ordinary capture path
+    /// instead: its geometry is overwritten with what the window looks like now, and nothing is moved.
+    /// Guessing there is how a reopened chat window got reshaped into the main panel's tall strip.</para>
     ///
     /// <para>The pending list is produced exactly once per binding — by the next round the record is bound and
     /// takes the normal tracking path, so a window that springs back is not fought over round after round.</para>
     /// </summary>
     /// <param name="adoptGeometry">
-    /// true (periodic capture): newly claimed records keep their remembered geometry and are reported for an
-    /// adoption restore. false (the user's explicit "Capture now"): current geometry wins for every window and
-    /// nothing is reported — that gesture means "remember where things are right now".
+    /// true (periodic capture): records claimed by a <i>confident</i> pairing keep their remembered geometry
+    /// and are reported for an adoption restore. false (the user's explicit "Capture now"): current geometry
+    /// wins for every window and nothing is reported — that gesture means "remember where things are right now".
     /// </param>
-    /// <returns>Windows that just claimed a remembered record and should be moved to it. Empty in most rounds.</returns>
+    /// <returns>
+    /// Windows that just claimed a remembered record <b>and</b> are confidently the same window that record
+    /// came from, so they should be moved to it. Empty in most rounds — and deliberately empty whenever the
+    /// pairing was a guess.
+    /// </returns>
     public IReadOnlyList<(IntPtr Handle, WindowRecord Target)> Capture(
         string displayKey, IReadOnlyList<CapturedWindow> windows, bool adoptGeometry = true)
         => Capture(displayKey, windows, DateTime.UtcNow, adoptGeometry);
@@ -148,7 +167,7 @@ public sealed class LayoutMemory
 
         var live = new List<LiveWindowRef>(windows.Count);
         foreach (var w in windows)
-            live.Add(new LiveWindowRef(w.Handle, w.Identity));
+            live.Add(new LiveWindowRef(w.Handle, w.Identity, w.Title)); // the caption is what tells siblings apart
         var assigned = BindHandles(bucket, live);
 
         // Deterministic creation order for the leftovers, so ordinals are handed out ascending-HWND.
@@ -159,8 +178,9 @@ public sealed class LayoutMemory
 
         foreach (var w in ordered)
         {
-            if (assigned.TryGetValue(w.Handle, out int idx))
+            if (assigned.TryGetValue(w.Handle, out var hit))
             {
+                int idx = hit.Index;
                 var e = bucket[idx];
                 // Upgrade a placeholder / partial identity once a complete one is available, and re-slot the
                 // ordinal into the group it now belongs to (its old ordinal came from a different group).
@@ -170,7 +190,10 @@ public sealed class LayoutMemory
                     e.Ordinal = NextOrdinal(bucket, w.Identity, e);
                 }
 
-                if (adoptGeometry && idx < wasUnbound.Length && wasUnbound[idx])
+                // Adoption needs all three: the periodic path, a record that was unbound coming into this
+                // call, and a pairing the matcher is *sure* about. Drop any one of them and this is an
+                // ordinary capture — the window stays put and the record learns its current shape.
+                if (adoptGeometry && idx < wasUnbound.Length && wasUnbound[idx] && hit.Confident)
                     (adoptions ??= new List<(IntPtr, WindowRecord)>()).Add((w.Handle, e.Record)); // keep e.Record: the window moves, not the memory
                 else
                     e.Record = w.Record;
@@ -200,6 +223,11 @@ public sealed class LayoutMemory
     /// Re-claim records for the given live windows without recording geometry: pure (re)binding. Called before
     /// a restore so that records orphaned by a process restart — or freshly read off disk — find their new
     /// window and get moved. Returns how many records became newly bound.
+    ///
+    /// <para>Binding is unconditional here: confident or not, a pairing claims its slot (see
+    /// <see cref="BindHandles"/>). The confidence distinction only gates the <i>adoption</i> restore that
+    /// <see cref="Capture"/> reports; this method serves the explicit restore paths, where the caller has
+    /// already decided that re-applying the remembered layout is the intent.</para>
     /// </summary>
     public int Reclaim(string displayKey, IReadOnlyList<LiveWindowRef> candidates)
     {
@@ -212,21 +240,26 @@ public sealed class LayoutMemory
         return after - before;
     }
 
-    /// <summary>Run the pure matcher over a bucket and apply the resulting bindings. Returns handle → bucket index.</summary>
-    private static Dictionary<IntPtr, int> BindHandles(List<RememberedWindow> bucket, IReadOnlyList<LiveWindowRef> candidates)
+    /// <summary>
+    /// Run the pure matcher over a bucket and apply the resulting bindings. Returns handle → (bucket index,
+    /// whether the matcher was confident it is the same window). <b>Every</b> assignment is bound — binding is
+    /// how records stop piling up — but only the confident ones may be acted on by moving a window.
+    /// </summary>
+    private static Dictionary<IntPtr, (int Index, bool Confident)> BindHandles(
+        List<RememberedWindow> bucket, IReadOnlyList<LiveWindowRef> candidates)
     {
         var refs = new List<MemoryEntryRef>(bucket.Count);
         for (int i = 0; i < bucket.Count; i++)
         {
             var e = bucket[i];
-            refs.Add(new MemoryEntryRef(i, e.Identity, e.Ordinal, e.Handle));
+            refs.Add(new MemoryEntryRef(i, e.Identity, e.Ordinal, e.Handle, e.Title));
         }
 
-        var map = new Dictionary<IntPtr, int>(candidates.Count);
-        foreach (var (handle, id) in WindowMatcher.Assign(refs, candidates))
+        var map = new Dictionary<IntPtr, (int, bool)>(candidates.Count);
+        foreach (var a in WindowMatcher.Assign(refs, candidates))
         {
-            bucket[id].Handle = handle;
-            map[handle] = id;
+            bucket[a.Id].Handle = a.Handle;
+            map[a.Handle] = (a.Id, a.Confident);
         }
         return map;
     }

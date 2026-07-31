@@ -434,9 +434,13 @@ public sealed class PersistenceEngine : IDisposable
         return list;
     }
 
-    /// <summary>Identity of a live window: process name from the scan, class name read here (only the persistence path pays for it).</summary>
+    /// <summary>
+    /// Identity of a live window: process name from the scan, class name read here (only the persistence path
+    /// pays for it), plus the caption — which is what lets the matcher tell same-class sibling windows apart
+    /// (see <see cref="WindowMatcher"/>).
+    /// </summary>
     private static LiveWindowRef ToLiveRef(WindowInfo w)
-        => new(w.Handle, WindowIdentity.Create(w.ProcessName, WindowScanner.ClassNameOf(w.Handle)));
+        => new(w.Handle, WindowIdentity.Create(w.ProcessName, WindowScanner.ClassNameOf(w.Handle)), w.Title);
 
     /// <summary>Live windows offered to <see cref="LayoutMemory.Reclaim"/> as owners for orphaned records.</summary>
     private List<LiveWindowRef> ScanClaimCandidates()

@@ -14,12 +14,18 @@ namespace Reframe.Core;
 /// </list>
 ///
 /// <para><b>Why the title is NOT part of the identity.</b> A browser's caption follows the active tab, an
-/// editor's follows the open file, a chat app's follows the unread count — matching on it would make the
-/// identity drift on every tab switch and would (worse) look like a <i>different</i> window after a restart,
-/// which is exactly the failure this type exists to fix. The title is still recorded alongside the geometry
-/// (<c>RememberedWindow.Title</c>) for diagnostics/future scoring, but it never participates in equality and
-/// never influences matching — see <see cref="WindowMatcher"/>, which pairs strictly by identity + ordinal so
-/// the result is deterministic and can't drift.</para>
+/// editor's follows the open file, a chat app's follows the unread count — folding it into equality would make
+/// the identity drift on every tab switch and would (worse) look like a <i>different</i> window after a
+/// restart, which is exactly the failure this type exists to fix. The title is recorded alongside the geometry
+/// (<c>RememberedWindow.Title</c>) and <see cref="WindowMatcher"/> does use it — but only as tie-breaking
+/// <i>evidence within</i> an identity group (an exact, group-unique caption match), never as part of the
+/// identity itself. A caption that drifted simply yields no evidence, which costs a restore; it can never
+/// orphan a record.</para>
+///
+/// <para><b>Identity alone is not enough to move a window.</b> Electron-style apps put unrelated windows in
+/// one class (QQ NT: main panel, chat windows and image viewer are all <c>chrome_widgetwin_1</c>), so an
+/// identity group routinely holds windows nothing here can distinguish. <see cref="WindowMatcher"/> therefore
+/// separates "which record does this window get bound to" from "are we sure enough to move it".</para>
 ///
 /// <para>Pure data, no Win32: the value is produced from strings the caller already has (the Win32 read lives
 /// in <c>WindowScanner.ClassNameOf</c>), so identity extraction and matching are unit-testable standalone.</para>
