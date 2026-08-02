@@ -16,18 +16,19 @@ namespace Reframe.UI;
 public sealed partial class LayoutEditorPage : Page
 {
     // ---- Canvas sizing: fill the host's available width, height from the Ref aspect ratio; if too
-    //      tall, fall back to the available height instead, always centered ----
+    //      tall, fall back to the available height instead, always centered.
+    //      The arithmetic lives in CanvasFit (pure, unit-tested) — see Tests\CanvasFitTests.cs ----
     private const double SnapPx = 8;            // snap threshold (canvas DIP)
-    private const double FallbackCanvasWidth = 900;  // fallback width before the host has been measured
 
     private string? _layoutId;
     private Layout _work = new();               // working copy; written back to the real config only on save
-    private double _canvasW = FallbackCanvasWidth;
-    private double _canvasH = FallbackCanvasWidth * 9 / 16;
+    private double _canvasW = CanvasFit.FallbackWidth;
+    private double _canvasH = CanvasFit.FallbackWidth * 9 / 16;
 
     private readonly List<ZoneVisual> _visuals = new();
     private Zone? _selected;
     private bool _suppressSync;                 // suppress the property panel write-back and UI from re-triggering each other
+    private bool _recomputing;                  // re-entrancy latch for RecomputeCanvasSize (see issue #1)
 
     public LayoutEditorPage()
     {
@@ -189,12 +190,22 @@ public sealed partial class LayoutEditorPage : Page
         RecomputeCanvasSize();
         RebuildCanvas();
         SyncPropPanel();        // pixel display tracks the Ref change
-        SyncMonitorCombo();     // reference-resolution echo tracks the Ref change (typed in / matched monitor)
+
+        // Reference-resolution echo (typed in / matched monitor), deferred by one dispatcher turn.
+        // SyncMonitorCombo adds/removes MonitorCombo.Items, and one of the callers that reaches here is
+        // MonitorCombo's *own* SelectionChanged. Mutating an ItemsControl's item collection while it is
+        // still processing that event — with the drop-down popup mid-close and its item containers still
+        // realized — makes the container lookup fail; that surfaces as
+        // COMException 0x80070490 "element not found" or InvalidCastException "no such interface"
+        // (both seen in the issue #1 crash logs). Letting the ComboBox finish first removes the hazard.
+        DispatcherQueue.TryEnqueue(SyncMonitorCombo);
     }
 
-    // When the host resizes (window stretch; the property panel width is fixed), recompute the canvas
-    // and re-lay-out the zones.
-    private void CanvasHost_SizeChanged(object sender, SizeChangedEventArgs e)
+    // When the body area or the host resizes (window stretch; the property panel width is fixed),
+    // recompute the canvas and re-lay-out the zones. Both BodyGrid and CanvasHost raise this: BodyGrid
+    // is the authority for the available height, CanvasHost for the available width, and whichever is
+    // arranged first the other's event follows in the same pass.
+    private void CanvasArea_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         RecomputeCanvasSize();
         LayoutVisuals();
@@ -202,36 +213,54 @@ public sealed partial class LayoutEditorPage : Page
 
     // The canvas fills the host's available width, height from the reference aspect ratio; if the height
     // exceeds the available height, constrain by height instead and narrow the width accordingly.
+    //
+    // The height budget comes from BodyGrid — the "*" row that holds the canvas card — and NEVER from
+    // CanvasHost.ActualHeight. CanvasHost is VerticalAlignment="Top", so its ActualHeight is its content
+    // height plus padding and border, i.e. a function of the canvas height being computed here. Reading
+    // it back closed a positive feedback loop that raised the budget by one BorderThickness per layout
+    // pass, so a large aspect change (typing a reference width) crawled toward its target ~2 DIP at a
+    // time and exhausted WinUI's layout-iteration budget: LayoutCycleException. See GitHub issue #1 and
+    // CanvasFit.
     private void RecomputeCanvasSize()
     {
-        double aspect = (double)_work.RefWidth / _work.RefHeight;
-
-        // CanvasHost.Padding = 16 (all sides), so subtract 16 on each axis from the available area.
-        double padW = CanvasHost.Padding.Left + CanvasHost.Padding.Right;
-        double padH = CanvasHost.Padding.Top + CanvasHost.Padding.Bottom;
-        double availW = CanvasHost.ActualWidth - padW;
-        double availH = CanvasHost.ActualHeight - padH;
-
-        // Use the fallback width before the host has been measured; SizeChanged will re-trigger an exact layout later.
-        double w = availW > 1 ? availW : FallbackCanvasWidth;
-        double h = w / aspect;
-
-        // If the height overflows the available height (e.g. 16:9 or portrait layouts), constrain by
-        // height instead to avoid the canvas overflowing into scroll.
-        if (availH > 1 && h > availH)
+        if (_recomputing) return;   // belt and braces: never let a size write re-enter this
+        _recomputing = true;
+        try
         {
-            h = availH;
-            w = h * aspect;
-        }
+            var pad = CanvasHost.Padding;
+            var border = CanvasHost.BorderThickness;
+            var margin = CanvasHost.Margin;
 
-        _canvasW = w;
-        _canvasH = h;
-        CanvasFrame.Width = _canvasW;
-        CanvasFrame.Height = _canvasH;
-        ZoneCanvas.Width = _canvasW;
-        ZoneCanvas.Height = _canvasH;
-        GuideCanvas.Width = _canvasW;
-        GuideCanvas.Height = _canvasH;
+            // Width: CanvasHost stretches into a "*" column, so ActualWidth is window-driven and is not
+            // affected by anything set below — safe to read back.
+            double availW = CanvasFit.Content(CanvasHost.ActualWidth,
+                                              pad.Left, pad.Right, border.Left, border.Right);
+
+            // Height: from the body row, minus the card's own margin/padding/border, so a height-limited
+            // canvas makes the card exactly fill its slot instead of feeding its own height back in.
+            double availH = CanvasFit.Content(BodyGrid.ActualHeight - margin.Top - margin.Bottom,
+                                              pad.Top, pad.Bottom, border.Top, border.Bottom);
+
+            (_canvasW, _canvasH) = CanvasFit.Fit(availW, availH, _work.RefWidth, _work.RefHeight);
+
+            SetCanvasSize(CanvasFrame);
+            SetCanvasSize(ZoneCanvas);
+            SetCanvasSize(GuideCanvas);
+        }
+        finally
+        {
+            _recomputing = false;
+        }
+    }
+
+    // Write Width/Height only when they actually move. Re-assigning a Width/Height invalidates measure
+    // even when the value is identical-but-for-float-noise, which buys nothing and costs a layout pass.
+    private void SetCanvasSize(FrameworkElement el)
+    {
+        if (double.IsNaN(el.Width) || Math.Abs(el.Width - _canvasW) > CanvasFit.Epsilon)
+            el.Width = _canvasW;
+        if (double.IsNaN(el.Height) || Math.Abs(el.Height - _canvasH) > CanvasFit.Epsilon)
+            el.Height = _canvasH;
     }
 
     private void NameBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -327,8 +356,7 @@ public sealed partial class LayoutEditorPage : Page
         var keep = GuideCanvas;
         ZoneCanvas.Children.Clear();
         GuideCanvas.Children.Clear();
-        GuideCanvas.Width = _canvasW;
-        GuideCanvas.Height = _canvasH;
+        SetCanvasSize(GuideCanvas);
         _visuals.Clear();
 
         for (int i = 0; i < _work.Zones.Count; i++)

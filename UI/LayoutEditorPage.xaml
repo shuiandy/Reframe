@@ -62,15 +62,21 @@
             </StackPanel>
         </StackPanel>
 
-        <!-- Body: canvas on the left + property panel on the right -->
-        <Grid Grid.Row="2" ColumnSpacing="16">
+        <!-- Body: canvas on the left + property panel on the right.
+             BodyGrid sits in the "*" row, so its size is driven by the window alone and never by the
+             canvas inside it. That makes it the only safe source for the canvas height budget — see
+             RecomputeCanvasSize / CanvasFit (GitHub issue #1). -->
+        <Grid Grid.Row="2" x:Name="BodyGrid" ColumnSpacing="16"
+              SizeChanged="CanvasArea_SizeChanged">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
             <!-- Canvas host: fills the available width; the canvas height follows the reference aspect
-                 ratio and the host shrinks to fit -->
+                 ratio and the host shrinks to fit.
+                 VerticalAlignment="Top" means ActualHeight == content height, so this element's own
+                 height must never be used as an input to the canvas sizing (that was issue #1). -->
             <Border Grid.Column="0"
                     x:Name="CanvasHost"
                     Background="{ThemeResource LayerFillColorDefaultBrush}"
@@ -79,7 +85,7 @@
                     CornerRadius="6"
                     Padding="16"
                     VerticalAlignment="Top"
-                    SizeChanged="CanvasHost_SizeChanged">
+                    SizeChanged="CanvasArea_SizeChanged">
                 <!-- Canvas: background frame + zone layer + alignment-guide layer. Its size is set from
                      code based on the available width and the aspect ratio. -->
                 <!-- Intentional: the canvas backdrop stays dark (#101418) because it simulates the
