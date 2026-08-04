@@ -163,6 +163,43 @@ public sealed partial class MainWindow : Window
     private void PaneToggle_Click(object sender, RoutedEventArgs e)
         => Nav.IsPaneOpen = !Nav.IsPaneOpen;
 
+    /// <summary>
+    /// The version the update banner has already been raised for this session. Once a version has been
+    /// announced it is never announced again in the same run, so dismissing the bar makes it stay
+    /// dismissed (the check itself is once per launch anyway; this also covers a manual re-check).
+    /// </summary>
+    private string? _announcedUpdateVersion;
+
+    /// <summary>
+    /// Show the "a newer Reframe is available" bar. Called on the UI thread from the startup check.
+    /// Deliberately passive: it never shows, activates or raises the window, so an app sitting in the
+    /// tray stays in the tray and the user meets the bar the next time they open the window.
+    /// </summary>
+    public void ShowUpdateAvailable(string version)
+    {
+        if (string.IsNullOrWhiteSpace(version)) return;
+        if (string.Equals(_announcedUpdateVersion, version, StringComparison.Ordinal)) return;
+        _announcedUpdateVersion = version;
+
+        UpdateBar.Title = Loc.T("MainWindow/UpdateBarTitle");
+        UpdateBar.Message = Loc.T("MainWindow/UpdateBarMessage", version);
+        UpdateBarViewButton.Content = Loc.T("MainWindow/UpdateBarViewButton");
+        UpdateBar.IsOpen = true;
+    }
+
+    /// <summary>Banner "View" button: close the bar and go to Settings, where the update controls live.</summary>
+    private void UpdateBarView_Click(object sender, RoutedEventArgs e)
+    {
+        UpdateBar.IsOpen = false;
+
+        // Selecting the footer item drives the normal SelectionChanged → Navigate path and keeps the
+        // nav rail highlight in sync; the explicit Navigate covers "Settings was already selected".
+        if (Nav.FooterMenuItems.Count > 0)
+            Nav.SelectedItem = Nav.FooterMenuItems[0];
+        if (ContentFrame.CurrentSourcePageType != typeof(SettingsPage))
+            ContentFrame.Navigate(typeof(SettingsPage));
+    }
+
     private void Nav_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
         if (args.SelectedItem is not NavigationViewItem item) return;

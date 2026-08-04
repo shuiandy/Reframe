@@ -165,11 +165,30 @@
                         Click="OpenFolderButton_Click"/>
             </StackPanel>
 
-            <!-- 关于 -->
+            <!-- 关于(含检查更新) -->
             <StackPanel Spacing="6">
                 <TextBlock x:Uid="/SettingsPage/AboutHeader" FontWeight="SemiBold"/>
                 <TextBlock x:Name="VersionText" Opacity="0.7" FontSize="12"/>
                 <TextBlock x:Uid="/SettingsPage/AboutBlurb" Opacity="0.7" FontSize="12" TextWrapping="Wrap"/>
+
+                <!-- 检查更新:从 GitHub Releases 取最新版号比对。开关只管"启动时自动查",
+                     手动查随时可用;下载与安装永远是用户点的按钮触发。
+                     ToggleSwitch 的 Header / On/OffContent 与两个按钮的 Content 走代码后置 Loc.T
+                     (ContentControl / ToggleSwitch 上的 x:Uid 较脆,见本文件其他处同样处理)。 -->
+                <ToggleSwitch x:Name="CheckUpdatesToggle"
+                              Toggled="CheckUpdatesToggle_Toggled"
+                              Margin="0,10,0,0"/>
+                <TextBlock x:Uid="/SettingsPage/UpdateDesc" Opacity="0.7" FontSize="12" TextWrapping="Wrap"/>
+                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <Button x:Name="CheckUpdateButton" Click="CheckUpdateButton_Click"/>
+                    <Button x:Name="InstallUpdateButton" Click="InstallUpdateButton_Click"
+                            Style="{ThemeResource AccentButtonStyle}"
+                            Visibility="Collapsed"/>
+                </StackPanel>
+                <ProgressBar x:Name="UpdateProgressBar" Maximum="100" Width="420"
+                             HorizontalAlignment="Left" Visibility="Collapsed"/>
+                <TextBlock x:Name="UpdateStatusText" TextWrapping="Wrap" FontSize="12"
+                           Visibility="Collapsed"/>
             </StackPanel>
         </StackPanel>
     </ScrollViewer>

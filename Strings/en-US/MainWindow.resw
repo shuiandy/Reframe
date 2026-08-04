@@ -82,4 +82,16 @@
   <data name="NavSettings.Content" xml:space="preserve">
     <value>Settings</value>
   </data>
+
+  <!-- Update notification bar (raised only when the startup check finds something). Title / message /
+       button are set from code-behind via Loc.T: the message carries the version, so it is composed at runtime. -->
+  <data name="UpdateBarTitle" xml:space="preserve">
+    <value>Update available</value>
+  </data>
+  <data name="UpdateBarMessage" xml:space="preserve">
+    <value>Reframe v{0} is available.</value>
+  </data>
+  <data name="UpdateBarViewButton" xml:space="preserve">
+    <value>View</value>
+  </data>
 </root>

@@ -263,6 +263,26 @@ public partial class App : Application
         // matches, and never throws.
         bool startMinimizedPref = ConfigService.Instance.Config.StartMinimizedOnLogin;
         System.Threading.Tasks.Task.Run(() => StartupTaskService.MigrateIfNeeded(startMinimizedPref));
+
+        // Update check (opt-out, Config.CheckUpdatesOnStartup). Deliberately late and off-thread: a
+        // ~15s delay keeps it clear of the startup path entirely, and the whole thing is silent on
+        // failure — no network, a timeout, or a GitHub rate-limit answer must never interrupt anyone.
+        // A hit only raises the dismissible InfoBar; downloading and installing is always a button the
+        // user pressed (see Services\UpdateService.cs for the security boundary).
+        if (ConfigService.Instance.Config.CheckUpdatesOnStartup)
+            System.Threading.Tasks.Task.Run(async () =>
+            {
+                try
+                {
+                    await System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(15));
+                    var result = await UpdateService.Instance.CheckAsync();
+                    if (result.Status != UpdateCheckStatus.UpdateAvailable) return;
+
+                    string version = result.Version.ToString();
+                    _ui?.TryEnqueue(() => Main?.ShowUpdateAvailable(version));
+                }
+                catch { /* silent by design */ }
+            });
     }
 
     private void OnAppWindowClosing(Microsoft.UI.Windowing.AppWindow sender,

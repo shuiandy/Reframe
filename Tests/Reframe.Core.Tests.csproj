@@ -41,6 +41,11 @@
     <Compile Include="..\Services\StartupOptions.cs" LinkBase="Linked" />
     <Compile Include="..\Services\StartupTaskService.cs" LinkBase="Linked" />
     <Compile Include="..\Services\ForensicProbe.cs" LinkBase="Linked" />
+    <!-- 自升级的纯逻辑三件套(版本解析/比较、资产名与下载 URL 的安全校验、更新脚本生成与路径归一化)。
+         UpdateService.cs 本身要网络/注册表/进程,不链进来。 -->
+    <Compile Include="..\Services\UpdateVersion.cs" LinkBase="Linked" />
+    <Compile Include="..\Services\UpdateAssets.cs" LinkBase="Linked" />
+    <Compile Include="..\Services\UpdateScript.cs" LinkBase="Linked" />
     <!-- 布局编辑器画布尺寸的纯几何(无 WinUI 类型),见 issue #1 的 LayoutCycleException 回归测试 -->
     <Compile Include="..\UI\CanvasFit.cs" LinkBase="Linked" />
   </ItemGroup>

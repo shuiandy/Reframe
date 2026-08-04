@@ -81,4 +81,15 @@
   <data name="NavSettings.Content" xml:space="preserve">
     <value>设置</value>
   </data>
+
+  <!-- 新版本通知条(启动检查命中才展开)。标题/正文/按钮均由代码后置经 Loc.T 设:正文含版本号,属运行时拼装串。 -->
+  <data name="UpdateBarTitle" xml:space="preserve">
+    <value>有可用更新</value>
+  </data>
+  <data name="UpdateBarMessage" xml:space="preserve">
+    <value>Reframe v{0} 可用。</value>
+  </data>
+  <data name="UpdateBarViewButton" xml:space="preserve">
+    <value>查看</value>
+  </data>
 </root>

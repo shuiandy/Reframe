@@ -301,4 +301,56 @@
   <data name="StartupDisableFailed" xml:space="preserve">
     <value>删除开机自启计划任务失败。</value>
   </data>
+
+  <!-- ===== 检查更新 / 自升级(「关于」区)=====
+       开关 Header 与两个按钮的 Content 走代码后置 Loc.T(ToggleSwitch / ContentControl 上的 x:Uid 较脆);
+       其余是状态行与对话框,均在运行时拼装。 -->
+  <data name="UpdateDesc.Text" xml:space="preserve">
+    <value>从 GitHub Releases 查看是否有新版本。只做检查与提示,下载和安装永远由你点按钮触发;检查失败不会打扰你。</value>
+  </data>
+  <data name="CheckUpdatesToggle" xml:space="preserve">
+    <value>启动时检查更新</value>
+  </data>
+  <data name="CheckUpdateButton" xml:space="preserve">
+    <value>检查更新</value>
+  </data>
+  <data name="InstallUpdateButton" xml:space="preserve">
+    <value>立即更新</value>
+  </data>
+  <data name="UpdateChecking" xml:space="preserve">
+    <value>正在检查…</value>
+  </data>
+  <data name="UpdateUpToDate" xml:space="preserve">
+    <value>已是最新版本。</value>
+  </data>
+  <data name="UpdateFound" xml:space="preserve">
+    <value>发现新版本 v{0}。</value>
+  </data>
+  <data name="UpdateFoundNoAsset" xml:space="preserve">
+    <value>发现新版本 v{0},但没找到与当前安装形态匹配的安装包,请到 GitHub Releases 手动下载。</value>
+  </data>
+  <data name="UpdateCheckFailed" xml:space="preserve">
+    <value>检查更新失败:{0}</value>
+  </data>
+  <data name="UpdateConfirmTitle" xml:space="preserve">
+    <value>更新 Reframe</value>
+  </data>
+  <data name="UpdateConfirmBody" xml:space="preserve">
+    <value>将下载 v{0} 并安装,Reframe 会自动退出并在更新完成后重新启动。你的配置不受影响。</value>
+  </data>
+  <data name="UpdateConfirmPrimary" xml:space="preserve">
+    <value>下载并更新</value>
+  </data>
+  <data name="UpdateDownloading" xml:space="preserve">
+    <value>正在下载更新包…</value>
+  </data>
+  <data name="UpdateRestarting" xml:space="preserve">
+    <value>下载完成,正在退出并应用更新…</value>
+  </data>
+  <data name="UpdateInstallFailed" xml:space="preserve">
+    <value>更新失败:{0}</value>
+  </data>
+  <data name="UpdatePreviousFailed" xml:space="preserve">
+    <value>上次更新未完成(详见 %TEMP%\Reframe-update\update.log)。你的文件没有被删除,可以再试一次。</value>
+  </data>
 </root>

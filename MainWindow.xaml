@@ -14,6 +14,9 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="56"/>
+            <!-- Row1:更新提示条。Auto 高度 + 默认 IsOpen=False,收起时不占任何空间;
+                 展开时把 NavigationView 整体下推,不浮在内容上,不遮挡任何东西。 -->
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
@@ -62,12 +65,26 @@
             </Grid>
         </Grid>
 
-        <!-- Row 1:NavigationView。自带汉堡隐藏(IsPaneToggleButtonVisible=False),改由 Row0 自绘汉堡驱动。
+        <!-- Row 1:发现新版本时的通知条(启动检查命中才展开)。文案与按钮内容在代码后置经 Loc.T 设
+             (含版本号,属运行时拼装串);「查看」跳设置页,右侧 X 可关闭。同一版本一个会话只提示一次。
+             窗口若正缩在托盘,这里保持展开状态,等用户下次打开主窗口时自然看到——不强弹窗口。 -->
+        <InfoBar x:Name="UpdateBar"
+                 Grid.Row="1"
+                 IsOpen="False"
+                 IsClosable="True"
+                 Severity="Informational"
+                 Margin="12,0,12,4">
+            <InfoBar.ActionButton>
+                <Button x:Name="UpdateBarViewButton" Click="UpdateBarView_Click"/>
+            </InfoBar.ActionButton>
+        </InfoBar>
+
+        <!-- Row 2:NavigationView。自带汉堡隐藏(IsPaneToggleButtonVisible=False),改由 Row0 自绘汉堡驱动。
              已无浮层撞车问题,故 IsTitleBarAutoPaddingEnabled 与 NavigationViewButtonHolderGridMargin 资源全部清掉。
              OpenPaneLength=210、行高 48、图标 20px 保留。 -->
         <muxc:NavigationView
             x:Name="Nav"
-            Grid.Row="1"
+            Grid.Row="2"
             IsBackButtonVisible="Collapsed"
             IsSettingsVisible="False"
             PaneDisplayMode="Left"

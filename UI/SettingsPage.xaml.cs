@@ -41,6 +41,10 @@ public sealed partial class SettingsPage : Page
             PersistenceToggle.OnContent = on;      PersistenceToggle.OffContent = off;
             CaptureNowButton.Content = Loc.T("SettingsPage/CaptureNowButton"); // Button.Content via code (x:Uid on ContentControl is fragile here)
             RestoreNowButton.Content = Loc.T("SettingsPage/RestoreNowButton");
+            CheckUpdatesToggle.OnContent = on;      CheckUpdatesToggle.OffContent = off;
+            CheckUpdatesToggle.Header = Loc.T("SettingsPage/CheckUpdatesToggle");
+            CheckUpdateButton.Content = Loc.T("SettingsPage/CheckUpdateButton");
+            InstallUpdateButton.Content = Loc.T("SettingsPage/InstallUpdateButton");
 
             var cfg = ConfigService.Instance.Config;
             LoadConfigControls(cfg);
@@ -56,6 +60,12 @@ public sealed partial class SettingsPage : Page
             VersionText.Text = Loc.T("SettingsPage/VersionFormat", ver?.ToString() ?? "—");
         }
         finally { _loading = false; }
+
+        // 上次自升级没走完:更新脚本在 %TEMP%\Reframe-update\update.log 留了 ERROR 行。
+        // 只做提示(脚本本身不删任何东西,安装目录最坏是"部分文件已换新"),用户可以再点一次更新。
+        string? lastUpdateError = UpdateService.TryGetLastUpdateError();
+        if (lastUpdateError is not null)
+            ShowUpdateStatus(Loc.T("SettingsPage/UpdatePreviousFailed"), error: true);
 
         // 外部热重载:config.json 被本程序之外(手改/同步/导入)改动时,ConfigService 会换 Config 引用并触发 Changed。
         // 订阅以把最新值读回控件。事件可能在任意线程触发,切回 UI 线程再动控件。Unloaded 退订防泄漏。
@@ -105,6 +115,7 @@ public sealed partial class SettingsPage : Page
         // 「随登录启动时缩到托盘」是普通配置项,外部热重载也读回(IsEnabled 联动开机自启的 OS 任务态,
         // 与版本/路径同属静态范畴,不在此处随配置刷新)。
         StartMinimizedToggle.IsOn = cfg.StartMinimizedOnLogin;
+        CheckUpdatesToggle.IsOn = cfg.CheckUpdatesOnStartup;
     }
 
     // 语言 ComboBox 顺序 ↔ AppConfig.Language 值。项 0=跟随系统,1=简体中文,2=English。
@@ -527,5 +538,120 @@ public sealed partial class SettingsPage : Page
             });
         }
         catch { /* 打不开就算了 */ }
+    }
+
+    // ====================== 检查更新 / 自升级 ======================
+
+    /// <summary>最近一次「检查更新」的结果。发现新版且拿到可信资产链接时,「立即更新」才可见可点。</summary>
+    private UpdateCheckResult? _pendingUpdate;
+
+    /// <summary>启动时自动检查更新的开关。关掉只停掉启动检查,手动按钮照常可用。</summary>
+    private void CheckUpdatesToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+
+        var svc = ConfigService.Instance;
+        bool on = CheckUpdatesToggle.IsOn;
+        if (svc.Config.CheckUpdatesOnStartup == on) return;
+        svc.Config.CheckUpdatesOnStartup = on;
+        svc.Save();
+    }
+
+    /// <summary>
+    /// 手动检查更新。与启动检查的差别只有一个:失败必须让用户看见(启动检查是完全静默的)——
+    /// 用户主动点了按钮,没网/超时/被限流都得有明确回执,否则按钮像是没反应。
+    /// </summary>
+    private async void CheckUpdateButton_Click(object sender, RoutedEventArgs e)
+    {
+        CheckUpdateButton.IsEnabled = false;
+        InstallUpdateButton.Visibility = Visibility.Collapsed;
+        _pendingUpdate = null;
+        ShowUpdateStatus(Loc.T("SettingsPage/UpdateChecking"), error: false);
+
+        try
+        {
+            var result = await UpdateService.Instance.CheckAsync();
+            _pendingUpdate = result;
+
+            switch (result.Status)
+            {
+                case UpdateCheckStatus.UpdateAvailable when result.AssetUrl is not null:
+                    ShowUpdateStatus(Loc.T("SettingsPage/UpdateFound", result.Version.ToString()), error: false);
+                    InstallUpdateButton.Visibility = Visibility.Visible;
+                    break;
+
+                // 有新版但这次没有本形态(安装版/便携版)对应的可信资产:如实说,不给「立即更新」。
+                case UpdateCheckStatus.UpdateAvailable:
+                    ShowUpdateStatus(Loc.T("SettingsPage/UpdateFoundNoAsset", result.Version.ToString()), error: true);
+                    break;
+
+                case UpdateCheckStatus.UpToDate:
+                    ShowUpdateStatus(Loc.T("SettingsPage/UpdateUpToDate"), error: false);
+                    break;
+
+                default:
+                    ShowUpdateStatus(Loc.T("SettingsPage/UpdateCheckFailed", result.Error ?? ""), error: true);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowUpdateStatus(Loc.T("SettingsPage/UpdateCheckFailed", ex.Message), error: true);
+        }
+        finally
+        {
+            CheckUpdateButton.IsEnabled = true;
+        }
+    }
+
+    /// <summary>
+    /// 立即更新:先确认(要说清会重启),再下载 + 落更新脚本 + 启动脚本,最后走正常退出链。
+    /// 脚本等本进程 PID 消失后才动文件,所以这里退出得干脆;配置在 %LOCALAPPDATA% 不受影响。
+    /// </summary>
+    private async void InstallUpdateButton_Click(object sender, RoutedEventArgs e)
+    {
+        var pending = _pendingUpdate;
+        if (pending is null || pending.AssetUrl is null) return;
+
+        var dlg = new ContentDialog
+        {
+            Title = Loc.T("SettingsPage/UpdateConfirmTitle"),
+            Content = Loc.T("SettingsPage/UpdateConfirmBody", pending.Version.ToString()),
+            PrimaryButtonText = Loc.T("SettingsPage/UpdateConfirmPrimary"),
+            CloseButtonText = Loc.T("Common/Cancel"),
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = this.XamlRoot
+        };
+        if (await dlg.ShowAsync() != ContentDialogResult.Primary) return;
+
+        CheckUpdateButton.IsEnabled = false;
+        InstallUpdateButton.IsEnabled = false;
+        UpdateProgressBar.Value = 0;
+        UpdateProgressBar.Visibility = Visibility.Visible;
+        ShowUpdateStatus(Loc.T("SettingsPage/UpdateDownloading"), error: false);
+
+        // Progress<T> 在创建它的线程(这里是 UI 线程)的上下文上回调,直接动控件是安全的。
+        var progress = new Progress<double>(p => UpdateProgressBar.Value = Math.Clamp(p * 100, 0, 100));
+
+        try
+        {
+            await UpdateService.Instance.ApplyAsync(pending, progress);
+            ShowUpdateStatus(Loc.T("SettingsPage/UpdateRestarting"), error: false);
+            App.RequestExit(); // 脚本已在等这个 PID 退出
+        }
+        catch (Exception ex)
+        {
+            UpdateProgressBar.Visibility = Visibility.Collapsed;
+            ShowUpdateStatus(Loc.T("SettingsPage/UpdateInstallFailed", ex.Message), error: true);
+            CheckUpdateButton.IsEnabled = true;
+            InstallUpdateButton.IsEnabled = true;
+        }
+    }
+
+    private void ShowUpdateStatus(string text, bool error)
+    {
+        UpdateStatusText.Text = text;
+        UpdateStatusText.Foreground = new SolidColorBrush(error ? Colors.OrangeRed : Colors.SeaGreen);
+        UpdateStatusText.Visibility = Visibility.Visible;
     }
 }

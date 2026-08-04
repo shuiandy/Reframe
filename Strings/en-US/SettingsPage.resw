@@ -304,4 +304,57 @@
   <data name="StartupDisableFailed" xml:space="preserve">
     <value>Failed to delete the run-at-startup scheduled task.</value>
   </data>
+
+  <!-- ===== Update check / self-update (in the About section) =====
+       The toggle Header and both button Contents are set from code via Loc.T (an x:Uid on a
+       ToggleSwitch / ContentControl is fragile here); the rest are status lines and dialog text
+       composed at runtime. -->
+  <data name="UpdateDesc.Text" xml:space="preserve">
+    <value>Check GitHub Releases for a newer version. It only checks and tells you&#x2014;downloading and installing always take a button press&#x2014;and a failed check never interrupts you.</value>
+  </data>
+  <data name="CheckUpdatesToggle" xml:space="preserve">
+    <value>Check for updates at startup</value>
+  </data>
+  <data name="CheckUpdateButton" xml:space="preserve">
+    <value>Check for updates</value>
+  </data>
+  <data name="InstallUpdateButton" xml:space="preserve">
+    <value>Update now</value>
+  </data>
+  <data name="UpdateChecking" xml:space="preserve">
+    <value>Checking&#x2026;</value>
+  </data>
+  <data name="UpdateUpToDate" xml:space="preserve">
+    <value>You are on the latest version.</value>
+  </data>
+  <data name="UpdateFound" xml:space="preserve">
+    <value>Version v{0} is available.</value>
+  </data>
+  <data name="UpdateFoundNoAsset" xml:space="preserve">
+    <value>Version v{0} is available, but no package matching this installation was found&#x2014;please download it manually from GitHub Releases.</value>
+  </data>
+  <data name="UpdateCheckFailed" xml:space="preserve">
+    <value>Update check failed: {0}</value>
+  </data>
+  <data name="UpdateConfirmTitle" xml:space="preserve">
+    <value>Update Reframe</value>
+  </data>
+  <data name="UpdateConfirmBody" xml:space="preserve">
+    <value>v{0} will be downloaded and installed. Reframe closes and starts itself again when the update is done. Your configuration is left untouched.</value>
+  </data>
+  <data name="UpdateConfirmPrimary" xml:space="preserve">
+    <value>Download and update</value>
+  </data>
+  <data name="UpdateDownloading" xml:space="preserve">
+    <value>Downloading the update&#x2026;</value>
+  </data>
+  <data name="UpdateRestarting" xml:space="preserve">
+    <value>Download finished; closing to apply the update&#x2026;</value>
+  </data>
+  <data name="UpdateInstallFailed" xml:space="preserve">
+    <value>Update failed: {0}</value>
+  </data>
+  <data name="UpdatePreviousFailed" xml:space="preserve">
+    <value>The last update did not finish (see %TEMP%\Reframe-update\update.log). Nothing of yours was deleted; you can try again.</value>
+  </data>
 </root>

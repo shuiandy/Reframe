@@ -191,6 +191,16 @@ public sealed class AppConfig
     /// </summary>
     public bool StartMinimizedOnLogin { get; set; } = true;
 
+    /// <summary>
+    /// Ask GitHub whether a newer release exists, once per launch, about 15 seconds after startup (off
+    /// the startup path). Finding one only raises a dismissible banner — nothing is ever downloaded or
+    /// installed without the user pressing a button — and a failed check is completely silent. Turning
+    /// this off leaves the manual "Check for updates" button on the Settings page working. Default on.
+    /// Core declares the field but does not consume it: only the UI layer (App / SettingsPage /
+    /// UpdateService) reads it.
+    /// </summary>
+    public bool CheckUpdatesOnStartup { get; set; } = true;
+
     /// <summary>Main-window backdrop material. Takes effect immediately (via ConfigService.Changed → MainWindow.ApplyBackdrop).</summary>
     public BackdropKind Backdrop { get; set; } = BackdropKind.Mica;
 
