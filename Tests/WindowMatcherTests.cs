@@ -16,8 +16,15 @@ public class WindowMatcherTests
 {
     private static WindowIdentity Id(string proc, string cls = "mainwnd") => WindowIdentity.Create(proc, cls);
 
-    private static MemoryEntryRef Entry(int id, WindowIdentity identity, int ordinal = 0, int bound = 0, string title = "")
-        => new(id, identity, ordinal, new IntPtr(bound), title);
+    /// <summary>
+    /// A record for the matcher. <paramref name="eligible"/> defaults to <b>true</b> — "its window went away a
+    /// moment ago" — so that the identity/caption rules can be exercised on their own; the freshness gate that
+    /// the flag controls has its own section at the bottom of this file. (The struct's own default is false:
+    /// a caller who never thought about time must not be able to get a window moved.)
+    /// </summary>
+    private static MemoryEntryRef Entry(int id, WindowIdentity identity, int ordinal = 0, int bound = 0,
+                                        string title = "", bool eligible = true)
+        => new(id, identity, ordinal, new IntPtr(bound), title, eligible);
 
     private static LiveWindowRef Live(int handle, WindowIdentity identity, string title = "")
         => new(new IntPtr(handle), identity, title);
@@ -381,5 +388,102 @@ public class WindowMatcherTests
 
         Assert.Equal(2, result.Count);                      // both windows bound: no record pile-up
         Assert.All(result, a => Assert.False(a.Confident)); // and nothing is moved
+    }
+
+    // ---- Freshness: cross-session evidence expires, the handle fast path does not ----
+    //
+    // Rules 3 and 4 answer "which window is this", never "is this the same *appearance* of it". Adoption
+    // restore is for the minutes in which an app comes back (crash, self-update, installer, post-reboot
+    // startup); left untimed it becomes permanent position enforcement over anything that reopens wearing a
+    // remembered caption. AdoptionEligible carries the caller's verdict on that; the matcher just obeys it.
+
+    [Fact]
+    public void A_stale_record_still_claims_its_window_by_caption_but_never_confidently()
+    {
+        // THE reported bug, at the matcher level: a QQ group chat closed days ago left a record whose caption
+        // is still unique in its group. The user reopens that conversation — QQ places it perfectly well — and
+        // the old rule reshaped it to the days-old rectangle. Now: bound (records must not pile up), not moved.
+        var qq = Id("qq", "chrome_widgetwin_1");
+        var result = WindowMatcher.Assign(
+            new[] { Entry(1, qq, 0, title: "这是个什么群", eligible: false) },
+            new[] { Live(0x900, qq, "这是个什么群") });
+
+        var one = Assert.Single(result);
+        Assert.Equal(1, one.Id);          // the record is claimed: no duplicate slot next to it
+        Assert.False(one.Confident);      // ...and nothing may be moved on the strength of it
+    }
+
+    [Fact]
+    public void A_stale_record_is_not_rescued_by_the_one_to_one_rule_either()
+    {
+        // Rule 4 is the *weaker* evidence of the two (no caption agreement at all — just "nothing else it
+        // could be"), so it must expire at least as readily as rule 3.
+        var chrome = Id("chrome", "chrome_widgetwin_1");
+        var result = WindowMatcher.Assign(
+            new[] { Entry(1, chrome, 0, title: "Inbox - Gmail", eligible: false) },
+            new[] { Live(0x400, chrome, "Reframe - GitHub") });
+
+        Assert.Single(result);
+        Assert.Equal(1, IdFor(result, 0x400));
+        Assert.False(ConfidentFor(result, 0x400));
+    }
+
+    [Fact]
+    public void The_handle_fast_path_ignores_freshness_entirely()
+    {
+        // A window that has simply been open all week is not a cross-session re-identification: the handle is
+        // alive and is the same handle. This is the regression that would break every long session's
+        // display-change restore, so it is pinned with the flag explicitly off.
+        var chrome = Id("chrome", "chrome_widgetwin_1");
+        var result = WindowMatcher.Assign(
+            new[] { Entry(1, chrome, 0, bound: 0x100, title: "Inbox", eligible: false) },
+            new[] { Live(0x100, chrome, "Inbox") });
+
+        Assert.Single(result);
+        Assert.Equal(1, IdFor(result, 0x100));
+        Assert.True(ConfidentFor(result, 0x100));
+    }
+
+    [Fact]
+    public void Freshness_is_decided_per_record_not_per_group()
+    {
+        // Two records of one app: one whose window died a minute ago, one closed last week. Both are claimed
+        // by caption; only the fresh one may be moved. (An all-or-nothing gate would let a single stale record
+        // suppress a genuine restart, or worse, let a genuine restart re-admit the stale one.)
+        var qq = Id("qq", "chrome_widgetwin_1");
+        var result = WindowMatcher.Assign(
+            new[]
+            {
+                Entry(1, qq, 0, title: "QQ", eligible: true),
+                Entry(2, qq, 1, title: "这是个什么群", eligible: false),
+            },
+            new[] { Live(0x100, qq, "这是个什么群"), Live(0x200, qq, "QQ") });
+
+        Assert.Equal(2, result.Count);
+        Assert.True(ConfidentFor(result, 0x200));   // "QQ" — the app really did restart
+        Assert.False(ConfidentFor(result, 0x100));  // the chat window the user just reopened
+    }
+
+    [Fact]
+    public void A_stale_record_still_consumes_its_candidate_so_nothing_else_can_claim_it()
+    {
+        // Bookkeeping invariant: the non-confident pairing is a real binding and takes the window out of the
+        // pool. Otherwise the stale record's window would fall through to the leftovers and could be handed to
+        // a *different* record — which is how you turn "don't move it" into "move it to the wrong place".
+        var qq = Id("qq", "chrome_widgetwin_1");
+        var result = WindowMatcher.Assign(
+            new[]
+            {
+                Entry(1, qq, 0, title: "这是个什么群", eligible: false),
+                Entry(2, qq, 1, title: "图片查看器", eligible: true),
+            },
+            new[] { Live(0x100, qq, "这是个什么群") });
+
+        var one = Assert.Single(result);
+        Assert.Equal(1, one.Id);            // the caption owner took it...
+        Assert.False(one.Confident);        // ...without confidence...
+        // ...and record 2 was never offered it as a 1:1 leftover, which would have been a confident move onto
+        // the image viewer's rectangle.
+        Assert.DoesNotContain(result, a => a.Id == 2);
     }
 }

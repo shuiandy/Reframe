@@ -31,13 +31,13 @@ public class LayoutMemoryIdentityTests
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20) }, T0);
 
-        m.PruneDead(_ => false);                 // old process exited: its handle is dead
+        m.PruneDead(_ => false, T0);             // old process exited: its handle is dead
 
         Assert.Equal(1, m.CountFor("desk"));     // the record survives...
         Assert.True(m.HasSnapshot("desk"));
         Assert.Empty(m.GetRestorable("desk"));          // ...just with nothing to act on yet
 
-        int claimed = m.Reclaim("desk", new[] { L(0x777, Chrome) });
+        int claimed = m.Reclaim("desk", new[] { L(0x777, Chrome) }, T0.AddMinutes(1));
 
         Assert.Equal(1, claimed);
         var plan = m.GetRestorePlan("desk", new[] { new IntPtr(0x777) });
@@ -65,11 +65,11 @@ public class LayoutMemoryIdentityTests
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20) }, T0);
 
-        m.ForgetWindow(new IntPtr(0x100));
+        m.ForgetWindow(new IntPtr(0x100), T0);
 
         Assert.Equal(1, m.CountFor("desk"));
         Assert.Empty(m.GetRestorable("desk"));
-        Assert.Equal(1, m.Reclaim("desk", new[] { L(0x999, Chrome) })); // still claimable later
+        Assert.Equal(1, m.Reclaim("desk", new[] { L(0x999, Chrome) }, T0.AddMinutes(1))); // still claimable later
     }
 
     [Fact]
@@ -77,7 +77,7 @@ public class LayoutMemoryIdentityTests
     {
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20) }, T0);
-        m.PruneDead(_ => false);
+        m.PruneDead(_ => false, T0);
 
         m.Capture("desk", new[] { W(0x500, Chrome, 55, 66) }, T0.AddMinutes(1));
 
@@ -93,7 +93,7 @@ public class LayoutMemoryIdentityTests
         // look like a different window and the record would be orphaned forever.
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20, "Inbox - Gmail") }, T0);
-        m.PruneDead(_ => false);
+        m.PruneDead(_ => false, T0);
 
         m.Capture("desk", new[] { W(0x600, Chrome, 10, 20, "Reframe - GitHub") }, T0.AddMinutes(1));
 
@@ -130,10 +130,10 @@ public class LayoutMemoryIdentityTests
             W(0x200, Chrome, 200, 0, "Mail"),
             W(0x300, Chrome, 300, 0, "News"),
         }, T0);
-        m.PruneDead(_ => false);
+        m.PruneDead(_ => false, T0);
 
         // New session, new handles (again out of order) — the captions say which is which.
-        m.Reclaim("desk", new[] { L(0x920, Chrome, "News"), L(0x900, Chrome, "Docs"), L(0x910, Chrome, "Mail") });
+        m.Reclaim("desk", new[] { L(0x920, Chrome, "News"), L(0x900, Chrome, "Docs"), L(0x910, Chrome, "Mail") }, T0.AddMinutes(1));
 
         var plan = m.GetRestorePlan("desk", new[] { new IntPtr(0x900), new IntPtr(0x910), new IntPtr(0x920) });
         Assert.Equal(3, plan.Count);
@@ -151,9 +151,9 @@ public class LayoutMemoryIdentityTests
         // therefore ignore them.
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 100, 0), W(0x200, Chrome, 200, 0), W(0x300, Chrome, 300, 0) }, T0);
-        m.PruneDead(_ => false);
+        m.PruneDead(_ => false, T0);
 
-        int claimed = m.Reclaim("desk", new[] { L(0x920, Chrome), L(0x900, Chrome), L(0x910, Chrome) });
+        int claimed = m.Reclaim("desk", new[] { L(0x920, Chrome), L(0x900, Chrome), L(0x910, Chrome) }, T0.AddMinutes(1));
 
         Assert.Equal(3, claimed);                                   // bound...
         Assert.Equal(3, m.CountFor("desk"));                        // ...with no duplicates
@@ -168,7 +168,7 @@ public class LayoutMemoryIdentityTests
     {
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20) }, T0);
-        m.PruneDead(_ => false);
+        m.PruneDead(_ => false, T0);
 
         Assert.Equal(0, m.Reclaim("stream", new[] { L(0x900, Chrome) }));  // no bucket
         Assert.Equal(0, m.Reclaim("desk", new[] { L(0x900, Notepad) }));   // different app
@@ -189,8 +189,8 @@ public class LayoutMemoryIdentityTests
         Assert.Equal(Chrome, m.EntriesFor("desk")[0].Identity);
 
         // ...and it can now survive a restart.
-        m.PruneDead(_ => false);
-        Assert.Equal(1, m.Reclaim("desk", new[] { L(0x900, Chrome) }));
+        m.PruneDead(_ => false, T0);
+        Assert.Equal(1, m.Reclaim("desk", new[] { L(0x900, Chrome) }, T0.AddMinutes(1)));
     }
 
     // ---- Bounding the store ----
@@ -259,9 +259,9 @@ public class LayoutMemoryIdentityTests
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20) }, T0);
         m.Capture("stream", new[] { W(0x100, Chrome, 900, 900) }, T0);
-        m.PruneDead(_ => false);
+        m.PruneDead(_ => false, T0);
 
-        m.Reclaim("desk", new[] { L(0x800, Chrome) });
+        m.Reclaim("desk", new[] { L(0x800, Chrome) }, T0.AddMinutes(1));
 
         Assert.Equal(10, m.GetRestorePlan("desk", new[] { new IntPtr(0x800) })[0].Target.Left);
         Assert.Empty(m.GetRestorePlan("stream", new[] { new IntPtr(0x800) })); // untouched: reclaim is per key
@@ -295,10 +295,10 @@ public class LayoutMemoryIdentityTests
             Q(0x300, 2220, 1487, "这是个什么群"),
             Q(0x400, 1921, 1152, "图片查看器"),
         }, T0);
-        m.PruneDead(_ => false);   // reboot / app restart: every record unbound
+        m.PruneDead(_ => false, T0);   // reboot / app restart: every record unbound
 
         // The windows that came back all wear the duplicated caption, so none of them is identifiable.
-        int claimed = m.Reclaim("desk", new[] { L(0x9100, QQ, "这是个什么群"), L(0x9200, QQ, "这是个什么群") });
+        int claimed = m.Reclaim("desk", new[] { L(0x9100, QQ, "这是个什么群"), L(0x9200, QQ, "这是个什么群") }, T0.AddMinutes(1));
 
         Assert.Equal(2, claimed);                        // bound, so no duplicate records accumulate
         Assert.Empty(m.GetRestorable("desk"));           // and not one window is moved
@@ -312,7 +312,8 @@ public class LayoutMemoryIdentityTests
         // THE regression that matters: the overwhelmingly common case is a display change with no restart at
         // all, where every record is still bound to its own HWND. Those bindings are certain, so the restore
         // must behave exactly as it always has — even for a maximally ambiguous app whose windows share one
-        // class and one caption.
+        // class and one caption, and even days into the session. The adoption window bounds cross-session
+        // re-identification; it has nothing to say about a window that never went away.
         var m = new LayoutMemory();
         m.Capture("desk", new[]
         {
@@ -323,7 +324,7 @@ public class LayoutMemoryIdentityTests
         }, T0);
 
         // Nothing died; the monitors just changed. (PruneDead runs first on the real path, and keeps them.)
-        m.PruneDead(_ => true);
+        m.PruneDead(_ => true, T0.AddDays(3)); // ...three days into the session, at that
 
         Assert.All(m.EntriesFor("desk"), e => Assert.True(e.ConfidentBinding));
         Assert.Equal(4, m.GetRestorable("desk").Count);
@@ -343,7 +344,7 @@ public class LayoutMemoryIdentityTests
             Q(0x300, 2220, 1487, "这是个什么群"),
             W(0x400, Chrome, 10, 20, "Inbox - Gmail"),
         }, T0);
-        m.PruneDead(_ => false);
+        m.PruneDead(_ => false, T0);
 
         m.Reclaim("desk", new[]
         {
@@ -351,7 +352,7 @@ public class LayoutMemoryIdentityTests
             L(0x9200, QQ, "这是个什么群"),                // ambiguous
             L(0x9300, QQ, "这是个什么群"),                // ambiguous
             L(0x9400, Chrome, "Reframe - GitHub"),       // caption changed, but it is the only Chrome window
-        });
+        }, T0.AddMinutes(1));
 
         var restorable = m.GetRestorable("desk");
         Assert.Equal(2, restorable.Count);
@@ -368,14 +369,14 @@ public class LayoutMemoryIdentityTests
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20, "Inbox") }, T0);
         Assert.True(m.EntriesFor("desk")[0].ConfidentBinding);
 
-        m.PruneDead(_ => false);
+        m.PruneDead(_ => false, T0);
         Assert.False(m.EntriesFor("desk")[0].ConfidentBinding);
         Assert.Empty(m.GetRestorable("desk"));
 
         // Same for the explicit destroy notification.
-        m.Reclaim("desk", new[] { L(0x900, Chrome, "GitHub") });
+        m.Reclaim("desk", new[] { L(0x900, Chrome, "GitHub") }, T0.AddMinutes(1));
         Assert.True(m.EntriesFor("desk")[0].ConfidentBinding);
-        m.ForgetWindow(new IntPtr(0x900));
+        m.ForgetWindow(new IntPtr(0x900), T0.AddMinutes(2));
         Assert.False(m.EntriesFor("desk")[0].ConfidentBinding);
         Assert.Empty(m.GetRestorable("desk"));
     }
@@ -408,9 +409,116 @@ public class LayoutMemoryIdentityTests
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20), W(0x200, Notepad, 30, 40) }, T0);
 
-        m.PruneDead(_ => false); // nothing is bound, nothing is confident, nothing is restorable...
+        m.PruneDead(_ => false, T0); // nothing is bound, nothing is confident, nothing is restorable...
 
         Assert.Empty(m.GetRestorable("desk"));
         Assert.True(m.HasSnapshot("desk"));  // ...and yet we absolutely do know this display
+    }
+
+    // ---- The restore path expires with the same clock as the adoption path ----
+    //
+    // Reclaim is the other way records get bound: the display-change / "Restore now" path binds first and then
+    // moves everything GetRestorable hands back. Since both routes read ConfidentBinding, and Reclaim now
+    // evaluates freshness exactly as Capture does, the time limit lands on both without a second mechanism.
+    // These pin that it actually does — and, just as importantly, that nothing which merely *looks* old is
+    // caught by it.
+
+    [Fact]
+    public void A_reclaim_long_after_the_window_died_binds_without_making_anything_restorable()
+    {
+        // The user's complaint reached through the topology-change path instead of the capture path: a record
+        // whose window closed days ago, a window reopened since, and then a monitor waking up. The caption
+        // still identifies the record — and the window still must not be dragged onto a days-old rectangle.
+        var m = new LayoutMemory();
+        m.Capture("desk", new[]
+        {
+            Q(0x100, 1015, 1015, "这是个什么群"),
+            Q(0x200,  574, 2002, "QQ"),
+        }, T0);
+        m.PruneDead(_ => false, T0);
+
+        int claimed = m.Reclaim("desk", new[] { L(0x9100, QQ, "这是个什么群") }, T0.AddDays(3));
+
+        Assert.Equal(1, claimed);                        // bound: records still must not pile up
+        Assert.False(m.EntriesFor("desk").Single(e => e.Handle == new IntPtr(0x9100)).ConfidentBinding);
+        Assert.Empty(m.GetRestorable("desk"));           // and not one window is moved
+        Assert.Empty(m.GetRestorePlan("desk", new[] { new IntPtr(0x9100) }));
+    }
+
+    [Fact]
+    public void A_disk_loaded_layout_is_restorable_right_after_the_load_and_no_longer_hours_later()
+    {
+        // The reboot path, both halves. The file is identical; only the gap between loading it and the app
+        // showing up differs — which is the whole content of the rule.
+        var before = new LayoutMemory();
+        before.Capture("desk", new[] { W(0x100, Chrome, 10, 20, "Inbox") }, T0);
+        var file = before.ExportForDisk();
+        var boot = T0.AddDays(1);
+
+        var soon = new LayoutMemory();
+        soon.ImportFromDisk(file, boot);
+        soon.Reclaim("desk", new[] { L(0x900, Chrome, "Inbox") }, boot.AddMinutes(10));
+        Assert.Equal(10, soon.GetRestorePlan("desk", new[] { new IntPtr(0x900) })[0].Target.Left);
+
+        var later = new LayoutMemory();
+        later.ImportFromDisk(file, boot);
+        later.Reclaim("desk", new[] { L(0x900, Chrome, "Inbox") }, boot.AddHours(6));
+        Assert.Empty(later.GetRestorePlan("desk", new[] { new IntPtr(0x900) }));
+        Assert.Empty(later.GetRestorable("desk"));
+        Assert.Equal(1, later.CountFor("desk"));   // still bound, still one record
+    }
+
+    [Fact]
+    public void A_record_that_went_stale_is_restorable_again_once_it_tracks_a_window_of_its_own()
+    {
+        // The freshness rule withholds a *move*, never the record. Once a stale record has been bound and has
+        // recorded where its window actually is, it is an ordinary live record again: the HWND fast path
+        // re-claims it and the next display change puts that window back where the user had it. If this did
+        // not hold, "we declined to move it once" would quietly mean "we will never restore it again".
+        var m = new LayoutMemory();
+        m.Capture("desk", new[] { W(0x100, Chrome, 10, 20, "Inbox") }, T0);
+        m.PruneDead(_ => false, T0);
+
+        // Reopened hours later: bound, tracked, not moved.
+        var late = T0.AddHours(5);
+        Assert.Empty(m.Capture("desk", new[] { W(0x900, Chrome, 640, 480, "Inbox") }, late));
+        Assert.False(m.EntriesFor("desk")[0].ConfidentBinding);
+        Assert.Empty(m.GetRestorable("desk"));
+
+        // A monitor wakes up a minute later. The window is alive, so this is the fast path, and the geometry
+        // the restore would apply is the one this very window has been sitting at.
+        m.PruneDead(_ => true, late.AddMinutes(1));
+        m.Reclaim("desk", new[] { L(0x900, Chrome, "Inbox") }, late.AddMinutes(1));
+
+        var plan = m.GetRestorePlan("desk", new[] { new IntPtr(0x900) });
+        Assert.Single(plan);
+        Assert.Equal(640, plan[0].Target.Left);   // where the user had it, not the T0 rectangle
+    }
+
+    [Fact]
+    public void The_unbound_timestamp_is_stamped_on_unbind_cleared_on_bind_and_never_persisted()
+    {
+        // The lifecycle in one place: null while bound, stamped the moment the window goes away, cleared again
+        // when a window claims the record — and absent from the file, because it describes a machine state the
+        // file cannot vouch for. (Import re-anchors it to the load instead; that is the test above.)
+        var m = new LayoutMemory();
+        m.Capture("desk", new[] { W(0x100, Chrome, 10, 20, "Inbox") }, T0);
+        Assert.Null(m.EntriesFor("desk")[0].UnboundAtUtc);
+
+        m.PruneDead(_ => false, T0.AddMinutes(4));
+        Assert.Equal(T0.AddMinutes(4), m.EntriesFor("desk")[0].UnboundAtUtc);
+
+        // Pruning again must not renew the stamp — that would hand a long-dead record a fresh 15 minutes on
+        // every capture tick, i.e. no expiry at all.
+        m.PruneDead(_ => false, T0.AddHours(9));
+        Assert.Equal(T0.AddMinutes(4), m.EntriesFor("desk")[0].UnboundAtUtc);
+
+        m.Reclaim("desk", new[] { L(0x900, Chrome, "Inbox") }, T0.AddMinutes(5));
+        Assert.Null(m.EntriesFor("desk")[0].UnboundAtUtc);
+
+        // Nothing about it reaches disk: an exported+imported record is anchored to its import, not to this.
+        var reloaded = new LayoutMemory();
+        reloaded.ImportFromDisk(m.ExportForDisk(), T0.AddDays(30));
+        Assert.Equal(T0.AddDays(30), reloaded.EntriesFor("desk")[0].UnboundAtUtc);
     }
 }

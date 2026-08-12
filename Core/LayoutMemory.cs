@@ -67,7 +67,7 @@ public sealed class RememberedWindow
     public IntPtr Handle
     {
         get => _handle;
-        set
+        private set
         {
             _handle = value;
             if (value == IntPtr.Zero) _confidentBinding = false; // no binding ⇒ no confidence in one
@@ -97,18 +97,84 @@ public sealed class RememberedWindow
         set => _confidentBinding = value;
     }
 
+    /// <summary>
+    /// When this record stopped having a live window — i.e. when <see cref="Unbind"/> was called — or, for a
+    /// record read off disk, when it was loaded. Null while the record is bound.
+    ///
+    /// <para><b>What it is for.</b> Cross-session re-identification (a group-unique caption, a forced 1:1)
+    /// tells us <i>which</i> window a record belongs to; it says nothing about <i>how long ago</i>. Adoption
+    /// restore was built for the seconds-to-minutes gap in which an app comes back — a crash, a self-update, an
+    /// installer, the apps launching after a reboot — but without a clock the same rule keeps firing forever,
+    /// and a record from last week hijacks a freshly opened window that merely wears the same caption (the
+    /// reopened QQ group chat yanked back to a days-old rectangle). This timestamp is what
+    /// <see cref="IsAdoptionEligible"/> measures against <see cref="LayoutMemory.AdoptionWindow"/>.</para>
+    ///
+    /// <para><b>Session-scoped and never written to disk</b> — it belongs to <see cref="Handle"/>'s family of
+    /// binding state, not to the remembered geometry. Persisting it would be meaningless anyway: it would
+    /// describe a machine state that no longer exists (the app may have been restarted, or the machine
+    /// rebooted, with no way to tell from the file). Records read back from disk are instead all anchored to
+    /// the moment of the load (<see cref="LayoutMemory.ImportFromDisk"/>), which is exactly the semantics we
+    /// want after a reboot: apps that come up in the first quarter of an hour go home, anything opened later
+    /// in the day is left where the user opened it. Contrast <see cref="LastSeenUtc"/>, which <i>is</i>
+    /// persisted and drives aging of the geometry itself.</para>
+    /// </summary>
+    public DateTime? UnboundAtUtc { get; private set; }
+
     private IntPtr _handle;
     private bool _confidentBinding;
 
-    /// <summary>Bind this record to a live window, recording whether the matcher was sure it is the same one.</summary>
+    /// <summary>
+    /// Whether this record's window disappeared recently enough that re-finding it may be acted on by
+    /// <i>moving</i> a window (see <see cref="LayoutMemory.AdoptionWindow"/>). A record that never lost a
+    /// binding to begin with has no timestamp and is not eligible — it also has nothing to adopt, since the
+    /// HWND fast path is what claims it, and that path is confident regardless of age.
+    ///
+    /// <para>Boundary: <b>exactly</b> <see cref="LayoutMemory.AdoptionWindow"/> still counts as fresh
+    /// (<c>&lt;=</c>). A clock that jumped backwards yields a negative age and also counts as fresh — the
+    /// failure mode we care about is a stale record moving a window, and a backwards NTP correction is no
+    /// reason to drop a legitimate restart on the floor.</para>
+    /// </summary>
+    public bool IsAdoptionEligible(DateTime nowUtc)
+        => UnboundAtUtc is { } since && nowUtc - since <= LayoutMemory.AdoptionWindow;
+
+    /// <summary>
+    /// Bind this record to a live window, recording whether the matcher was sure it is the same one. A record
+    /// with a window again has no "unbound since" — the clock only starts when the window goes away.
+    /// </summary>
     public void Bind(IntPtr handle, bool confident)
     {
         Handle = handle;
         ConfidentBinding = confident;
+        if (handle != IntPtr.Zero) UnboundAtUtc = null;
     }
 
-    /// <summary>Drop the session-scoped binding — and with it any confidence in it. The geometry is kept.</summary>
-    public void Unbind() => Handle = IntPtr.Zero;
+    /// <summary>
+    /// Drop the session-scoped binding — and with it any confidence in it — stamping <see cref="UnboundAtUtc"/>
+    /// with the moment the window went away. The geometry is kept.
+    ///
+    /// <para>Unbinding an already-unbound record is a no-op: re-stamping would silently renew the adoption
+    /// window of a record whose window has been gone for days.</para>
+    /// </summary>
+    public void Unbind(DateTime nowUtc)
+    {
+        if (_handle == IntPtr.Zero) return;
+        UnboundAtUtc = nowUtc;
+        Handle = IntPtr.Zero;
+    }
+
+    /// <summary>Unbind with the ambient clock. See <see cref="Unbind(DateTime)"/>.</summary>
+    public void Unbind() => Unbind(DateTime.UtcNow);
+
+    /// <summary>
+    /// Put an imported record into the unbound state anchored at <paramref name="loadedAtUtc"/> — the one
+    /// place where "unbound since" is not the moment a window died, because the file cannot say when that was.
+    /// See <see cref="UnboundAtUtc"/> and <see cref="LayoutMemory.ImportFromDisk"/>.
+    /// </summary>
+    public void MarkImportedUnbound(DateTime loadedAtUtc)
+    {
+        Handle = IntPtr.Zero;
+        UnboundAtUtc = loadedAtUtc;
+    }
 }
 
 /// <summary>
@@ -131,6 +197,31 @@ public sealed class LayoutMemory
 
     /// <summary>Default age after which an unbound record is forgotten (see <see cref="Trim"/>).</summary>
     public static readonly TimeSpan DefaultMaxAge = TimeSpan.FromDays(30);
+
+    /// <summary>
+    /// How long after its window disappeared a record may still be <i>adopted</i> — re-identified across
+    /// sessions <b>and moved back</b> to its remembered rectangle. Past this, the same re-identification still
+    /// binds the record (so records don't pile up) but is no longer confident, so nothing is moved: the record
+    /// simply starts following the new window and recording where it is.
+    ///
+    /// <para><b>Why 15 minutes.</b> Adoption exists to cover a window that <i>came back</i>, and everything
+    /// that legitimately brings one back is minutes at most: an app crashing and being relaunched, a
+    /// self-update restarting itself, an installer replacing an app, or the whole desktop repopulating after a
+    /// reboot (where the anchor is the layout file's load — see <see cref="ImportFromDisk"/> — and browsers,
+    /// chat clients and editors trickle in over the first several minutes, some behind a slow VPN or a
+    /// sign-in). A quarter of an hour clears all of those with room to spare.</para>
+    ///
+    /// <para><b>Why not longer.</b> The other side of the trade is a record that outlives its purpose and
+    /// becomes position enforcement. A QQ group chat closed on Monday leaves a record whose caption is unique
+    /// in its group forever; reopen that conversation on Thursday — QQ places it perfectly well by itself —
+    /// and an untimed rule yanks it to Monday's rectangle, over and over, with no way for the user to tell why.
+    /// That is the bug this constant exists to bound. Hours would re-admit it for anyone who closes and reopens
+    /// chat windows during a working day; minutes-scale is the only range where "it came back" and "the user
+    /// opened it again" are actually distinguishable without asking the user.</para>
+    ///
+    /// <para>Not persisted and not configurable: it is a property of the mechanism, not of a layout.</para>
+    /// </summary>
+    public static readonly TimeSpan AdoptionWindow = TimeSpan.FromMinutes(15);
 
     // ---- Capture ----
 
@@ -178,6 +269,13 @@ public sealed class LayoutMemory
     /// instead: its geometry is overwritten with what the window looks like now, and nothing is moved.
     /// Guessing there is how a reopened chat window got reshaped into the main panel's tall strip.</para>
     ///
+    /// <para><b>Adoption also expires</b> (<see cref="AdoptionWindow"/>). Being sure <i>which</i> window a
+    /// record describes is necessary but not sufficient: the record must also have lost its window recently
+    /// enough that "the app is coming back" is the plausible reading. A record whose window closed days ago is
+    /// re-bound by the same caption rule and then treated as an ordinary capture — the user reopening a chat
+    /// window is not an app restart, and moving it would be the store enforcing a position nobody asked it to
+    /// keep. See <see cref="RememberedWindow.UnboundAtUtc"/>.</para>
+    ///
     /// <para>The pending list is produced exactly once per binding — by the next round the record is bound and
     /// takes the normal tracking path, so a window that springs back is not fought over round after round.</para>
     /// </summary>
@@ -215,7 +313,7 @@ public sealed class LayoutMemory
         var live = new List<LiveWindowRef>(windows.Count);
         foreach (var w in windows)
             live.Add(new LiveWindowRef(w.Handle, w.Identity, w.Title)); // the caption is what tells siblings apart
-        var assigned = BindHandles(bucket, live);
+        var assigned = BindHandles(bucket, live, nowUtc);
 
         // Deterministic creation order for the leftovers, so ordinals are handed out ascending-HWND.
         var ordered = new List<CapturedWindow>(windows);
@@ -275,16 +373,21 @@ public sealed class LayoutMemory
     /// window and get moved. Returns how many records became newly bound.
     ///
     /// <para>Binding is unconditional here: confident or not, a pairing claims its slot (see
-    /// <see cref="BindHandles"/>). The confidence distinction only gates the <i>adoption</i> restore that
-    /// <see cref="Capture"/> reports; this method serves the explicit restore paths, where the caller has
-    /// already decided that re-applying the remembered layout is the intent.</para>
+    /// <see cref="BindHandles"/>). The confidence distinction gates what may be <i>moved</i> — the adoption
+    /// restore that <see cref="Capture"/> reports, and <see cref="GetRestorable"/> / <see cref="GetRestorePlan"/>
+    /// on this path — and it now includes the freshness rule (<see cref="AdoptionWindow"/>): a record whose
+    /// window has been gone for days is re-bound here but not moved, exactly as an ambiguous one is.</para>
     /// </summary>
     public int Reclaim(string displayKey, IReadOnlyList<LiveWindowRef> candidates)
+        => Reclaim(displayKey, candidates, DateTime.UtcNow);
+
+    /// <summary>Reclaim with an explicit clock (unit tests). See the overload above for the semantics.</summary>
+    public int Reclaim(string displayKey, IReadOnlyList<LiveWindowRef> candidates, DateTime nowUtc)
     {
         if (!_byKey.TryGetValue(displayKey, out var bucket) || bucket.Count == 0) return 0;
         int before = 0;
         foreach (var e in bucket) if (e.Handle != IntPtr.Zero) before++;
-        BindHandles(bucket, candidates);
+        BindHandles(bucket, candidates, nowUtc);
         int after = 0;
         foreach (var e in bucket) if (e.Handle != IntPtr.Zero) after++;
         return after - before;
@@ -294,15 +397,19 @@ public sealed class LayoutMemory
     /// Run the pure matcher over a bucket and apply the resulting bindings. Returns handle → (bucket index,
     /// whether the matcher was confident it is the same window). <b>Every</b> assignment is bound — binding is
     /// how records stop piling up — but only the confident ones may be acted on by moving a window.
+    ///
+    /// <para>This is where the clock enters and immediately leaves again: each record's
+    /// "unbound recently enough to be adopted" is evaluated here against <paramref name="nowUtc"/> and handed
+    /// to the matcher as a plain bool, so the matcher stays a pure function of its inputs.</para>
     /// </summary>
     private static Dictionary<IntPtr, (int Index, bool Confident)> BindHandles(
-        List<RememberedWindow> bucket, IReadOnlyList<LiveWindowRef> candidates)
+        List<RememberedWindow> bucket, IReadOnlyList<LiveWindowRef> candidates, DateTime nowUtc)
     {
         var refs = new List<MemoryEntryRef>(bucket.Count);
         for (int i = 0; i < bucket.Count; i++)
         {
             var e = bucket[i];
-            refs.Add(new MemoryEntryRef(i, e.Identity, e.Ordinal, e.Handle, e.Title));
+            refs.Add(new MemoryEntryRef(i, e.Identity, e.Ordinal, e.Handle, e.Title, e.IsAdoptionEligible(nowUtc)));
         }
 
         var map = new Dictionary<IntPtr, (int, bool)>(candidates.Count);
@@ -389,9 +496,13 @@ public sealed class LayoutMemory
     /// to whatever windows exist by ordinal, and the restore reshapes a chat window into the image viewer's
     /// box. Both routes now ask the same question — <see cref="RememberedWindow.ConfidentBinding"/>.</para>
     ///
-    /// <para>Unbound records (nothing to act on right now) and non-confidently bound ones (we cannot tell
-    /// which window is which) are both omitted. The latter still take part in ordinary capture tracking: they
-    /// follow their window and record where it is, they are just never moved.</para>
+    /// <para>Unbound records (nothing to act on right now) and non-confidently bound ones are both omitted.
+    /// A binding is non-confident for either of two reasons: we cannot tell which window is which, or the
+    /// record's window has been gone longer than <see cref="AdoptionWindow"/> and re-identifying it no longer
+    /// licenses a move. Both still take part in ordinary capture tracking: they follow their window and record
+    /// where it is, they are just never moved. (A record that keeps tracking one window is of course restored
+    /// on the next display change — by then its geometry <i>is</i> that window's, claimed through the HWND
+    /// fast path, and nothing about it is stale any more.)</para>
     /// </summary>
     public IReadOnlyList<(IntPtr Handle, WindowRecord Record)> GetRestorable(string displayKey)
     {
@@ -410,12 +521,15 @@ public sealed class LayoutMemory
     /// itself is kept — only the session-scoped binding goes away, so the geometry is still there when the app
     /// comes back.
     /// </summary>
-    public void ForgetWindow(IntPtr handle)
+    public void ForgetWindow(IntPtr handle) => ForgetWindow(handle, DateTime.UtcNow);
+
+    /// <summary>Detach a handle with an explicit clock (unit tests). See the overload above for the semantics.</summary>
+    public void ForgetWindow(IntPtr handle, DateTime nowUtc)
     {
         if (handle == IntPtr.Zero) return;
         foreach (var bucket in _byKey.Values)
             foreach (var e in bucket)
-                if (e.Handle == handle) e.Unbind(); // clears the confidence flag with it
+                if (e.Handle == handle) e.Unbind(nowUtc); // clears the confidence flag, starts the adoption clock
     }
 
     /// <summary>
@@ -430,14 +544,19 @@ public sealed class LayoutMemory
     /// <para>Callers run this immediately before matching, which gives the matcher its key invariant: a
     /// non-zero binding means that window is alive. Unbinding also clears
     /// <see cref="RememberedWindow.ConfidentBinding"/>, so a record can never carry "we were sure" over from
-    /// the window that just died into whatever claims it next.</para>
+    /// the window that just died into whatever claims it next — and stamps
+    /// <see cref="RememberedWindow.UnboundAtUtc"/>, which is what starts the
+    /// <see cref="AdoptionWindow"/> countdown: this is the exact moment "the app might be restarting" begins.</para>
     /// </summary>
-    public void PruneDead(Func<IntPtr, bool> isAlive)
+    public void PruneDead(Func<IntPtr, bool> isAlive) => PruneDead(isAlive, DateTime.UtcNow);
+
+    /// <summary>Prune with an explicit clock (unit tests). See the overload above for the semantics.</summary>
+    public void PruneDead(Func<IntPtr, bool> isAlive, DateTime nowUtc)
     {
         foreach (var bucket in _byKey.Values)
             foreach (var e in bucket)
                 if (e.Handle != IntPtr.Zero && !isAlive(e.Handle))
-                    e.Unbind();
+                    e.Unbind(nowUtc);
     }
 
     /// <summary>
@@ -525,8 +644,20 @@ public sealed class LayoutMemory
     /// session's binding, so there is nothing to write and nothing to read back. An imported record is unbound
     /// and therefore not confident, and it can only become confident by being claimed again on evidence
     /// available right now.</para>
+    ///
+    /// <para><b>The load is the adoption anchor.</b> Every imported record gets
+    /// <see cref="RememberedWindow.UnboundAtUtc"/> = the moment of this call, so the
+    /// <see cref="AdoptionWindow"/> is measured from startup rather than from a per-record timestamp. That is
+    /// the honest reading of the file: it cannot say when each window went away (the machine may have been off
+    /// for a week), only that none of them exist yet. The behaviour that falls out is the one we want after a
+    /// reboot — apps that come up in the first quarter of an hour are put back on the remembered layout, while
+    /// something the user opens hours later is left exactly where it opened, even if a record with its caption
+    /// is still sitting in the file.</para>
     /// </summary>
-    public void ImportFromDisk(LayoutFile? file)
+    public void ImportFromDisk(LayoutFile? file) => ImportFromDisk(file, DateTime.UtcNow);
+
+    /// <summary>Import with an explicit load timestamp (unit tests). See the overload above for the semantics.</summary>
+    public void ImportFromDisk(LayoutFile? file, DateTime loadedAtUtc)
     {
         _byKey.Clear();
         if (file?.Layouts == null) return;
@@ -543,7 +674,7 @@ public sealed class LayoutMemory
             foreach (var w in layout.Windows)
             {
                 if (w == null) continue;
-                bucket.Add(new RememberedWindow
+                var loaded = new RememberedWindow
                 {
                     Identity = WindowIdentity.Create(w.Process, w.Class),
                     Ordinal = w.Ordinal,
@@ -551,8 +682,11 @@ public sealed class LayoutMemory
                     Record = new WindowRecord(w.Left, w.Top, w.Right, w.Bottom,
                                               w.NormLeft, w.NormTop, w.NormRight, w.NormBottom, w.ShowCmd),
                     LastSeenUtc = w.LastSeenUtc,
-                    Handle = IntPtr.Zero, // last session's handle is meaningless — identity-only from here
-                });
+                };
+                // Last session's handle is meaningless — identity-only from here — and the adoption clock for
+                // every imported record starts now (see the remarks above).
+                loaded.MarkImportedUnbound(loadedAtUtc);
+                bucket.Add(loaded);
             }
 
             if (bucket.Count == 0) _byKey.Remove(key);

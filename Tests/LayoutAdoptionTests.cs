@@ -15,6 +15,12 @@ namespace Reframe.Core.Tests;
 /// wherever the app happened to reopen. Getting it backwards is silently fatal: Chrome restarts squashed, the
 /// next 2 s capture overwrites the good geometry with the bad, and nothing ever restores it; and every disk
 /// layout would be destroyed within one capture tick of startup, making persistence pointless.</para>
+///
+/// <para><b>And it is time-limited</b> (<see cref="LayoutMemory.AdoptionWindow"/>). "The app is coming back"
+/// only reads as true for a few minutes; after that the same claim is just a record enforcing a position on a
+/// window the user opened themselves. Every test here therefore drives <c>PruneDead</c> with an explicit
+/// clock: the gap between a record losing its window and a window claiming it is now load-bearing, so it is
+/// never left to wall time.</para>
 /// </summary>
 public class LayoutAdoptionTests
 {
@@ -33,7 +39,7 @@ public class LayoutAdoptionTests
     {
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20) }, T0);   // the good position
-        m.PruneDead(_ => false);                                      // Chrome exits
+        m.PruneDead(_ => false, T0);                                  // Chrome exits
 
         // Chrome restarts, squashed into the corner by whatever it remembered itself.
         var adopted = m.Capture("desk", new[] { W(0x500, Chrome, 0, 0) }, T0.AddMinutes(1));
@@ -52,7 +58,7 @@ public class LayoutAdoptionTests
     {
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20, "Inbox") }, T0);
-        m.PruneDead(_ => false);
+        m.PruneDead(_ => false, T0);
 
         m.Capture("desk", new[] { W(0x500, Chrome, 0, 0, "GitHub") }, T0.AddMinutes(1));
 
@@ -92,7 +98,7 @@ public class LayoutAdoptionTests
     {
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20) }, T0);
-        m.PruneDead(_ => false);
+        m.PruneDead(_ => false, T0);
 
         var first = m.Capture("desk", new[] { W(0x500, Chrome, 0, 0) }, T0.AddMinutes(1));
         Assert.Single(first);
@@ -114,10 +120,10 @@ public class LayoutAdoptionTests
     {
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20) }, T0);
-        m.PruneDead(_ => false);
+        m.PruneDead(_ => false, T0);
         Assert.Single(m.Capture("desk", new[] { W(0x500, Chrome, 0, 0) }, T0.AddMinutes(1)));
 
-        m.PruneDead(_ => false); // restarted again
+        m.PruneDead(_ => false, T0.AddMinutes(1)); // restarted again — and unbound afresh, so the clock restarts
         var again = m.Capture("desk", new[] { W(0x900, Chrome, 55, 66) }, T0.AddMinutes(2));
 
         Assert.Single(again);
@@ -131,7 +137,7 @@ public class LayoutAdoptionTests
     {
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20) }, T0);
-        m.PruneDead(_ => false);
+        m.PruneDead(_ => false, T0);
 
         var adopted = m.Capture("desk", new[] { W(0x500, Chrome, 55, 66) }, T0.AddMinutes(1), adoptGeometry: false);
 
@@ -146,7 +152,7 @@ public class LayoutAdoptionTests
         // "Capture now" only overrides the windows it can actually see; a tray-hidden app keeps its memory.
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20), W(0x200, Notepad, 30, 40) }, T0);
-        m.PruneDead(h => h == new IntPtr(0x100));
+        m.PruneDead(h => h == new IntPtr(0x100), T0);
 
         m.Capture("desk", new[] { W(0x100, Chrome, 99, 99) }, T0.AddMinutes(1), adoptGeometry: false);
 
@@ -164,7 +170,7 @@ public class LayoutAdoptionTests
         // PersistenceEngine.FilterWritable, shared with the display-change restore.)
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20), W(0x200, Notepad, 30, 40) }, T0);
-        m.PruneDead(_ => false);
+        m.PruneDead(_ => false, T0);
 
         // This round the engine owns the Chrome window, so only Notepad is offered.
         var adopted = m.Capture("desk", new[] { W(0x600, Notepad, 0, 0) }, T0.AddMinutes(1));
@@ -189,14 +195,17 @@ public class LayoutAdoptionTests
             before.Capture("desk", new[] { W(0x100, Chrome, 10, 20), W(0x200, Notepad, 300, 400) }, T0);
             Assert.True(LayoutStore.Save(before.ExportForDisk(), file));
 
-            // New boot: everything is unbound, and both apps reopen wherever they feel like.
+            // New boot a day later: everything is unbound, and both apps reopen wherever they feel like. The
+            // record timestamps are yesterday's, but the adoption clock is anchored to the *load*, so the two
+            // minutes it takes the apps to come up is what counts.
+            var boot = T0.AddDays(1);
             var after = new LayoutMemory();
-            after.ImportFromDisk(LayoutStore.Load(file));
+            after.ImportFromDisk(LayoutStore.Load(file), boot);
             var adopted = after.Capture("desk", new[]
             {
                 W(0x910, Chrome, 0, 0),
                 W(0x920, Notepad, 5, 5),
-            }, T0.AddDays(1));
+            }, boot.AddMinutes(2));
 
             // The remembered layout is intact and both windows are queued to be moved onto it.
             Assert.Equal(2, adopted.Count);
@@ -218,7 +227,7 @@ public class LayoutAdoptionTests
         // captions (not the handles) decide.
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 100, 0, "Docs"), W(0x200, Chrome, 200, 0, "Mail") }, T0);
-        m.PruneDead(_ => false);
+        m.PruneDead(_ => false, T0);
 
         var adopted = m.Capture("desk", new[]
         {
@@ -259,7 +268,7 @@ public class LayoutAdoptionTests
             Q(0x300, 0, 0, 2220, 1487, "这是个什么群"),
             Q(0x400, 0, 0, 1921, 1152, "图片查看器"),
         }, T0);
-        m.PruneDead(_ => false); // QQ restarts: every record is unbound
+        m.PruneDead(_ => false, T0); // QQ restarts: every record is unbound
 
         var adopted = m.Capture("desk", new[]
         {
@@ -290,7 +299,7 @@ public class LayoutAdoptionTests
             Q(0x200, 0, 0,  574, 2002, "QQ"),
             Q(0x300, 0, 0, 2220, 1487, "这是个什么群"),
         }, T0);
-        m.PruneDead(_ => false);
+        m.PruneDead(_ => false, T0);
 
         var adopted = m.Capture("desk", new[]
         {
@@ -312,7 +321,7 @@ public class LayoutAdoptionTests
         // 1:1 rule must not paper over that: two unbound records is not one.
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20, "Untitled"), W(0x200, Chrome, 500, 600, "Untitled") }, T0);
-        m.PruneDead(_ => false);
+        m.PruneDead(_ => false, T0);
 
         var adopted = m.Capture("desk", new[] { W(0x900, Chrome, 0, 0, "Untitled") }, T0.AddMinutes(1));
 
@@ -328,7 +337,7 @@ public class LayoutAdoptionTests
         // There is nothing else either could be, so the window goes home despite matching no caption.
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20, "Inbox - Gmail") }, T0);
-        m.PruneDead(_ => false);
+        m.PruneDead(_ => false, T0);
 
         var adopted = m.Capture("desk", new[] { W(0x900, Chrome, 0, 0, "Reframe - GitHub") }, T0.AddMinutes(1));
 
@@ -367,5 +376,172 @@ public class LayoutAdoptionTests
             int expectedLeft = width == 1015 ? 10 : width == 574 ? 20 : 30;
             Assert.Equal(expectedLeft, e.Record.Left);
         }
+    }
+
+    // ---- (7) Freshness: adoption is for windows that came *back*, not for windows that look familiar ----
+    //
+    // Knowing *which* window a record describes is necessary but not sufficient. Adoption restore was built
+    // for the seconds-to-minutes gap in which an app returns — a crash, a self-update, an installer, the
+    // desktop repopulating after a reboot. Untimed, the very same rules become permanent position
+    // enforcement: reopen a chat window whose caption is unique in its group and it is dragged to a rectangle
+    // remembered days ago, every single time, with nothing in the UI to explain it. LayoutMemory.AdoptionWindow
+    // is where that stops. Past it a record is still bound (records must not pile up) and still tracks its
+    // window — it just never asks for it to be moved.
+
+    /// <summary>The reported defect, end to end, in the store that produced it.</summary>
+    [Fact]
+    public void A_days_old_record_never_hijacks_a_freshly_reopened_window_of_the_same_name()
+    {
+        // Real hardware: QQ NT keeps its main panel, every chat window and the image viewer in one class, so
+        // only the caption tells them apart — and "这是个什么群" is unique among the records in this bucket.
+        // The user closed that group chat on Monday; on Thursday they reopen it and QQ sizes and places it
+        // perfectly well by itself. The caption rule still fires (it always will), so the record is claimed —
+        // but three days is nobody's idea of "the app is restarting", and the window must be left alone.
+        var m = new LayoutMemory();
+        m.Capture("desk", new[]
+        {
+            Q(0x100, 0, 0, 1015, 1015, "这是个什么群"),
+            Q(0x200, 0, 0,  574, 2002, "QQ"),
+            Q(0x300, 0, 0, 1921, 1152, "图片查看器"),
+        }, T0);
+        m.PruneDead(h => h != new IntPtr(0x100), T0);      // just that chat window closed
+
+        var reopened = T0.AddDays(3);
+        var adopted = m.Capture("desk", new[] { Q(0x9900, 700, 300, 900, 900, "这是个什么群") }, reopened);
+
+        Assert.Empty(adopted);                              // nothing is moved: the whole point
+        Assert.Equal(3, m.CountFor("desk"));                // and no duplicate record piles up
+        var chat = m.EntriesFor("desk").Single(e => e.Handle == new IntPtr(0x9900));
+        Assert.False(chat.ConfidentBinding);                // so no restore path will move it either
+        Assert.Equal(700, chat.Record.Left);                // the record learned where QQ actually put it
+        Assert.Equal(900, chat.Record.Right - chat.Record.Left);
+    }
+
+    [Fact]
+    public void A_crash_restart_inside_the_adoption_window_is_still_adopted_by_a_unique_caption()
+    {
+        // The other side of the same rule, through the same code path: the app died and was relaunched a
+        // minute later (a crash, a self-update, an installer). That is exactly what adoption is for.
+        var m = new LayoutMemory();
+        m.Capture("desk", new[]
+        {
+            Q(0x100, 0, 0, 1015, 1015, "这是个什么群"),
+            Q(0x200, 0, 0,  574, 2002, "QQ"),
+            Q(0x300, 0, 0, 1921, 1152, "图片查看器"),
+        }, T0);
+        m.PruneDead(_ => false, T0);
+
+        var adopted = m.Capture("desk", new[] { Q(0x9900, 700, 300, 900, 900, "这是个什么群") }, T0.AddMinutes(1));
+
+        var one = Assert.Single(adopted);
+        Assert.Equal(new IntPtr(0x9900), one.Handle);
+        Assert.Equal(1015, one.Target.Right - one.Target.Left);   // back to its remembered shape
+        Assert.Equal(1015, m.EntriesFor("desk").Single(e => e.Handle == new IntPtr(0x9900)).Record.Right);
+    }
+
+    [Fact]
+    public void The_same_restart_sixteen_minutes_later_is_bound_and_tracked_instead_of_moved()
+    {
+        // Identical inputs to the test above except for the clock. Fifteen minutes is the whole difference
+        // between "it came back" and "the user opened it".
+        var m = new LayoutMemory();
+        m.Capture("desk", new[] { W(0x100, Chrome, 10, 20, "Inbox - Gmail") }, T0);
+        m.PruneDead(_ => false, T0);
+
+        var adopted = m.Capture("desk", new[] { W(0x900, Chrome, 640, 480, "Inbox - Gmail") }, T0.AddMinutes(16));
+
+        Assert.Empty(adopted);
+        var e = m.EntriesFor("desk")[0];
+        Assert.Equal(new IntPtr(0x900), e.Handle);   // bound...
+        Assert.False(e.ConfidentBinding);            // ...but not on evidence anything may act on
+        Assert.Equal(640, e.Record.Left);            // ordinary capture: the record takes the window's shape
+    }
+
+    [Theory]
+    [InlineData(0, true)]      // the instant it died
+    [InlineData(14, true)]
+    [InlineData(15, true)]     // exactly the window: inclusive
+    [InlineData(16, false)]
+    [InlineData(60, false)]
+    public void The_adoption_window_boundary_is_inclusive_to_the_minute(int minutesLater, bool adopted)
+    {
+        // The boundary is defined as `age <= AdoptionWindow`, i.e. a record unbound exactly AdoptionWindow ago
+        // is still adoptable. (Nothing hinges on which side is chosen — everything hinges on it being pinned.)
+        var m = new LayoutMemory();
+        m.Capture("desk", new[] { W(0x100, Chrome, 10, 20, "Inbox") }, T0);
+        m.PruneDead(_ => false, T0);
+
+        var result = m.Capture("desk", new[] { W(0x900, Chrome, 0, 0, "Inbox") }, T0.AddMinutes(minutesLater));
+
+        Assert.Equal(adopted, result.Count == 1);
+        Assert.Equal(adopted ? 10 : 0, m.EntriesFor("desk")[0].Record.Left);
+    }
+
+    [Fact]
+    public void A_disk_loaded_record_is_only_tracked_when_the_app_starts_long_after_the_load()
+    {
+        // The reboot case at its far end: the layout file is the same, but this app was opened by hand in the
+        // afternoon rather than started with the session. Anchoring every imported record to the load is what
+        // makes both halves work — see the sibling test above for the app that comes up two minutes in.
+        var before = new LayoutMemory();
+        before.Capture("desk", new[] { W(0x100, Chrome, 10, 20, "Inbox") }, T0);
+
+        var boot = T0.AddDays(1);
+        var after = new LayoutMemory();
+        after.ImportFromDisk(before.ExportForDisk(), boot);
+
+        var adopted = after.Capture("desk", new[] { W(0x910, Chrome, 640, 480, "Inbox") }, boot.AddMinutes(16));
+
+        Assert.Empty(adopted);
+        Assert.Equal(640, after.EntriesFor("desk")[0].Record.Left);   // left where the user opened it
+        Assert.False(after.EntriesFor("desk")[0].ConfidentBinding);
+    }
+
+    [Fact]
+    public void A_window_that_dies_after_a_stale_binding_is_fresh_again_when_it_comes_back()
+    {
+        // Freshness is a property of the *current* absence, not a mark the record wears forever. A record that
+        // went stale, was re-bound to a window the user opened, and then lost that window has a brand-new
+        // "unbound at" — so the ordinary crash-restart case works again immediately, and it restores the
+        // geometry the record has been tracking since, not the ancient one.
+        var m = new LayoutMemory();
+        m.Capture("desk", new[] { W(0x100, Chrome, 10, 20, "Inbox") }, T0);
+        m.PruneDead(_ => false, T0);
+
+        // Hours later the user opens it again: bound, tracked, not moved.
+        var late = T0.AddHours(5);
+        Assert.Empty(m.Capture("desk", new[] { W(0x900, Chrome, 640, 480, "Inbox") }, late));
+        Assert.Equal(640, m.EntriesFor("desk")[0].Record.Left);
+
+        // Now *that* window crashes and is back within the window.
+        m.PruneDead(_ => false, late.AddMinutes(1));
+        var adopted = m.Capture("desk", new[] { W(0xA00, Chrome, 0, 0, "Inbox") }, late.AddMinutes(2));
+
+        var one = Assert.Single(adopted);
+        Assert.Equal(new IntPtr(0xA00), one.Handle);
+        Assert.Equal(640, one.Target.Left);   // the position it had been tracking, not the T0 one
+    }
+
+    [Fact]
+    public void A_window_open_all_week_is_untouched_by_the_freshness_rule()
+    {
+        // THE regression to guard: a record that never lost its window is re-claimed by the HWND fast path,
+        // which is not cross-session re-identification at all and has no business expiring. Days of ordinary
+        // capture ticks must keep tracking it, and it must stay restorable throughout.
+        var m = new LayoutMemory();
+        m.Capture("desk", new[] { W(0x100, Chrome, 10, 20, "Inbox") }, T0);
+
+        for (int day = 1; day <= 5; day++)
+        {
+            m.PruneDead(_ => true, T0.AddDays(day));   // still alive: nothing is unbound, nothing is stamped
+            Assert.Empty(m.Capture("desk", new[] { W(0x100, Chrome, 10 * day, 20, "Inbox") }, T0.AddDays(day)));
+        }
+
+        var e = m.EntriesFor("desk")[0];
+        Assert.Equal(new IntPtr(0x100), e.Handle);
+        Assert.True(e.ConfidentBinding);                  // a display change five days in still restores it
+        Assert.Null(e.UnboundAtUtc);
+        Assert.Equal(50, e.Record.Left);
+        Assert.Single(m.GetRestorable("desk"));
     }
 }

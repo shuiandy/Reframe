@@ -6,8 +6,20 @@ namespace Reframe.Core;
 /// <param name="Ordinal">Position of this record within its identity group, assigned at capture time and stable thereafter.</param>
 /// <param name="BoundHandle">The HWND this record is currently bound to, or <see cref="IntPtr.Zero"/> when unbound (loaded from disk, or its window died).</param>
 /// <param name="Title">Caption last seen on this record's window. Evidence for a <i>confident</i> pairing only — see <see cref="WindowMatcher"/>.</param>
+/// <param name="AdoptionEligible">
+/// Whether this record's window went away <i>recently enough</i> that re-finding it may be acted on by moving
+/// a window — computed by the caller from <see cref="RememberedWindow.UnboundAtUtc"/> and
+/// <see cref="LayoutMemory.AdoptionWindow"/>, so that the matcher itself stays a pure function of its inputs.
+///
+/// <para>Cross-session evidence (a group-unique caption, a forced 1:1) answers <i>which</i> window a record
+/// belongs to; it never answers <i>when</i>. This flag carries the "when". False ⇒ the pairing still happens
+/// — a record must claim its slot or duplicates pile up on every restart — but is never
+/// <see cref="WindowAssignment.Confident"/>, i.e. tracked, never moved. Defaults to <b>false</b>: a caller
+/// with no freshness information must not be able to get a window moved by accident.</para>
+/// </param>
 public readonly record struct MemoryEntryRef(
-    int Id, WindowIdentity Identity, int Ordinal, IntPtr BoundHandle, string Title = "");
+    int Id, WindowIdentity Identity, int Ordinal, IntPtr BoundHandle, string Title = "",
+    bool AdoptionEligible = false);
 
 /// <summary>One currently-alive window offered as a match candidate.</summary>
 /// <param name="Handle">The live HWND.</param>
@@ -52,16 +64,18 @@ public readonly record struct WindowAssignment(IntPtr Handle, int Id, bool Confi
 /// bindings first) but simply wasn't offered this round — the borderless engine owns that window, it was just
 /// moved by us, it is filtered out — keeps its binding and is left alone. Without this, its still-living
 /// window's geometry could be handed to a <i>different</i> window of the same identity.</item>
-/// <item><b>Unique exact title inside the identity group — confident.</b> The remaining <i>unbound</i> records
-/// and remaining candidates are grouped by <see cref="WindowIdentity"/>. Inside a group, a record pairs
-/// confidently with a candidate when their captions are equal after <see cref="NormalizeTitle"/> <b>and</b>
-/// that caption occurs exactly once among the group's unresolved records and exactly once among its
-/// unresolved candidates. Deliberately <b>exact</b>: no prefix, fuzzy or similarity matching — approximate
-/// title matching is precisely what would put a chat window onto the image viewer's record.</item>
-/// <item><b>1:1 leftover — confident.</b> If, after rule 3, exactly one unbound record and exactly one
-/// unclaimed candidate remain in the group, they must be each other. This is what keeps single-window apps
-/// working (Chrome's lone window whose caption follows the active tab, charmap, Notepad…), i.e. the original
-/// case adoption restore was built for.</item>
+/// <item><b>Unique exact title inside the identity group — confident <i>if the record is still fresh</i>.</b>
+/// The remaining <i>unbound</i> records and remaining candidates are grouped by <see cref="WindowIdentity"/>.
+/// Inside a group, a record pairs with a candidate when their captions are equal after
+/// <see cref="NormalizeTitle"/> <b>and</b> that caption occurs exactly once among the group's unresolved
+/// records and exactly once among its unresolved candidates. Deliberately <b>exact</b>: no prefix, fuzzy or
+/// similarity matching — approximate title matching is precisely what would put a chat window onto the image
+/// viewer's record. The pairing is <see cref="WindowAssignment.Confident"/> only when
+/// <see cref="MemoryEntryRef.AdoptionEligible"/> — see the freshness note below.</item>
+/// <item><b>1:1 leftover — confident <i>if the record is still fresh</i>.</b> If, after rule 3, exactly one
+/// unbound record and exactly one unclaimed candidate remain in the group, they must be each other. This is
+/// what keeps single-window apps working (Chrome's lone window whose caption follows the active tab, charmap,
+/// Notepad…), i.e. the original case adoption restore was built for.</item>
 /// <item><b>Everything else — bound, but NOT confident.</b> Leftover records (ordinal order) and leftover
 /// candidates (ascending handle) are still paired positionally, so records don't pile up and a
 /// long-lived-but-ambiguous app keeps a bounded number of slots. Such a pairing is reported with
@@ -72,8 +86,25 @@ public readonly record struct WindowAssignment(IntPtr Handle, int Id, bool Confi
 /// pair them.</item>
 /// </list>
 ///
+/// <para><b>Cross-session evidence expires (rules 3 and 4 only).</b> Rules 3–4 answer "<i>which</i> window is
+/// this", never "<i>is this the same appearance of it</i>". Adoption restore exists for the seconds-to-minutes
+/// gap in which an app comes back — a crash, a self-update, an installer, the apps starting up after a reboot.
+/// Left untimed, the very same rules turn into permanent position enforcement: a chat window whose caption is
+/// unique in its group is reshaped to a rectangle remembered <i>days</i> ago, every single time the user
+/// reopens that conversation, because the record never stopped being "the record for that caption". So the
+/// caller stamps each record with when its window went away and passes
+/// <see cref="MemoryEntryRef.AdoptionEligible"/>; past <see cref="LayoutMemory.AdoptionWindow"/> the pairing
+/// still happens (a claimed slot is what stops duplicate records piling up) but is no longer confident: the
+/// record follows the window and records where it is, and nothing is moved.</para>
+///
+/// <para><b>The HWND fast path is deliberately exempt.</b> Rule 1 is not cross-session re-identification at
+/// all: the handle is alive and is the same handle, so it is the same window, however long ago the record was
+/// written. Everything that keeps working through a long session — the display-change restore of windows that
+/// have been open all week — hangs off that exemption.</para>
+///
 /// <para><b>Invariants:</b> every handle is assigned at most once, every record at most once. The result is a
-/// function of the inputs only (no clock, no Win32, no ambient state).</para>
+/// function of the inputs only (no clock, no Win32, no ambient state — the freshness decision is made by the
+/// caller and arrives as a plain bool).</para>
 /// </summary>
 public static class WindowMatcher
 {
@@ -179,7 +210,9 @@ public static class WindowMatcher
                 if (usedHandles.Contains(win.Handle)) continue;              // defensive; can't happen here
                 usedHandles.Add(win.Handle);
                 usedIds.Add(rec.Id);
-                result.Add(new WindowAssignment(win.Handle, rec.Id, Confident: true));
+                // The caption says *which* window this is; AdoptionEligible says whether that is still worth
+                // acting on. A stale record binds (so it doesn't get duplicated) and is then merely tracked.
+                result.Add(new WindowAssignment(win.Handle, rec.Id, Confident: rec.AdoptionEligible));
             }
 
             var restRecords = new List<MemoryEntryRef>(records.Count);
@@ -191,12 +224,14 @@ public static class WindowMatcher
             if (restWindows.Count == 0) continue;
 
             // ---- Rule 4 (confident) vs. rule 5 (bind only) ----
-            // One record, one window, nothing else left in the group: they must be each other. Any other shape
-            // still pairs positionally — records by ordinal, windows by ascending handle, both total orders so
-            // the pairing is deterministic — but is flagged non-confident, i.e. bookkeeping that must not move
-            // a window. Unequal counts pair min(records, windows): surplus candidates are left untouched (we
-            // never invent a position) and surplus records stay unbound for a later round.
-            bool confident = restRecords.Count == 1 && restWindows.Count == 1;
+            // One record, one window, nothing else left in the group: they must be each other — and, as with
+            // rule 3, that only licenses a move while the record is still fresh (n == 1 here, so the single
+            // leftover record's flag is the one that decides). Any other shape still pairs positionally —
+            // records by ordinal, windows by ascending handle, both total orders so the pairing is
+            // deterministic — but is flagged non-confident, i.e. bookkeeping that must not move a window.
+            // Unequal counts pair min(records, windows): surplus candidates are left untouched (we never
+            // invent a position) and surplus records stay unbound for a later round.
+            bool confident = restRecords.Count == 1 && restWindows.Count == 1 && restRecords[0].AdoptionEligible;
 
             int n = Math.Min(restRecords.Count, restWindows.Count);
             for (int i = 0; i < n; i++)
