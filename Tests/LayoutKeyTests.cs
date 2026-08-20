@@ -151,4 +151,140 @@ public class LayoutKeyTests
         Assert.NotEqual("7680x2160@0,0*", LayoutKey.Compute(new[] { Mon(7680, 2160, 0, 0, primary: true, dpi: 144) }));
         Assert.NotEqual("7680x2160@0,0*", LayoutKey.Compute(new[] { Mon(7680, 2160, 0, 0, primary: true, dpi: 96) }));
     }
+
+    // ---- Transient (fallback) topologies ----
+    //
+    // The real-world episode: a 57" 7680x2160 panel fed from several inputs. Switching the TV back to the PC
+    // makes the panel drop off the bus for a few seconds; Windows has no EDID, brings the desktop up on the
+    // Basic Display path at 1024x768, squeezes every window into it, then the panel returns. Three such
+    // buckets (1024x768@0,0*, #96*, #120*) were found in the user's real window-layouts.json holding five to
+    // six mangled window records each.
+
+    [Fact]
+    public void Single_primary_fallback_display_at_the_origin_is_transient()
+    {
+        Assert.True(LayoutKey.IsTransient(new[] { Mon(1024, 768, 0, 0, primary: true) }));
+        Assert.True(LayoutKey.IsTransient(new[] { Mon(800, 600, 0, 0, primary: true) }));
+        // The scale factor Windows reports for the fallback varies (96 / 120 / 168 all seen); it is irrelevant.
+        Assert.True(LayoutKey.IsTransient(new[] { Mon(1024, 768, 0, 0, primary: true, dpi: 120) }));
+        Assert.True(LayoutKey.IsTransient(new[] { Mon(1024, 768, 0, 0, primary: true, dpi: 168) }));
+    }
+
+    [Fact]
+    public void A_fallback_sized_display_that_is_not_primary_or_not_at_the_origin_is_not_transient()
+    {
+        Assert.False(LayoutKey.IsTransient(new[] { Mon(1024, 768, 0, 0) }));            // not primary
+        Assert.False(LayoutKey.IsTransient(new[] { Mon(1024, 768, 100, 0, primary: true) }));
+        Assert.False(LayoutKey.IsTransient(new[] { Mon(1024, 768, 0, 200, primary: true) }));
+        Assert.False(LayoutKey.IsTransient(new[] { Mon(800, 600, -800, 0, primary: true) }));
+    }
+
+    [Fact]
+    public void A_second_monitor_means_a_real_configuration_however_small_the_first_is()
+    {
+        // THE "don't generalise" nail. A 1024x768 panel with company is somebody's small secondary screen /
+        // KVM preview, arranged on purpose — the fallback never has company, it exists because nothing else is
+        // there. Persisting must keep working for these.
+        Assert.False(LayoutKey.IsTransient(new[]
+        {
+            Mon(1024, 768, 0, 0, primary: true),
+            Mon(7680, 2160, 1024, 0, dpi: 168),
+        }));
+        Assert.False(LayoutKey.IsTransient(new[]
+        {
+            Mon(7680, 2160, 0, 0, primary: true, dpi: 168),   // real primary...
+            Mon(1024, 768, 7680, 0),                          // ...plus a small secondary
+        }));
+    }
+
+    [Fact]
+    public void Ordinary_and_streaming_resolutions_are_never_transient()
+    {
+        // Not "any small resolution": a streaming virtual display (Sunshine's VDD and friends) is routinely
+        // 1280x800 / 1920x1080 / 1920x1200 and is a first-class configuration whose layout must be remembered.
+        Assert.False(LayoutKey.IsTransient(new[] { Mon(1920, 1080, 0, 0, primary: true) }));
+        Assert.False(LayoutKey.IsTransient(new[] { Mon(1280, 800, 0, 0, primary: true) }));
+        Assert.False(LayoutKey.IsTransient(new[] { Mon(1920, 1200, 0, 0, primary: true) }));
+        Assert.False(LayoutKey.IsTransient(new[] { Mon(1024, 1024, 0, 0, primary: true) })); // right width, wrong height
+        Assert.False(LayoutKey.IsTransient(new[] { Mon(768, 1024, 0, 0, primary: true) }));  // rotated: not the fallback
+        Assert.False(LayoutKey.IsTransient(new[] { Mon(7680, 2160, 0, 0, primary: true, dpi: 168) }));
+    }
+
+    [Fact]
+    public void No_monitors_is_not_transient_it_is_the_none_sentinel()
+    {
+        // Empty is already handled everywhere by LayoutKey.None; conflating the two would hide it.
+        Assert.False(LayoutKey.IsTransient(null));
+        Assert.False(LayoutKey.IsTransient(new MonitorDesc[0]));
+    }
+
+    [Fact]
+    public void A_transient_topology_still_computes_an_ordinary_key()
+    {
+        // Compute stays total: the fallback hashes to a normal-looking key. It is never *used* — the engine
+        // and LayoutMemory refuse to act on it — but keeping one shape means IsTransientKey can recognise the
+        // buckets earlier builds already wrote.
+        Assert.Equal("1024x768@0,0#96*", LayoutKey.Compute(new[] { Mon(1024, 768, 0, 0, primary: true) }));
+        Assert.Equal("1024x768@0,0#120*", LayoutKey.Compute(new[] { Mon(1024, 768, 0, 0, primary: true, dpi: 120) }));
+    }
+
+    // ---- IsTransientKey: the same judgement from a key string ----
+
+    [Theory]
+    [InlineData("1024x768@0,0*")]        // pre-DPI shape, as found in the real file
+    [InlineData("1024x768@0,0#120*")]
+    [InlineData("1024x768@0,0#96*")]
+    [InlineData("1024x768@0,0#168*")]
+    [InlineData("800x600@0,0#96*")]
+    [InlineData("800x600@0,0*")]
+    public void Transient_keys_are_recognised_in_both_the_old_and_new_formats(string key)
+        => Assert.True(LayoutKey.IsTransientKey(key));
+
+    [Theory]
+    [InlineData("1024x768@0,0#96*|7680x2160@1024,0#168")] // a second monitor ⇒ a real configuration
+    [InlineData("7680x2160@0,0#168*")]                    // the real panel
+    [InlineData("1920x1080@0,0#96*")]
+    [InlineData("1024x768@100,0#96*")]                    // not at the origin
+    [InlineData("1024x768@0,-768#96*")]
+    [InlineData("1024x768@0,0#96")]                       // not the primary
+    [InlineData("1024x768@0,0")]
+    [InlineData("768x1024@0,0#96*")]                      // rotated: not the fallback mode
+    public void Non_transient_keys_are_left_alone(string key)
+        => Assert.False(LayoutKey.IsTransientKey(key));
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("none")]
+    [InlineData("*")]
+    [InlineData("desk")]
+    [InlineData("1024x768*")]
+    [InlineData("1024x768@*")]
+    [InlineData("1024x768@0*")]
+    [InlineData("1024x768@0,0#*")]
+    [InlineData("1024x768@0,0#9a6*")]
+    [InlineData("1024x768@ 0,0#96*")]
+    [InlineData("1024 x768@0,0#96*")]
+    [InlineData("1024x768@0,0#96#96*")]
+    [InlineData("99999999999999x768@0,0#96*")]
+    [InlineData("{\"not\":\"a key\"}*")]
+    public void Junk_key_strings_are_not_transient_and_never_throw(string? key)
+        => Assert.False(LayoutKey.IsTransientKey(key));
+
+    [Fact]
+    public void IsTransient_and_IsTransientKey_agree_on_what_Compute_produces()
+    {
+        // The two entry points must not drift: whatever the pure-topology test says, the key form must say too.
+        var cases = new[]
+        {
+            new[] { Mon(1024, 768, 0, 0, primary: true) },
+            new[] { Mon(800, 600, 0, 0, primary: true, dpi: 120) },
+            new[] { Mon(1920, 1080, 0, 0, primary: true) },
+            new[] { Mon(1024, 768, 0, 0, primary: true), Mon(7680, 2160, 1024, 0, dpi: 168) },
+            new[] { Mon(1024, 768, 100, 0, primary: true) },
+            new[] { Mon(1024, 768, 0, 0) },
+        };
+        foreach (var c in cases)
+            Assert.Equal(LayoutKey.IsTransient(c), LayoutKey.IsTransientKey(LayoutKey.Compute(c)));
+    }
 }

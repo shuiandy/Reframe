@@ -59,6 +59,14 @@ public static class LayoutKey
     ///
     /// <para>Tokens are sorted ordinally so the key is independent of enumeration order, then joined with
     /// <c>|</c>. <c>#</c> never occurred in a pre-DPI key, so an old bucket can never collide with a new one.</para>
+    ///
+    /// <para><b>Transient fallback topologies still get a key.</b> <see cref="IsTransient"/> configurations are
+    /// not special-cased here: the format is unconditional and a fallback topology hashes to an ordinary key
+    /// like <c>1024x768@0,0#96*</c>. The key is merely never <i>used</i> — <c>PersistenceEngine</c> refuses to
+    /// capture, restore or persist under it, and <c>LayoutMemory</c> refuses to create a bucket for it. Keeping
+    /// <c>Compute</c> total (never returning a sentinel for these) means the on-disk key format has exactly one
+    /// producer and one shape, and that <see cref="IsTransientKey"/> can recognise the garbage buckets earlier
+    /// builds already wrote.</para>
     /// </summary>
     public static string Compute(IReadOnlyList<MonitorDesc>? monitors)
     {
@@ -76,5 +84,127 @@ public static class LayoutKey
         }
         tokens.Sort(StringComparer.Ordinal);
         return string.Join("|", tokens);
+    }
+
+    // ---- Transient (fallback) topologies ------------------------------------------------------------
+
+    /// <summary>
+    /// Whether <paramref name="monitors"/> is Windows' <b>no-usable-display fallback</b> rather than a display
+    /// configuration a human could work on.
+    ///
+    /// <para><b>The failure this exists to stop.</b> A large TV/monitor driven from several inputs (console,
+    /// PC, streaming box) genuinely leaves the graphics adapter for a few seconds when the input is switched
+    /// back to the PC: the panel drops off the bus, Windows has no EDID to read, and the Basic Display path
+    /// brings the desktop up at 1024×768 on a single virtual primary at the origin — then the panel returns and
+    /// the real mode comes back. Every window on the desktop is squeezed into that 1024×768 box in the
+    /// meantime. To a key-based engine that is just another display configuration: the key changes, capture
+    /// freezes, the topology settles, and the periodic capture then faithfully records <i>the squeezed
+    /// geometry</i> into a 1024×768 bucket — and, on disk, forever. That bucket is pure garbage (three of them
+    /// were found in the wild, holding five to six mangled windows each) and the round trip is also what makes
+    /// windows come back "mysteriously resized" after switching the TV back to the PC.</para>
+    ///
+    /// <para><b>The test is deliberately narrow</b> — <i>single</i> display, one of the two classic fallback
+    /// modes, at the virtual-desktop origin, flagged primary. Every clause is load-bearing:</para>
+    /// <list type="bullet">
+    /// <item><b>Exactly one monitor.</b> A 1024×768 panel sitting <i>next to</i> a real one is somebody's small
+    /// secondary screen, KVM preview or capture monitor — a configuration they arranged on purpose and expect
+    /// to be remembered. The fallback never has company: it exists precisely because nothing else is there.</item>
+    /// <item><b>1024×768 or 800×600 only.</b> These are the two modes the Microsoft Basic Display Adapter comes
+    /// up in with no EDID (800×600 on older builds / early boot). <i>Not</i> "any small resolution": a virtual
+    /// display for streaming (Sunshine's VDD and friends) is routinely 1280×800, 1920×1080 or 1920×1200 and is
+    /// a first-class configuration whose layout must be remembered. Widening this to a size threshold would
+    /// silently stop persisting for those users, which is a worse bug than the one being fixed.</item>
+    /// <item><b>At (0,0) and primary.</b> A synthesised fallback desktop is always the origin and always
+    /// primary. Requiring both costs nothing and keeps a deliberately-positioned real 1024×768 screen out.</item>
+    /// </list>
+    ///
+    /// <para>False negatives are cheap here (the engine simply behaves as it did before, one garbage bucket),
+    /// false positives are expensive (a real configuration stops being remembered at all) — hence the bias.</para>
+    ///
+    /// <para>Pure: no Win32, no state, no clock. An empty/null list is <b>not</b> transient — that case is
+    /// already covered by <see cref="None"/>, which every consumer ignores separately.</para>
+    /// </summary>
+    public static bool IsTransient(IReadOnlyList<MonitorDesc>? monitors)
+    {
+        if (monitors is null || monitors.Count != 1) return false;
+        var m = monitors[0];
+        return m.IsPrimary && m.X == 0 && m.Y == 0 && IsFallbackSize(m.Width, m.Height);
+    }
+
+    /// <summary>
+    /// The same judgement made from a <i>key string</i> instead of live monitor descriptions — for buckets read
+    /// off disk, which is all we have for the garbage earlier builds already wrote.
+    ///
+    /// <para>Parses one <c>{W}x{H}@{X},{Y}[#dpi][*]</c> token and applies exactly the clauses of
+    /// <see cref="IsTransient"/>: a <c>|</c> anywhere means more than one monitor and is rejected outright, the
+    /// trailing <c>*</c> (primary) is required, the origin must be <c>0,0</c>, and the size must be one of the
+    /// two fallback modes. The <c>#dpi</c> segment is optional so <b>pre-DPI keys</b> (<c>1024x768@0,0*</c>,
+    /// written before that segment existed) are recognised too — the user's real file contains both shapes.</para>
+    ///
+    /// <para>Never throws: anything that isn't a well-formed single token — a sentinel, a hand-edited file, a
+    /// future format, plain junk — is simply "not transient", which leaves it to the normal aging rules.
+    /// Digits are matched by hand rather than via <c>int.TryParse</c> so no culture setting can change what a
+    /// key means.</para>
+    /// </summary>
+    public static bool IsTransientKey(string? key)
+    {
+        if (string.IsNullOrEmpty(key)) return false;
+
+        var s = key.AsSpan();
+        if (s.IndexOf('|') >= 0) return false;   // multi-monitor ⇒ a real configuration, whatever its sizes
+        if (s[^1] != '*') return false;          // the single display must be the primary
+        s = s[..^1];
+
+        // Optional "#dpi" tail. Its value is irrelevant to the judgement (the fallback is reported at 96, 120
+        // or 168 depending on what the user's scale was), but it must be well-formed to trust the rest.
+        int hash = s.IndexOf('#');
+        if (hash >= 0)
+        {
+            if (!TryParseInt(s[(hash + 1)..], out _)) return false;
+            s = s[..hash];
+        }
+
+        int at = s.IndexOf('@');
+        if (at < 0) return false;
+        var size = s[..at];
+        var origin = s[(at + 1)..];
+
+        int by = size.IndexOf('x');
+        if (by < 0) return false;
+        if (!TryParseInt(size[..by], out int w)) return false;
+        if (!TryParseInt(size[(by + 1)..], out int h)) return false;
+
+        int comma = origin.IndexOf(',');
+        if (comma < 0) return false;
+        if (!TryParseInt(origin[..comma], out int x)) return false;
+        if (!TryParseInt(origin[(comma + 1)..], out int y)) return false;
+
+        return x == 0 && y == 0 && IsFallbackSize(w, h);
+    }
+
+    /// <summary>
+    /// The two modes the Microsoft Basic Display Adapter synthesises when there is no EDID to read. Hard-coded
+    /// on purpose — see <see cref="IsTransient"/> on why this must not become a size threshold.
+    /// </summary>
+    private static bool IsFallbackSize(int width, int height)
+        => (width == 1024 && height == 768) || (width == 800 && height == 600);
+
+    /// <summary>Culture-free non-negative/negative integer parse over a key fragment; rejects empty and any non-digit.</summary>
+    private static bool TryParseInt(ReadOnlySpan<char> s, out int value)
+    {
+        value = 0;
+        if (s.Length == 0) return false;
+        bool negative = s[0] == '-';
+        if (negative) { s = s[1..]; if (s.Length == 0) return false; }
+
+        long acc = 0;
+        foreach (char c in s)
+        {
+            if (c < '0' || c > '9') return false;
+            acc = acc * 10 + (c - '0');
+            if (acc > int.MaxValue) return false;
+        }
+        value = (int)(negative ? -acc : acc);
+        return true;
     }
 }

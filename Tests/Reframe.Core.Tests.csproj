@@ -31,6 +31,9 @@
     <Compile Include="..\Core\WindowIdentity.cs" LinkBase="Linked" />
     <Compile Include="..\Core\WindowMatcher.cs" LinkBase="Linked" />
     <Compile Include="..\Core\LayoutStore.cs" LinkBase="Linked" />
+    <!-- PersistenceEngine 本身要 DisplayChangeListener/WindowOps,链不进来;它的两个分支判定
+         已抽成纯函数放在 PersistenceDecision.cs,单独链入即可测状态机决策。 -->
+    <Compile Include="..\Core\PersistenceDecision.cs" LinkBase="Linked" />
     <Compile Include="..\Core\HotkeyGesture.cs" LinkBase="Linked" />
     <Compile Include="..\Core\PlacementResolver.cs" LinkBase="Linked" />
     <Compile Include="..\Core\FullscreenDetector.cs" LinkBase="Linked" />

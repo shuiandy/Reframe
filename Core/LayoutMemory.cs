@@ -1,4 +1,4 @@
-namespace Reframe.Core;
+﻿namespace Reframe.Core;
 
 /// <summary>
 /// One window's remembered geometry under a given <see cref="LayoutKey"/>. Stores two rectangles, both in
@@ -175,6 +175,36 @@ public sealed class RememberedWindow
         Handle = IntPtr.Zero;
         UnboundAtUtc = loadedAtUtc;
     }
+
+    /// <summary>
+    /// Re-anchor this record as if the adoption clock had been <b>stopped</b> for the interval
+    /// <paramref name="episodeStartUtc"/>..<paramref name="episodeEndUtc"/>: the age it had when the interval
+    /// began is the age it has when the interval ends.
+    ///
+    /// <para><b>Why the clock must stop.</b> The interval in question is a transient fallback episode — the
+    /// desktop collapsed to Windows' no-display 1024x768 mode because a panel dropped off the bus. Nothing can
+    /// happen during it: the engine will not capture, will not restore, and will not even look for windows to
+    /// claim. Letting <see cref="LayoutMemory.AdoptionWindow"/> burn down through such an interval punishes a
+    /// record for time in which it had no chance to be adopted. The concrete failure: Reframe starts with the
+    /// login, the TV is still on the console's input, the layout file loads and anchors every record at that
+    /// instant, and the user switches back twenty minutes later — every record is stale, the reclaim binds them
+    /// all <i>without</i> confidence, nothing is moved, and the squeezed geometry then overwrites the good
+    /// bucket. With the clock stopped the records are as fresh as they were at login and go home.</para>
+    ///
+    /// <para>Only ever called for records that were <i>still fresh when the episode began</i> (see
+    /// <see cref="LayoutMemory.ShiftUnboundAnchors"/>), so a record that had already expired stays expired —
+    /// a chat window closed three days ago must not be resurrected by a monitor blink.</para>
+    ///
+    /// <para>Expressed as "age is preserved" rather than "add the duration" so the result can never land in the
+    /// future and cannot overflow. A clock that ran backwards (negative age) is treated as age zero.</para>
+    /// </summary>
+    public void PauseUnboundClock(DateTime episodeStartUtc, DateTime episodeEndUtc)
+    {
+        if (UnboundAtUtc is not { } since) return;
+        var ageAtStart = episodeStartUtc - since;
+        if (ageAtStart < TimeSpan.Zero) ageAtStart = TimeSpan.Zero;
+        UnboundAtUtc = episodeEndUtc - ageAtStart;
+    }
 }
 
 /// <summary>
@@ -241,8 +271,11 @@ public sealed class LayoutMemory
     /// <summary>
     /// Record the current geometry of the given windows under <paramref name="displayKey"/>. Existing entries
     /// for other windows in that bucket are left intact (a window momentarily absent — minimized, or skipped
-    /// because the engine owns it — keeps its remembered position for a later restore). The sentinel
-    /// <see cref="LayoutKey.None"/> (no monitors) is ignored so a mid-transition empty topology can't clobber a bucket.
+    /// because the engine owns it — keeps its remembered position for a later restore). Two keys are refused
+    /// outright: the sentinel <see cref="LayoutKey.None"/> (no monitors), so a mid-transition empty topology
+    /// can't clobber a bucket, and a transient fallback key (<see cref="LayoutKey.IsTransientKey"/> — the
+    /// 1024×768 desktop Windows synthesises while a display is momentarily gone), because every window
+    /// observed on it has been squeezed into that box and the bucket would be pure garbage.
     ///
     /// <para>Capture doubles as a re-claim pass: the observed windows are run through
     /// <see cref="WindowMatcher"/>, so a record left unbound by a restart (or loaded from disk) is adopted by
@@ -297,7 +330,13 @@ public sealed class LayoutMemory
     public IReadOnlyList<(IntPtr Handle, WindowRecord Target)> Capture(
         string displayKey, IReadOnlyList<CapturedWindow> windows, DateTime nowUtc, bool adoptGeometry = true)
     {
+        // Two keys are never written to. LayoutKey.None (no monitors) so a mid-transition empty topology can't
+        // clobber a bucket, and a transient fallback key (LayoutKey.IsTransientKey — Windows' no-display
+        // 1024x768/800x600 desktop) because every window observed on it has been squeezed into that box, so
+        // the "layout" would be garbage. PersistenceEngine already refuses to call us in that state; this is
+        // the second line of defence, right where the bucket would otherwise be created.
         if (string.IsNullOrEmpty(displayKey) || displayKey == LayoutKey.None) return Array.Empty<(IntPtr, WindowRecord)>();
+        if (LayoutKey.IsTransientKey(displayKey)) return Array.Empty<(IntPtr, WindowRecord)>();
         if (windows.Count == 0) return Array.Empty<(IntPtr, WindowRecord)>();
 
         if (!_byKey.TryGetValue(displayKey, out var bucket))
@@ -572,6 +611,10 @@ public sealed class LayoutMemory
 
         foreach (var (key, bucket) in _byKey)
         {
+            // No special case for transient fallback buckets: this ordinary aging *is* how they go away. Their
+            // records arrive unbound from disk and can never be refreshed (Capture refuses the key) or bound
+            // (nothing ever restores under it), so every one of them ages out below, and the bucket then falls
+            // off the empty-key sweep at the end of the loop. See LayoutKey.IsTransientKey.
             if (maxAge > TimeSpan.Zero)
             {
                 int removed = bucket.RemoveAll(e => e.Handle == IntPtr.Zero && nowUtc - e.LastSeenUtc > maxAge);
@@ -596,6 +639,37 @@ public sealed class LayoutMemory
         if (emptyKeys != null)
             foreach (var k in emptyKeys) _byKey.Remove(k);
         return dropped;
+    }
+
+    /// <summary>
+    /// Stop the adoption clock for the interval <paramref name="episodeStartUtc"/>..<paramref name="episodeEndUtc"/>,
+    /// during which a transient fallback topology made adoption impossible. Every <b>unbound</b> record that was
+    /// still adoption-eligible when the interval began keeps the age it had then; everything else is untouched.
+    /// Returns how many records were re-anchored.
+    ///
+    /// <para>The eligibility test is taken at <paramref name="episodeStartUtc"/> on purpose. It is the last
+    /// moment at which the record's freshness was a fact about the world rather than an artefact of the
+    /// blackout — so records that were already stale stay stale (no resurrection), and records that were fresh
+    /// are not punished for a blackout they could not act during. See
+    /// <see cref="RememberedWindow.PauseUnboundClock"/> for the failure this exists to stop.</para>
+    ///
+    /// <para>Bound records are skipped: they have no anchor (the clock only runs while a record has no window),
+    /// and the HWND fast path that claims them is confident regardless of age.</para>
+    /// </summary>
+    public int ShiftUnboundAnchors(DateTime episodeStartUtc, DateTime episodeEndUtc)
+    {
+        if (episodeEndUtc <= episodeStartUtc) return 0;
+
+        int shifted = 0;
+        foreach (var bucket in _byKey.Values)
+            foreach (var e in bucket)
+            {
+                if (e.Handle != IntPtr.Zero) continue;                 // bound: no clock to stop
+                if (!e.IsAdoptionEligible(episodeStartUtc)) continue;  // already stale before the blackout began
+                e.PauseUnboundClock(episodeStartUtc, episodeEndUtc);
+                shifted++;
+            }
+        return shifted;
     }
 
     // ---- Disk round-trip ----
@@ -666,6 +740,12 @@ public sealed class LayoutMemory
         {
             string key = layout.DisplayKey ?? "";
             if (string.IsNullOrEmpty(key) || key == LayoutKey.None) continue;
+            // Transient fallback buckets (LayoutKey.IsTransientKey) are deliberately NOT dropped here. They are
+            // almost always garbage written while a panel was off the bus — but "almost always" is not a licence
+            // to destroy data on sight: someone genuinely running a single 1024x768 primary (a kiosk, a VM
+            // console) would have their whole memory deleted the first time this build started. Capture refuses
+            // to write such a key, so the bucket can never be refreshed, its LastSeenUtc stops advancing, and
+            // Trim's ordinary 30-day aging removes it. Slower than a purge, and it cannot hurt anyone.
             if (layout.Windows == null || layout.Windows.Count == 0) continue;
 
             if (!_byKey.TryGetValue(key, out var bucket))

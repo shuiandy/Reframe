@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using Reframe.Interop;
 
@@ -65,6 +65,19 @@ public sealed class PersistenceEngine : IDisposable
     /// </summary>
     private const int SaveDebounceMs = 30_000;
 
+    /// <summary>
+    /// How long the settle path keeps waiting while the desktop sits in a transient fallback mode
+    /// (<see cref="LayoutKey.IsTransient"/>), before giving up and returning to Idle.
+    ///
+    /// <para>The episode this covers — a TV/monitor switched away from the PC and back — lasts a few seconds,
+    /// so ~10 s of patience covers it comfortably while keeping the freeze bounded (a permanently frozen engine
+    /// would be a worse failure than the one being fixed). Giving up is safe rather than merely tolerable:
+    /// <see cref="OnCapture"/> refuses to capture under a transient topology regardless of state, and the
+    /// "a fallback episode happened" flag survives, so the eventual return still triggers a restore.</para>
+    /// </summary>
+    private const int TransientRetryMs = 500;
+    private const int MaxTransientSettleRetries = 20;
+
     // ---- Injected collaborators (keep Core free of a Services dependency) ----
     private readonly Func<IReadOnlyList<MonitorDesc>> _getMonitors;
     private readonly Func<ISet<IntPtr>> _getEngineOwned;
@@ -91,6 +104,31 @@ public sealed class PersistenceEngine : IDisposable
     private string _currentKey = LayoutKey.None;
     private bool _dirty;                              // memory changed since the last successful write
     private DateTime _lastSaveUtc = DateTime.MinValue;
+
+    /// <summary>
+    /// A transient fallback topology has been observed since the last completed settle — i.e. the desktop went
+    /// through a "monitor briefly gone, everything squeezed into 1024×768" episode.
+    ///
+    /// <para>This is what makes the <b>same-key return</b> restorable. The panel leaves and comes back to the
+    /// very configuration it left, so <c>liveKey == _currentKey</c> and the ordinary "did the topology change?"
+    /// test would conclude nothing happened — while every window on screen has in fact been mangled by the
+    /// fallback. A fallback episode therefore counts as a topology change for the purpose of deciding to
+    /// restore. Cleared by the settle that acts on it.</para>
+    /// </summary>
+    private bool _sawTransient;
+
+    /// <summary>Log de-duplication: the "paused" notice has already been emitted for the fallback episode currently in progress.</summary>
+    private bool _inTransientEpisode;
+
+    /// <summary>
+    /// When the fallback episode currently in progress was first observed. Only meaningful while
+    /// <see cref="_inTransientEpisode"/> is set; it is the start of the interval for which the adoption clock
+    /// is stopped on the way out (see <see cref="LayoutMemory.ShiftUnboundAnchors"/>).
+    /// </summary>
+    private DateTime _transientStartedUtc;
+
+    /// <summary>How many settle rounds have already been spent waiting for a fallback episode to end (see <see cref="MaxTransientSettleRetries"/>).</summary>
+    private int _transientWaits;
     /// <summary>Set once the startup load has run. Guards Stop() from writing an empty file over a good one if the worker never got that far.</summary>
     private volatile bool _diskLoaded;
 
@@ -179,7 +217,12 @@ public sealed class PersistenceEngine : IDisposable
         try
         {
             // Establish the baseline key so the first periodic capture doesn't read a phantom topology change.
-            _currentKey = ComputeKey();
+            // Starting up *inside* a fallback episode (a reboot with the TV on another input) must not make
+            // 1024x768 the baseline: leave the key at None and remember the episode, so the real topology
+            // arriving a moment later reads as a change and takes the normal restore path.
+            var boot = Probe();
+            if (boot.Transient) NoteTransient();
+            else _currentKey = boot.Key;
 
             // Load the remembered layouts before draining the mailbox. Done here rather than in Start() so the
             // memory stays owned by this one thread (Start() runs on the UI thread), and so a slow/failed disk
@@ -199,7 +242,17 @@ public sealed class PersistenceEngine : IDisposable
     {
         switch (m)
         {
-            case Msg.DisplayChanged: if (_isEnabled()) EnterFreeze(); break;
+            case Msg.DisplayChanged:
+                // Look at the topology *now*, before freezing: this message is delivered because the mode just
+                // changed, so it is the one moment guaranteed to catch a fallback that is actually on screen.
+                // See PersistenceDecision.ForDisplayChanged for why freezing alone is not enough.
+                if (_isEnabled())
+                {
+                    if (PersistenceDecision.ForDisplayChanged(enabled: true, Probe().Transient)
+                        == DisplayChangedDecision.NoteTransientThenFreeze) NoteTransient();
+                    EnterFreeze();
+                }
+                break;
             case Msg.Capture:
                 try { OnCapture(); }
                 finally { _captureTimer?.Change(CurrentIntervalMs(), Timeout.Infinite); } // re-arm with the current interval
@@ -229,9 +282,21 @@ public sealed class PersistenceEngine : IDisposable
     private void OnCaptureNow()
     {
         if (!_isEnabled()) return;
-        string key = ComputeKey();
+        var live = Probe();
+        if (live.Transient)
+        {
+            // Nothing here is worth remembering: every window has been squeezed into the fallback desktop.
+            NoteTransient(); // also starts the episode clock, so a manual click can't be the observation that misses it
+            Log?.Invoke("Capture now ignored: the display is in a transient fallback mode (1024x768)");
+            return;
+        }
+        NoteTransientEnded();
+        string key = live.Key;
         if (key == LayoutKey.None) return;
         _currentKey = key;
+        // The user has just declared the current geometry to be the truth, which discharges any restore a
+        // fallback episode had left owing — otherwise the next tick would freeze and re-restore over it.
+        _sawTransient = false;
         _memory.PruneDead(NativeMethods.IsWindow);
         var snap = CaptureEligibleWindows();
         if (snap.Count > 0) { _memory.Capture(key, snap, adoptGeometry: false); _dirty = true; }
@@ -243,8 +308,19 @@ public sealed class PersistenceEngine : IDisposable
     private void OnRestoreNow()
     {
         if (!_isEnabled()) return;
-        string key = ComputeKey();
+        var live = Probe();
+        if (live.Transient)
+        {
+            // Applying the real layout onto a 1024x768 fallback desktop just gets it re-squeezed; wait for the
+            // panel to come back (which restores on its own via the settle path).
+            NoteTransient();
+            Log?.Invoke("Restore now ignored: the display is in a transient fallback mode (1024x768)");
+            return;
+        }
+        NoteTransientEnded();
+        string key = live.Key;
         _currentKey = key;
+        _sawTransient = false; // doing the restore by hand discharges the one a fallback episode had left owing
         if (!_memory.HasSnapshot(key)) { Log?.Invoke("No remembered layout for the current display"); return; }
         _state = State.Restoring;
         int n = DoRestore(key);
@@ -255,16 +331,32 @@ public sealed class PersistenceEngine : IDisposable
 
     private void OnCapture()
     {
-        if (!_isEnabled()) return;
-        if (_state != State.Idle) return; // frozen / restoring / settling: never capture (the core invariant)
+        // Cheap guards first: don't pay for a monitor enumeration on every tick while persistence is off or
+        // the engine is frozen / restoring / settling (never capture then — the core invariant).
+        bool enabled = _isEnabled(), idle = _state == State.Idle;
+        var live = (enabled && idle) ? Probe() : Topology.Unknown;
 
-        string liveKey = ComputeKey();
-        if (liveKey != _currentKey)
+        var decision = PersistenceDecision.ForCapture(enabled, idle, live.Transient, _sawTransient,
+                                                      live.Key, _currentKey);
+        if (decision == CaptureDecision.Skip) return;
+
+        if (decision == CaptureDecision.PauseTransient)
         {
-            // The topology changed and we noticed via capture — either no WM_DISPLAYCHANGE arrived, or a
-            // window event raced ahead of it. Freeze now and let the settle path restore; do NOT capture
-            // (that would write the half-scrambled layout over the good snapshot). Closes the
-            // "WinEvent-before-display-message" race.
+            // Windows' no-display fallback. Not a configuration anyone works on: do not capture (the windows
+            // sitting on it are mangled), and above all do not move _currentKey onto it — that key is the
+            // anchor for recognising the panel's return.
+            NoteTransient();
+            return;
+        }
+
+        NoteTransientEnded();
+
+        if (decision == CaptureDecision.Freeze)
+        {
+            // Either the topology changed and we noticed via capture (no WM_DISPLAYCHANGE arrived, or a window
+            // event raced ahead of it), or a fallback episode just ended. Freeze now and let the settle path
+            // restore; do NOT capture (that would write the half-scrambled layout over the good snapshot).
+            // Closes the "WinEvent-before-display-message" race.
             EnterFreeze();
             return;
         }
@@ -310,26 +402,65 @@ public sealed class PersistenceEngine : IDisposable
 
     private void OnSettle()
     {
-        if (_state != State.Frozen) return; // superseded by a later transition
+        bool frozen = _state == State.Frozen, enabled = _isEnabled();
+        // Probe before the engine-busy check, not after: a RetryBusy that skipped the probe would blind us for
+        // the whole time the borderless engine is mid-tick, which is exactly when a display blackout is likely
+        // to be in progress. Observing costs one monitor enumeration; missing the episode costs the layout.
+        var live = frozen && enabled ? Probe() : Topology.Unknown;
+        if (live.Transient) NoteTransient();
+        bool busy = frozen && enabled && _isEngineBusy();
+        bool keyChanged = live.Key != _currentKey;
 
-        // Disabled mid-freeze (user turned persistence off after the display changed): abort without restoring.
-        if (!_isEnabled()) { _state = State.Idle; return; }
-
-        // If the borderless engine is mid-tick (it also reacts to the display change), let it finish first so
-        // we don't race its re-placement of game windows; retry shortly.
-        if (_isEngineBusy()) { _settleTimer?.Change(EngineBusyRetryMs, Timeout.Infinite); return; }
-
-        string newKey = ComputeKey();
-        bool topologyChanged = newKey != _currentKey;
-        _currentKey = newKey;
-
-        // Only restore when the configuration actually changed AND we have a remembered layout for it. A
-        // spurious / same-key WM_DISPLAYCHANGE must not pull windows back over the user's recent moves.
-        if (topologyChanged && _memory.HasSnapshot(newKey))
+        var decision = PersistenceDecision.ForSettle(frozen, enabled, busy, live.Transient,
+                                                    _transientWaits < MaxTransientSettleRetries,
+                                                    _sawTransient, keyChanged, _memory.HasSnapshot(live.Key));
+        switch (decision)
         {
+            case SettleDecision.Ignore:
+                return; // superseded by a later transition
+
+            case SettleDecision.Abort:
+                // Disabled mid-freeze (user turned persistence off after the display changed): no restore.
+                _state = State.Idle;
+                return;
+
+            case SettleDecision.RetryBusy:
+                // The borderless engine is mid-tick (it also reacts to the display change); let it finish so we
+                // don't race its re-placement of game windows.
+                _settleTimer?.Change(EngineBusyRetryMs, Timeout.Infinite);
+                return;
+
+            case SettleDecision.WaitTransient:
+                // Settling *on* the fallback would be the bug: restoring into a 1024x768 desktop just gets the
+                // layout re-squeezed, and adopting its key would throw away the anchor we need to recognise the
+                // panel's return. Stay frozen and look again — _currentKey is untouched.
+                _transientWaits++;
+                _settleTimer?.Change(TransientRetryMs, Timeout.Infinite);
+                return;
+
+            case SettleDecision.StopWaitingTransient:
+                // Out of patience. Idle is safe here: OnCapture still refuses to capture while the topology is
+                // transient, and _sawTransient still forces the restore whenever the real topology returns.
+                _transientWaits = 0;
+                _state = State.Idle;
+                return;
+        }
+
+        // A real topology: this is the one the engine may act on and adopt.
+        NoteTransientEnded();
+        _transientWaits = 0;
+        _sawTransient = false;
+        _currentKey = live.Key;
+
+        if (decision == SettleDecision.Restore)
+        {
+            // Restore when the configuration actually changed, or when the desktop just came back from a
+            // fallback episode (same key, but every window was squeezed while the panel was away) — and we
+            // have a remembered layout for it. A spurious same-key WM_DISPLAYCHANGE with no episode behind it
+            // must not pull windows back over the user's recent moves; that falls through to Idle below.
             _state = State.Restoring;
-            int restored = DoRestore(newKey);
-            Log?.Invoke($"Restored {restored} window(s) for display {newKey}");
+            int restored = DoRestore(live.Key);
+            Log?.Invoke($"Restored {restored} window(s) for display {live.Key}");
             _state = State.Settling;
             _graceTimer?.Change(GraceMs, Timeout.Infinite); // absorb late scrambling, then resume capture
         }
@@ -417,7 +548,63 @@ public sealed class PersistenceEngine : IDisposable
                Math.Abs(r.Right - t.Right) <= tol && Math.Abs(r.Bottom - t.Bottom) <= tol;
     }
 
-    private string ComputeKey() => LayoutKey.Compute(_getMonitors());
+    /// <summary>One look at the live display topology: its DisplayKey plus whether it is a transient fallback.</summary>
+    private readonly record struct Topology(string Key, bool Transient)
+    {
+        /// <summary>Placeholder for the paths that short-circuit before probing (a cheaper guard fired first): behaves as "no monitors".</summary>
+        public static readonly Topology Unknown = new(LayoutKey.None, false);
+    }
+
+    /// <summary>
+    /// Enumerate the monitors <b>once</b> and derive both facts the state machine needs from that single
+    /// snapshot. Separate <c>Compute</c> / <c>IsTransient</c> calls would each re-enumerate and could disagree
+    /// with each other mid-transition — exactly the moment this feature is about.
+    /// </summary>
+    private Topology Probe()
+    {
+        var monitors = _getMonitors();
+        return new Topology(LayoutKey.Compute(monitors), LayoutKey.IsTransient(monitors));
+    }
+
+    /// <summary>
+    /// Record that the live topology is Windows' fallback mode: flag the owed restore, start the episode clock
+    /// on the first observation, and say so in the log <b>once per episode</b>. Capture ticks every ~2 s, the
+    /// settle path re-checks twice a second, and every display-change message probes too, so an unconditional
+    /// log would bury the dashboard in identical lines for the whole episode.
+    /// </summary>
+    private void NoteTransient()
+    {
+        _sawTransient = true;
+        if (_inTransientEpisode) return;
+        _inTransientEpisode = true;
+        _transientStartedUtc = DateTime.UtcNow;
+        Log?.Invoke("Display is in a transient fallback mode (1024x768); capture/restore paused");
+    }
+
+    /// <summary>
+    /// Counterpart of <see cref="NoteTransient"/>, called from every path that has just observed a real
+    /// topology: closes the episode, logs one "resumed" line, and — the part that matters — <b>hands the
+    /// blacked-out interval back to the adoption clock</b>.
+    ///
+    /// <para>Nothing could be adopted while the desktop was in the fallback (no capture, no restore, no
+    /// reclaim), so counting that interval against <see cref="LayoutMemory.AdoptionWindow"/> would expire
+    /// records for time in which they had no chance. The failure it produces is silent and total: Reframe
+    /// starts with the login while the TV is on the console's input, the layout file anchors every record at
+    /// that instant, the user switches back twenty minutes later, and every record is now stale — so the
+    /// reclaim binds them all without confidence, not one window is moved, and the squeezed geometry
+    /// overwrites the good bucket as soon as the grace period ends. Called before any restore or capture runs
+    /// on the returning topology, which is what makes the reclaim that follows see fresh records.</para>
+    /// </summary>
+    private void NoteTransientEnded()
+    {
+        if (!_inTransientEpisode) return;
+        _inTransientEpisode = false;
+
+        int refreshed = _memory.ShiftUnboundAnchors(_transientStartedUtc, DateTime.UtcNow);
+        Log?.Invoke(refreshed > 0
+            ? $"Display left the transient fallback mode; capture/restore resumed ({refreshed} record(s) kept adoptable)"
+            : "Display left the transient fallback mode; capture/restore resumed");
+    }
 
     // ---- Window eligibility (shared by capture and restore) ----
 

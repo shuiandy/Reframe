@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -238,6 +238,113 @@ public class LayoutStoreTests : IDisposable
         var after = new LayoutMemory();
         after.ImportFromDisk(LayoutStore.Load(File_));
         Assert.Equal(new[] { live175 }, after.Keys);
+    }
+
+    [Fact]
+    public void Transient_fallback_buckets_survive_the_load_but_can_never_be_refreshed_and_age_out()
+    {
+        // Reproduces the user's real window-layouts.json: three buckets recorded while the 57" panel had
+        // dropped off the bus and Windows was showing the Basic Display 1024x768 desktop, each holding windows
+        // squeezed into that box, alongside the one real bucket.
+        //
+        // We deliberately do NOT delete them on sight. They are almost certainly garbage, but "almost
+        // certainly" is not a licence to destroy data: someone genuinely running a single 1024x768 primary (a
+        // kiosk, a VM console) would lose their entire memory the first time this build started. Instead the
+        // behavioural gates stop them doing harm (never captured into, never restored from) and ordinary
+        // 30-day aging removes them.
+        Directory.CreateDirectory(_dir);
+        File.WriteAllText(File_, """
+        {
+          "Version": 1,
+          "Layouts": [
+            {
+              "DisplayKey": "1024x768@0,0*",
+              "Windows": [
+                { "Process": "potplayermini64", "Class": "potplayer64", "Ordinal": 0, "Title": "PotPlayer",
+                  "Left": 0, "Top": 0, "Right": 1024, "Bottom": 768,
+                  "NormLeft": 0, "NormTop": 0, "NormRight": 1024, "NormBottom": 768,
+                  "ShowCmd": 1, "LastSeenUtc": "2026-07-20T10:30:00Z" }
+              ]
+            },
+            {
+              "DisplayKey": "1024x768@0,0#96*",
+              "Windows": [
+                { "Process": "qq", "Class": "chrome_widgetwin_1", "Ordinal": 0, "Title": "QQ",
+                  "Left": 8, "Top": 8, "Right": 508, "Bottom": 608,
+                  "NormLeft": 8, "NormTop": 8, "NormRight": 508, "NormBottom": 608,
+                  "ShowCmd": 1, "LastSeenUtc": "2026-07-20T10:30:00Z" }
+              ]
+            },
+            {
+              "DisplayKey": "1024x768@0,0#120*",
+              "Windows": [
+                { "Process": "explorer", "Class": "cabinetwclass", "Ordinal": 0, "Title": "Downloads",
+                  "Left": 0, "Top": 0, "Right": 700, "Bottom": 500,
+                  "NormLeft": 0, "NormTop": 0, "NormRight": 700, "NormBottom": 500,
+                  "ShowCmd": 1, "LastSeenUtc": "2026-07-20T10:30:00Z" }
+              ]
+            },
+            {
+              "DisplayKey": "7680x2160@0,0#168*",
+              "Windows": [
+                { "Process": "potplayermini64", "Class": "potplayer64", "Ordinal": 0, "Title": "PotPlayer",
+                  "Left": 4000, "Top": 100, "Right": 7600, "Bottom": 2100,
+                  "NormLeft": 4000, "NormTop": 100, "NormRight": 7600, "NormBottom": 2100,
+                  "ShowCmd": 1, "LastSeenUtc": "2026-07-20T10:30:00Z" }
+              ]
+            }
+          ]
+        }
+        """);
+
+        var mem = new LayoutMemory();
+        mem.ImportFromDisk(LayoutStore.Load(File_), T0);
+
+        // 1. Nothing is destroyed at load time. All four buckets are there, the real one byte-for-byte.
+        Assert.Equal(4, mem.Keys.Count);
+        Assert.Equal(4000, mem.EntriesFor("7680x2160@0,0#168*")[0].Record.Left);
+
+        // 2. But a capture running while the desktop is in the fallback cannot refresh them — which is what
+        //    makes the aging below inevitable rather than merely likely.
+        string fallbackKey = LayoutKey.Compute(new[]
+        {
+            new MonitorDesc("\\\\.\\DISPLAY1", true, 0, 0, 1024, 768, 0, 0, 1024, 768, 120)
+        });
+        Assert.Equal("1024x768@0,0#120*", fallbackKey);
+        mem.Capture(fallbackKey, new[] { Win(0x100, "explorer", "cabinetwclass", "Downloads", 0, 0) }, T0.AddDays(1));
+        Assert.Equal(1, mem.CountFor(fallbackKey));                                   // no new record piled on
+        Assert.Equal(T0, mem.EntriesFor(fallbackKey)[0].LastSeenUtc);                 // and the clock did not advance
+
+        // 3. So ordinary 30-day aging clears every one of them, and the real bucket with them only if it too
+        //    has gone unseen that long — this is aging, not a purge of fallback-shaped keys.
+        int dropped = mem.Trim(LayoutMemory.DefaultMaxPerKey, LayoutMemory.DefaultMaxAge, T0.AddDays(31));
+        Assert.Equal(4, dropped);
+        Assert.Empty(mem.Keys);
+    }
+
+    [Fact]
+    public void A_transient_bucket_ages_out_while_a_live_real_bucket_stays()
+    {
+        // The half of the aging story that matters: the garbage goes, the configuration in daily use does not.
+        var mem = new LayoutMemory();
+        mem.ImportFromDisk(new LayoutFile
+        {
+            Layouts = new List<PersistedLayout>
+            {
+                new() { DisplayKey = "1024x768@0,0#96*", Windows = { new PersistedWindow { Process = "qq", LastSeenUtc = T0 } } },
+                new() { DisplayKey = "7680x2160@0,0#168*", Windows = { new PersistedWindow { Process = "qq", LastSeenUtc = T0 } } },
+            }
+        }, T0);
+
+        // The real display is in use, so its records keep being refreshed...
+        mem.Capture("7680x2160@0,0#168*", new[] { Win(0x100, "qq", "chrome_widgetwin_1", "QQ", 10, 20) }, T0.AddDays(29));
+        // ...while the fallback bucket cannot be (Capture refuses the key).
+        mem.Capture("1024x768@0,0#96*", new[] { Win(0x200, "qq", "chrome_widgetwin_1", "QQ", 0, 0) }, T0.AddDays(29));
+
+        mem.Trim(LayoutMemory.DefaultMaxPerKey, LayoutMemory.DefaultMaxAge, T0.AddDays(31));
+
+        Assert.False(mem.HasSnapshot("1024x768@0,0#96*"));
+        Assert.True(mem.HasSnapshot("7680x2160@0,0#168*"));
     }
 
     [Fact]
