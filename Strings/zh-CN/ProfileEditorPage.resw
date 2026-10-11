@@ -340,4 +340,8 @@
   <data name="UnnamedZone" xml:space="preserve">
     <value>未命名分区</value>
   </data>
+  <!-- UI redesign -->
+  <data name="MonitorPickPlaceholder" xml:space="preserve">
+    <value>选择一台显示器</value>
+  </data>
 </root>

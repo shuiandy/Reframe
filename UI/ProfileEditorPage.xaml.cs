@@ -444,7 +444,12 @@ public sealed partial class ProfileEditorPage : Page
             if (!double.IsNaN(a.NewValue)) rule.Monitor.Height = (int)a.NewValue;
         };
 
-        var pickBox = new ComboBox { Header = Loc.T("ProfileEditorPage/MonitorPickHeader"), MinWidth = 220 };
+        var pickBox = new ComboBox
+        {
+            Header = Loc.T("ProfileEditorPage/MonitorPickHeader"),
+            PlaceholderText = Loc.T("ProfileEditorPage/MonitorPickPlaceholder"),
+            MinWidth = 220,
+        };
         PopulateMonitorPicker(pickBox);
         pickBox.SelectionChanged += (s, a) =>
         {

@@ -227,6 +227,6 @@
     <value>每个配置文件对应一个游戏或程序,按当前显示器自动套用无边框和位置规则。</value>
   </data>
   <data name="RunningWindowsHint.Text" xml:space="preserve">
-    <value>点 + 据窗口创建配置文件,右键可立即去边框或忽略该进程。</value>
+    <value>点 + 根据窗口创建配置文件,右键可立即去边框或忽略该进程。</value>
   </data>
 </root>

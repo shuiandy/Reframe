@@ -23,8 +23,8 @@
              running windows (the source to create profiles from) sit on the right as a picker. -->
         <Grid Grid.Row="1" ColumnSpacing="16">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="3*"/>
-                <ColumnDefinition Width="2*"/>
+                <ColumnDefinition Width="*" MinWidth="320"/>
+                <ColumnDefinition Width="*" MinWidth="320"/>
             </Grid.ColumnDefinitions>
 
             <!-- ===== Right card: running windows ===== -->
@@ -193,12 +193,8 @@
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <!-- Header row: section title at left, actions at right (same line, so the list starts higher) -->
-                <Grid ColumnSpacing="8" Margin="0,0,8,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
+                <!-- Header: section title, then the actions on their own line (sharing one line squeezed the title) -->
+                <StackPanel Margin="0,6,8,0">
                     <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                         <FontIcon Glyph="&#xE7FC;" FontSize="16"
                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
@@ -206,9 +202,9 @@
                                    Style="{ThemeResource BodyStrongTextBlockStyle}"/>
                     </StackPanel>
 
-                <CommandBar Grid.Column="1" DefaultLabelPosition="Right"
-                            Background="Transparent" HorizontalAlignment="Right"
-                            VerticalAlignment="Center"
+                <CommandBar DefaultLabelPosition="Right"
+                            Background="Transparent" HorizontalAlignment="Left"
+                            Margin="-8,0,0,0"
                             IsOpen="False">
                     <AppBarButton x:Name="NewButton" x:Uid="/ProfilesPage/NewButton" Icon="Add" Click="NewButton_Click"/>
                     <AppBarButton x:Name="EditButton" x:Uid="/ProfilesPage/EditButton" Icon="Edit"
@@ -216,7 +212,7 @@
                     <AppBarButton x:Name="DeleteButton" x:Uid="/ProfilesPage/DeleteButton" Icon="Delete"
                                   Click="DeleteButton_Click" IsEnabled="False"/>
                 </CommandBar>
-                </Grid>
+                </StackPanel>
 
                 <ListView x:Name="ProfileList" Grid.Row="1"
                           SelectionMode="Single"

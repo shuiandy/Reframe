@@ -33,33 +33,45 @@
         <!-- Toolbar card: properties on the first line, presets on the second, separated by a divider -->
         <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}">
         <StackPanel Orientation="Vertical" Spacing="12">
-            <StackPanel Orientation="Horizontal" Spacing="12">
-                <StackPanel Orientation="Vertical" Spacing="2">
+            <!-- Name and reference monitor take the free width; W/H are fixed narrow columns.
+                 (A horizontal StackPanel clipped W/H off the card on narrow windows.) -->
+            <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" MinWidth="140"/>
+                    <ColumnDefinition Width="*" MinWidth="160"/>
+                    <ColumnDefinition Width="110"/>
+                    <ColumnDefinition Width="110"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Spacing="2">
                     <TextBlock x:Uid="/LayoutEditorPage/NameLabel" Style="{ThemeResource CaptionTextBlockStyle}"/>
-                    <TextBox x:Name="NameBox" Width="220" TextChanged="NameBox_TextChanged"/>
+                    <TextBox x:Name="NameBox" HorizontalAlignment="Stretch" TextChanged="NameBox_TextChanged"/>
                 </StackPanel>
-                <StackPanel Orientation="Vertical" Spacing="2">
+                <StackPanel Grid.Column="1" Spacing="2">
                     <TextBlock x:Uid="/LayoutEditorPage/RefResLabel" Style="{ThemeResource CaptionTextBlockStyle}"/>
-                    <ComboBox x:Name="MonitorCombo" Width="240"
+                    <ComboBox x:Name="MonitorCombo" HorizontalAlignment="Stretch"
                               x:Uid="/LayoutEditorPage/MonitorCombo"
                               SelectionChanged="MonitorCombo_SelectionChanged"/>
                 </StackPanel>
-                <StackPanel Orientation="Vertical" Spacing="2">
+                <StackPanel Grid.Column="2" Spacing="2">
                     <TextBlock x:Uid="/LayoutEditorPage/WidthLabel" Style="{ThemeResource CaptionTextBlockStyle}"/>
-                    <NumberBox x:Name="RefWidthBox" Width="110"
+                    <NumberBox x:Name="RefWidthBox"
                                SpinButtonPlacementMode="Compact" Minimum="1" Maximum="61440"
                                ValueChanged="RefSize_ValueChanged"/>
                 </StackPanel>
-                <StackPanel Orientation="Vertical" Spacing="2">
+                <StackPanel Grid.Column="3" Spacing="2">
                     <TextBlock x:Uid="/LayoutEditorPage/HeightLabel" Style="{ThemeResource CaptionTextBlockStyle}"/>
-                    <NumberBox x:Name="RefHeightBox" Width="110"
+                    <NumberBox x:Name="RefHeightBox"
                                SpinButtonPlacementMode="Compact" Minimum="1" Maximum="34560"
                                ValueChanged="RefSize_ValueChanged"/>
                 </StackPanel>
-            </StackPanel>
+            </Grid>
 
             <Border Style="{StaticResource CardDividerStyle}"/>
 
+            <!-- Presets scroll sideways instead of being cut off when the window is narrow -->
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" HorizontalScrollMode="Auto"
+                          VerticalScrollBarVisibility="Disabled" VerticalScrollMode="Disabled"
+                          Padding="0,0,0,4">
             <StackPanel Orientation="Horizontal" Spacing="8">
                 <FontIcon Glyph="&#xE80A;" FontSize="14" VerticalAlignment="Center"
                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
@@ -82,6 +94,7 @@
                     </StackPanel>
                 </Button>
             </StackPanel>
+            </ScrollViewer>
         </StackPanel>
         </Border>
 
@@ -127,7 +140,7 @@
             </Border>
 
             <!-- Property panel -->
-            <Border Grid.Column="1" Width="280"
+            <Border Grid.Column="1" Width="260"
                     Style="{StaticResource CardBorderStyle}"
                     VerticalAlignment="Top">
                 <StackPanel Spacing="12">

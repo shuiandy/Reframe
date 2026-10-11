@@ -39,37 +39,48 @@
                 <Border Style="{StaticResource CardBorderStyle}" Padding="20">
                 <StackPanel Spacing="12">
                     <StackPanel Orientation="Horizontal" Spacing="10">
-                        <FontIcon Glyph="&#xE721;" FontSize="18"
+                        <FontIcon Glyph="&#xE8EC;" FontSize="18"
                                   Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
                         <TextBlock x:Uid="/ProfileEditorPage/BasicHeader" Style="{ThemeResource SubtitleTextBlockStyle}"/>
                     </StackPanel>
-                    <TextBox x:Name="NameBox" x:Uid="/ProfileEditorPage/NameBox" Width="360"
-                             HorizontalAlignment="Left"
+                    <TextBox x:Name="NameBox" x:Uid="/ProfileEditorPage/NameBox"
+                             HorizontalAlignment="Stretch"
                              TextChanged="NameBox_TextChanged"/>
-                    <StackPanel Orientation="Horizontal" Spacing="12">
-                        <ComboBox x:Name="MatchKindBox" x:Uid="/ProfileEditorPage/MatchKindBox" Width="200"
+                    <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <ComboBox x:Name="MatchKindBox" x:Uid="/ProfileEditorPage/MatchKindBox" Width="180"
                                   SelectionChanged="MatchKindBox_SelectionChanged">
                             <ComboBoxItem x:Uid="/ProfileEditorPage/MatchKindProcess"/>
                             <ComboBoxItem x:Uid="/ProfileEditorPage/MatchKindTitle"/>
                             <ComboBoxItem x:Uid="/ProfileEditorPage/MatchKindTitleRegex"/>
                         </ComboBox>
-                        <TextBox x:Name="MatchValueBox" x:Uid="/ProfileEditorPage/MatchValueBox" Width="360"
+                        <TextBox x:Name="MatchValueBox" x:Uid="/ProfileEditorPage/MatchValueBox" Grid.Column="1"
+                                 HorizontalAlignment="Stretch"
                                  TextChanged="MatchValueBox_TextChanged"/>
-                    </StackPanel>
+                    </Grid>
 
                     <!-- Executable (icon source): manually specified when an anti-cheat game's MainModule can't be read; IconCache extracts the icon straight from this exe. -->
-                    <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Bottom">
-                        <TextBox x:Name="ExePathBox" x:Uid="/ProfileEditorPage/ExePathBox" Width="480"
+                    <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="ExePathBox" x:Uid="/ProfileEditorPage/ExePathBox"
+                                 HorizontalAlignment="Stretch"
                                  TextChanged="ExePathBox_TextChanged"/>
-                        <Button x:Name="BrowseExeButton" x:Uid="/ProfileEditorPage/BrowseExeButton" Click="BrowseExe_Click"
+                        <Button x:Name="BrowseExeButton" x:Uid="/ProfileEditorPage/BrowseExeButton" Grid.Column="1"
+                                Click="BrowseExe_Click"
                                 VerticalAlignment="Bottom"/>
-                    </StackPanel>
+                    </Grid>
                     <TextBlock x:Uid="/ProfileEditorPage/ExePathHint"
                                Style="{StaticResource SecondaryCaptionTextStyle}" Margin="0,-4,0,0"/>
 
                     <!-- Launch command (optional): for one-click launch. Empty = run the executable directly; can be a launcher command or URI (e.g. hoyoplay://). -->
-                    <TextBox x:Name="LaunchCommandBox" x:Uid="/ProfileEditorPage/LaunchCommandBox" Width="480"
-                             HorizontalAlignment="Left"
+                    <TextBox x:Name="LaunchCommandBox" x:Uid="/ProfileEditorPage/LaunchCommandBox"
+                             HorizontalAlignment="Stretch"
                              TextChanged="LaunchCommandBox_TextChanged"/>
                 </StackPanel>
                 </Border>
@@ -82,8 +93,8 @@
                                    Style="{StaticResource SecondaryCaptionTextStyle}"/>
                         <ToggleSwitch x:Name="ResEnabledToggle" x:Uid="/ProfileEditorPage/ResEnabledToggle"
                                       Toggled="ResEnabled_Toggled"/>
-                        <TextBox x:Name="ResPathBox" x:Uid="/ProfileEditorPage/ResPathBox" Width="420"
-                                 HorizontalAlignment="Left"
+                        <TextBox x:Name="ResPathBox" x:Uid="/ProfileEditorPage/ResPathBox"
+                                 HorizontalAlignment="Stretch"
                                  TextChanged="ResPath_TextChanged"/>
                         <StackPanel Orientation="Horizontal" Spacing="12">
                             <NumberBox x:Name="ResWidthBox" x:Uid="/ProfileEditorPage/ResWidthBox" Width="160"
@@ -157,20 +168,27 @@
                             <TextBlock x:Uid="/ProfileEditorPage/OffsetsHeader" Style="{ThemeResource BodyStrongTextBlockStyle}"/>
                             <TextBlock x:Uid="/ProfileEditorPage/OffsetsDesc"
                                        Style="{StaticResource SecondaryCaptionTextStyle}"/>
-                            <StackPanel Orientation="Horizontal" Spacing="12">
-                                <NumberBox x:Name="OffLeftBox" x:Uid="/ProfileEditorPage/OffLeftBox" Width="120"
+                            <!-- Four equal columns so the boxes shrink with the window instead of overflowing the card -->
+                            <Grid ColumnSpacing="12" MaxWidth="560" HorizontalAlignment="Left">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <NumberBox x:Name="OffLeftBox" x:Uid="/ProfileEditorPage/OffLeftBox"
                                            SpinButtonPlacementMode="Compact"
                                            ValueChanged="Offset_ValueChanged"/>
-                                <NumberBox x:Name="OffTopBox" x:Uid="/ProfileEditorPage/OffTopBox" Width="120"
+                                <NumberBox x:Name="OffTopBox" x:Uid="/ProfileEditorPage/OffTopBox" Grid.Column="1"
                                            SpinButtonPlacementMode="Compact"
                                            ValueChanged="Offset_ValueChanged"/>
-                                <NumberBox x:Name="OffRightBox" x:Uid="/ProfileEditorPage/OffRightBox" Width="120"
+                                <NumberBox x:Name="OffRightBox" x:Uid="/ProfileEditorPage/OffRightBox" Grid.Column="2"
                                            SpinButtonPlacementMode="Compact"
                                            ValueChanged="Offset_ValueChanged"/>
-                                <NumberBox x:Name="OffBottomBox" x:Uid="/ProfileEditorPage/OffBottomBox" Width="120"
+                                <NumberBox x:Name="OffBottomBox" x:Uid="/ProfileEditorPage/OffBottomBox" Grid.Column="3"
                                            SpinButtonPlacementMode="Compact"
                                            ValueChanged="Offset_ValueChanged"/>
-                            </StackPanel>
+                            </Grid>
                         </StackPanel>
 
                         <StackPanel Spacing="8">

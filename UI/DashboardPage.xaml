@@ -8,12 +8,15 @@
 
     <!-- 视觉层次(自上而下):页面标题与摘要 → 引擎状态卡(最重要的开关,独占一张卡) →
          显示器实时图 → 接管中的窗口 + 日志 两张并排卡片。样式统一取 App.xaml 的共享资源。 -->
+    <!-- The page scrolls so the bottom cards keep a usable height on short windows / high DPI
+         (with a fixed "*" row they were squeezed to ~110px and the empty state fell out of view). -->
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
     <Grid Padding="{StaticResource PageContentPadding}" RowSpacing="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- Title + summary -->
@@ -80,7 +83,7 @@
         </Border>
 
         <!-- Bottom split: left = taken-window cards, right = log -->
-        <Grid Grid.Row="3" ColumnSpacing="16">
+        <Grid Grid.Row="3" ColumnSpacing="16" MinHeight="280">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="3*"/>
                 <ColumnDefinition Width="2*"/>
@@ -100,7 +103,7 @@
                                    Style="{ThemeResource BodyStrongTextBlockStyle}"/>
                     </StackPanel>
                     <Grid Grid.Row="1">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,8,0" MaxHeight="420">
                             <ItemsControl x:Name="TakenList">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="local:TakenCard">
@@ -187,18 +190,24 @@
                     </StackPanel>
                     <ListView x:Name="LogList" Grid.Row="1"
                               SelectionMode="None" IsItemClickEnabled="False"
-                              MinHeight="120">
+                              MinHeight="200" MaxHeight="420">
                         <ListView.ItemContainerStyle>
                             <Style TargetType="ListViewItem">
                                 <Setter Property="MinHeight" Value="28"/>
                                 <Setter Property="Padding" Value="4,2"/>
-                                <Setter Property="FontFamily" Value="Consolas"/>
-                                <Setter Property="FontSize" Value="12"/>
                             </Style>
                         </ListView.ItemContainerStyle>
+                        <!-- Long entries wrap instead of being cut at the card edge -->
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}" TextWrapping="Wrap"
+                                           FontFamily="Consolas" FontSize="12" Margin="0,2"/>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
                     </ListView>
                 </Grid>
             </Border>
         </Grid>
     </Grid>
+    </ScrollViewer>
 </Page>
