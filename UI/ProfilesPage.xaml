@@ -8,37 +8,46 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
+    <Grid>
+    <!-- Adaptive: wide windows show the two cards side by side (profile list left, running windows
+         right as a picker); narrow windows (or high DPI scaling) stack them, so neither card is
+         squeezed or pushed off the page. -->
+    <VisualStateManager.VisualStateGroups>
+        <VisualStateGroup>
+            <VisualState x:Name="WideState">
+                <VisualState.StateTriggers>
+                    <AdaptiveTrigger MinWindowWidth="1000"/>
+                </VisualState.StateTriggers>
+            </VisualState>
+            <VisualState x:Name="NarrowState">
+                <VisualState.StateTriggers>
+                    <AdaptiveTrigger MinWindowWidth="0"/>
+                </VisualState.StateTriggers>
+                <VisualState.Setters>
+                    <Setter Target="RightColumn.Width" Value="0"/>
+                    <Setter Target="CardsGrid.ColumnSpacing" Value="0"/>
+                    <Setter Target="CardsGrid.RowSpacing" Value="16"/>
+                    <Setter Target="FirstRow.Height" Value="420"/>
+                    <Setter Target="SecondRow.Height" Value="420"/>
+                    <Setter Target="PageScroller.VerticalScrollMode" Value="Enabled"/>
+                    <Setter Target="PageScroller.VerticalScrollBarVisibility" Value="Auto"/>
+                    <Setter Target="RunningCard.(Grid.Column)" Value="0"/>
+                    <Setter Target="RunningCard.(Grid.Row)" Value="1"/>
+                </VisualState.Setters>
+            </VisualState>
+        </VisualStateGroup>
+    </VisualStateManager.VisualStateGroups>
+
+    <!-- Wide: scrolling is off so the "*" rows fill the window exactly. Narrow: the stacked cards get
+         fixed heights and the page scrolls, so each list shows several rows instead of one. -->
+    <ScrollViewer x:Name="PageScroller"
+                  VerticalScrollMode="Disabled" VerticalScrollBarVisibility="Disabled">
     <Grid Padding="{StaticResource PageContentPadding}" RowSpacing="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Adaptive: wide windows show the two cards side by side (profile list left, running windows
-             right as a picker); narrow windows (or high DPI scaling) stack them, so neither card is
-             squeezed or pushed off the page. -->
-        <VisualStateManager.VisualStateGroups>
-            <VisualStateGroup>
-                <VisualState x:Name="WideState">
-                    <VisualState.StateTriggers>
-                        <AdaptiveTrigger MinWindowWidth="1000"/>
-                    </VisualState.StateTriggers>
-                </VisualState>
-                <VisualState x:Name="NarrowState">
-                    <VisualState.StateTriggers>
-                        <AdaptiveTrigger MinWindowWidth="0"/>
-                    </VisualState.StateTriggers>
-                    <VisualState.Setters>
-                        <Setter Target="RightColumn.Width" Value="0"/>
-                        <Setter Target="CardsGrid.ColumnSpacing" Value="0"/>
-                        <Setter Target="CardsGrid.RowSpacing" Value="16"/>
-                        <Setter Target="SecondRow.Height" Value="*"/>
-                        <Setter Target="RunningCard.(Grid.Column)" Value="0"/>
-                        <Setter Target="RunningCard.(Grid.Row)" Value="1"/>
-                    </VisualState.Setters>
-                </VisualState>
-            </VisualStateGroup>
-        </VisualStateManager.VisualStateGroups>
 
 
         <StackPanel>
@@ -52,7 +61,7 @@
                 <ColumnDefinition x:Name="RightColumn" Width="*"/>
             </Grid.ColumnDefinitions>
             <Grid.RowDefinitions>
-                <RowDefinition Height="*"/>
+                <RowDefinition x:Name="FirstRow" Height="*"/>
                 <RowDefinition x:Name="SecondRow" Height="Auto"/>
             </Grid.RowDefinitions>
 
@@ -341,5 +350,7 @@
             </Grid>
             </Border>
         </Grid>
+    </Grid>
+    </ScrollViewer>
     </Grid>
 </Page>
