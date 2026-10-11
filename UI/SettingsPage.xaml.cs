@@ -36,13 +36,13 @@ public sealed partial class SettingsPage : Page
             string off = Loc.T("Common/Off");
             StartupToggle.OnContent = on;          StartupToggle.OffContent = off;
             StartMinimizedToggle.OnContent = on;   StartMinimizedToggle.OffContent = off;
-            StartMinimizedToggle.Header = Loc.T("SettingsPage/StartMinimizedToggle"); // Header 走代码本地化(ToggleSwitch 上的 x:Uid 较脆)
+            StartMinimizedLabel.Text = Loc.T("SettingsPage/StartMinimizedToggle"); // 卡片标题(原 ToggleSwitch.Header),走代码本地化
             DragSnapToggle.OnContent = on;         DragSnapToggle.OffContent = off;
             PersistenceToggle.OnContent = on;      PersistenceToggle.OffContent = off;
             CaptureNowButton.Content = Loc.T("SettingsPage/CaptureNowButton"); // Button.Content via code (x:Uid on ContentControl is fragile here)
             RestoreNowButton.Content = Loc.T("SettingsPage/RestoreNowButton");
             CheckUpdatesToggle.OnContent = on;      CheckUpdatesToggle.OffContent = off;
-            CheckUpdatesToggle.Header = Loc.T("SettingsPage/CheckUpdatesToggle");
+            CheckUpdatesLabel.Text = Loc.T("SettingsPage/CheckUpdatesToggle"); // 卡片标题(原 ToggleSwitch.Header)
             CheckUpdateButton.Content = Loc.T("SettingsPage/CheckUpdateButton");
             InstallUpdateButton.Content = Loc.T("SettingsPage/InstallUpdateButton");
 
@@ -55,6 +55,14 @@ public sealed partial class SettingsPage : Page
             ConfigPathText.Text = ConfigStore.Path_;
 
             BuildHotkeyRows(cfg);
+
+            try
+            {
+                string ico = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "reframe.ico");
+                if (System.IO.File.Exists(ico))
+                    AboutIcon.Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(ico));
+            }
+            catch { /* 图标缺失不影响设置页 */ }
 
             var ver = Assembly.GetExecutingAssembly().GetName().Version;
             VersionText.Text = Loc.T("SettingsPage/VersionFormat", ver?.ToString() ?? "—");

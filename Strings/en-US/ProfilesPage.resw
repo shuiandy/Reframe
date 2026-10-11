@@ -146,7 +146,7 @@
     <value>Launch</value>
   </data>
   <data name="EmptyHint.Text" xml:space="preserve">
-    <value>No profiles yet. Click “New” above, or create one from a window on the left.</value>
+    <value>No profiles yet. Click New above, or click + on a running window on the right.</value>
   </data>
 
   <!-- Right-column row context menu -->
@@ -221,5 +221,12 @@
   </data>
   <data name="DuplicateDialogPrimary" xml:space="preserve">
     <value>Create anyway</value>
+  </data>
+  <!-- UI redesign -->
+  <data name="Subtitle.Text" xml:space="preserve">
+    <value>Each profile targets one game or app and applies its borderless and placement rules for the current display.</value>
+  </data>
+  <data name="RunningWindowsHint.Text" xml:space="preserve">
+    <value>Click + to create a profile from a window. Right-click to go borderless now or ignore the process.</value>
   </data>
 </root>

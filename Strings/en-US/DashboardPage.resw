@@ -139,4 +139,14 @@
   <data name="UnknownProfile" xml:space="preserve">
     <value>?</value>
   </data>
+  <!-- UI redesign -->
+  <data name="EngineDesc.Text" xml:space="preserve">
+    <value>When on, Reframe detects windows that match a profile and applies its borderless and placement rules.</value>
+  </data>
+  <data name="MonitorsHeader.Text" xml:space="preserve">
+    <value>Displays</value>
+  </data>
+  <data name="TakenEmptyHint.Text" xml:space="preserve">
+    <value>Windows that match a profile show up here while the engine is running.</value>
+  </data>
 </root>

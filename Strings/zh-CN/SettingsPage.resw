@@ -75,16 +75,16 @@
   <data name="AppearanceHeader.Text" xml:space="preserve">
     <value>外观</value>
   </data>
-  <data name="AppearanceDesc.Text" xml:space="preserve">
-    <value>主题与主窗口的背景材质,改即生效。亚克力在窗口失焦时会回退为纯色(系统行为)。</value>
+  <data name="BackdropDesc.Text" xml:space="preserve">
+    <value>改动立即生效。亚克力在窗口失焦时会回退为纯色(系统行为)。</value>
   </data>
-  <data name="LanguageCombo.Header" xml:space="preserve">
+  <data name="LanguageLabel.Text" xml:space="preserve">
     <value>语言</value>
   </data>
   <data name="LanguageSystem.Content" xml:space="preserve">
     <value>跟随系统</value>
   </data>
-  <data name="ThemeCombo.Header" xml:space="preserve">
+  <data name="ThemeLabel.Text" xml:space="preserve">
     <value>主题</value>
   </data>
   <data name="ThemeSystem.Content" xml:space="preserve">
@@ -96,7 +96,7 @@
   <data name="ThemeDark.Content" xml:space="preserve">
     <value>深色</value>
   </data>
-  <data name="BackdropCombo.Header" xml:space="preserve">
+  <data name="BackdropLabel.Text" xml:space="preserve">
     <value>窗口背景材质</value>
   </data>
   <data name="BackdropMica.Content" xml:space="preserve">
@@ -352,5 +352,18 @@
   </data>
   <data name="UpdatePreviousFailed" xml:space="preserve">
     <value>上次更新未完成(详见 %TEMP%\Reframe-update\update.log)。你的文件没有被删除,可以再试一次。</value>
+  </data>
+  <!-- UI redesign -->
+  <data name="LanguageDesc.Text" xml:space="preserve">
+    <value>切换后重启 Reframe 生效。</value>
+  </data>
+  <data name="GroupStartupEngine.Text" xml:space="preserve">
+    <value>启动与引擎</value>
+  </data>
+  <data name="GroupWindows.Text" xml:space="preserve">
+    <value>窗口管理</value>
+  </data>
+  <data name="GroupData.Text" xml:space="preserve">
+    <value>数据与集成</value>
   </data>
 </root>

@@ -110,7 +110,7 @@
   </data>
 
   <!-- 添加分区 -->
-  <data name="AddZoneButton.Content" xml:space="preserve">
+  <data name="AddZoneLabel.Text" xml:space="preserve">
     <value>添加分区</value>
   </data>
   <data name="AddZoneTip.Text" xml:space="preserve">

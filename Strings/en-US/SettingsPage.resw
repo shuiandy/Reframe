@@ -75,16 +75,16 @@
   <data name="AppearanceHeader.Text" xml:space="preserve">
     <value>Appearance</value>
   </data>
-  <data name="AppearanceDesc.Text" xml:space="preserve">
-    <value>Theme and the main window's backdrop material; changes apply immediately. Acrylic falls back to a solid color when the window loses focus (system behavior).</value>
+  <data name="BackdropDesc.Text" xml:space="preserve">
+    <value>Applies immediately. Acrylic falls back to a solid color when the window loses focus (system behavior).</value>
   </data>
-  <data name="LanguageCombo.Header" xml:space="preserve">
+  <data name="LanguageLabel.Text" xml:space="preserve">
     <value>Language</value>
   </data>
   <data name="LanguageSystem.Content" xml:space="preserve">
     <value>Follow system</value>
   </data>
-  <data name="ThemeCombo.Header" xml:space="preserve">
+  <data name="ThemeLabel.Text" xml:space="preserve">
     <value>Theme</value>
   </data>
   <data name="ThemeSystem.Content" xml:space="preserve">
@@ -96,7 +96,7 @@
   <data name="ThemeDark.Content" xml:space="preserve">
     <value>Dark</value>
   </data>
-  <data name="BackdropCombo.Header" xml:space="preserve">
+  <data name="BackdropLabel.Text" xml:space="preserve">
     <value>Window backdrop material</value>
   </data>
   <data name="BackdropMica.Content" xml:space="preserve">
@@ -356,5 +356,18 @@
   </data>
   <data name="UpdatePreviousFailed" xml:space="preserve">
     <value>The last update did not finish (see %TEMP%\Reframe-update\update.log). Nothing of yours was deleted; you can try again.</value>
+  </data>
+  <!-- UI redesign -->
+  <data name="LanguageDesc.Text" xml:space="preserve">
+    <value>Takes effect after Reframe restarts.</value>
+  </data>
+  <data name="GroupStartupEngine.Text" xml:space="preserve">
+    <value>Startup and engine</value>
+  </data>
+  <data name="GroupWindows.Text" xml:space="preserve">
+    <value>Window management</value>
+  </data>
+  <data name="GroupData.Text" xml:space="preserve">
+    <value>Data and integrations</value>
   </data>
 </root>

@@ -146,7 +146,7 @@
     <value>启动</value>
   </data>
   <data name="EmptyHint.Text" xml:space="preserve">
-    <value>还没有配置文件,点击上方“新建”或从左栏窗口创建一个。</value>
+    <value>还没有配置文件。点上方的“新建”,或在右侧运行中的窗口上点 + 创建一个。</value>
   </data>
 
   <!-- 右栏行右键菜单 -->
@@ -221,5 +221,12 @@
   </data>
   <data name="DuplicateDialogPrimary" xml:space="preserve">
     <value>仍要新建</value>
+  </data>
+  <!-- UI redesign -->
+  <data name="Subtitle.Text" xml:space="preserve">
+    <value>每个配置文件对应一个游戏或程序,按当前显示器自动套用无边框和位置规则。</value>
+  </data>
+  <data name="RunningWindowsHint.Text" xml:space="preserve">
+    <value>点 + 据窗口创建配置文件,右键可立即去边框或忽略该进程。</value>
   </data>
 </root>
