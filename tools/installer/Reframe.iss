@@ -8,7 +8,7 @@
 ; This script is meant to be compiled by tools\build-installer.ps1, which
 ; passes the required defines on the ISCC command line:
 ;
-;   ISCC.exe /DMyAppVersion=1.2.0 /DPublishDir=C:\...\Reframe\publish_out Reframe.iss
+;   ISCC.exe /DMyAppVersion=1.2.0 /DPublishDir=C:\...\build\Reframe\publish /OC:\...\build\Reframe\dist Reframe.iss
 ;
 ;   MyAppVersion : version string, read from Reframe.csproj <Version>
 ;   PublishDir   : absolute path to the framework-dependent publish output
@@ -65,7 +65,8 @@ SetupIconFile=..\..\Assets\reframe.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={#MyAppName}
 
-; Output: dist\Reframe-Setup-v<ver>-win-x64.exe (relative to this .iss in tools\installer\).
+; Output: Reframe-Setup-v<ver>-win-x64.exe. build-installer.ps1 overrides OutputDir with /O so it
+; lands in <build root>\dist\ outside the repo; the in-repo default only applies if ISCC is run by hand.
 OutputDir=..\..\dist
 OutputBaseFilename=Reframe-Setup-v{#MyAppVersion}-win-x64
 Compression=lzma2/max

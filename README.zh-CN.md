@@ -115,11 +115,13 @@ dotnet build -p:Platform=x64
 # 跑测试(独立工程,链接 Core 源文件)
 dotnet test Tests\Reframe.Core.Tests.csproj
 
-# 打包 Release zip -> dist\Reframe-v<版本>-win-x64.zip
+# 打包 Release zip -> <构建根>\dist\Reframe-v<版本>-win-x64.zip
 powershell -ExecutionPolicy Bypass -File tools\publish.ps1
 ```
 
-`publish.ps1` 产出的包对 **.NET 是框架依赖的**(目标机需 .NET 9 桌面运行时),但 **Windows App SDK 已自包含**(目标机无需另装)。它发布到独立的 `publish_out\` 目录,不影响 `bin\Debug` 与正在运行的实例。
+编译输出**在仓库外**:`Directory.Build.props` 把各工程的 `bin\`/`obj\` 放到 `%USERPROFILE%\ClaudeOutputs-local\build\<checkout 目录名>\`(每个 checkout 一个子目录,worktree 之间互不覆盖)。想放别处就设环境变量 `ReframeBuildRoot`,`tools\` 下的脚本也会跟着走。
+
+`publish.ps1` 产出的包对 **.NET 是框架依赖的**(目标机需 .NET 9 桌面运行时),但 **Windows App SDK 已自包含**(目标机无需另装)。它发布到独立的 `<构建根>\publish\` 目录,不影响 `bin\Debug` 与正在运行的实例。
 
 ## 架构
 

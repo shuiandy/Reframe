@@ -1,7 +1,9 @@
 # Reframe publish script (pure ASCII; runs under Windows PowerShell 5.1 as well as pwsh 7+).
 #
 # Produces a framework-dependent (.NET) but WinAppSDK self-contained Release build,
-# then zips the output to dist\Reframe-v<version>-win-x64.zip.
+# then zips the output to <build root>\dist\Reframe-v<version>-win-x64.zip.
+# <build root> is ReframeBuildRoot from Directory.Build.props (outside the repo, by default
+# %USERPROFILE%\ClaudeOutputs-local\build\<checkout folder name>\).
 #
 #   .NET runtime          : framework-dependent (target machine needs .NET 9 Desktop runtime)
 #   Windows App SDK        : self-contained     (target machine does NOT need the WinAppSDK runtime)
@@ -11,7 +13,7 @@
 #   powershell -ExecutionPolicy Bypass -File tools\publish.ps1
 #
 # Notes:
-#   - Publishes into a dedicated folder (publish_out\) so it never touches bin\Debug
+#   - Publishes into a dedicated folder (<build root>\publish\) so it never touches bin\Debug
 #     and does not disturb a running Reframe instance.
 #   - Reads <Version> from Reframe.csproj for the zip name.
 
@@ -21,12 +23,18 @@ $ErrorActionPreference = 'Stop'
 $ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $ProjectRoot = Split-Path -Parent $ScriptDir
 $Csproj      = Join-Path $ProjectRoot 'Reframe.csproj'
-$PublishDir  = Join-Path $ProjectRoot 'publish_out'
-$DistDir     = Join-Path $ProjectRoot 'dist'
 
 if (-not (Test-Path $Csproj)) {
     throw "Cannot find Reframe.csproj at $Csproj"
 }
+
+# --- Output folders live outside the repo, under ReframeBuildRoot (set in Directory.Build.props) ---
+$BuildRoot = (& dotnet msbuild $Csproj -nologo -getProperty:ReframeBuildRoot | Out-String).Trim()
+if ([string]::IsNullOrWhiteSpace($BuildRoot)) {
+    throw "Could not resolve ReframeBuildRoot via dotnet msbuild"
+}
+$PublishDir  = Join-Path $BuildRoot 'publish'
+$DistDir     = Join-Path $BuildRoot 'dist'
 
 # --- Read <Version> from the csproj ---
 [xml]$xml = Get-Content -Path $Csproj

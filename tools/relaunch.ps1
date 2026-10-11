@@ -4,11 +4,15 @@ $ErrorActionPreference = 'Continue'
 # Locate project root (this script lives in <root>\tools\); no hardcoded path.
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $proj = Split-Path -Parent $ScriptDir
-$exe  = Join-Path $proj 'bin\x64\Debug\net9.0-windows10.0.19041.0\Reframe.exe'
 $log  = Join-Path $proj 'tools\relaunch_log.txt'
+# Output lives outside the repo (Directory.Build.props); ask MSBuild where instead of guessing.
+$targetDir = (& dotnet msbuild (Join-Path $proj 'Reframe.csproj') -nologo -p:Platform=x64 -getProperty:TargetDir | Out-String).Trim()
+$exe  = Join-Path $targetDir 'Reframe.exe'
 
 [System.IO.File]::WriteAllText($log, "START $(Get-Date -Format HH:mm:ss)`r`n")
 function W($m){ Add-Content -LiteralPath $log -Value $m }
+W ("[exe] " + $exe)
+if (-not $targetDir) { W 'ABORT: could not resolve TargetDir via dotnet msbuild'; exit 1 }
 
 # 1) kill running instance (elevated, so this works on the admin process)
 $p = Get-Process -Name Reframe -ErrorAction SilentlyContinue
@@ -30,6 +34,7 @@ if (-not $ok) {
 }
 
 # 3) launch (inherits elevation, no second UAC)
+if (-not (Test-Path -LiteralPath $exe)) { W 'ABORT: built exe not found'; exit 1 }
 Start-Process -FilePath $exe
 Start-Sleep -Seconds 4
 $alive = Get-Process -Name Reframe -ErrorAction SilentlyContinue

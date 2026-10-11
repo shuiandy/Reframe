@@ -4,12 +4,15 @@
 #   1. Locate the project root (this script lives in <root>\tools\).
 #   2. Read <Version> from Reframe.csproj.
 #   3. dotnet publish a framework-dependent (.NET) + WinAppSDK self-contained Release
-#      build into publish_out\ - same publish parameters as tools\publish.ps1, so the
+#      build into <build root>\publish\ - same publish parameters as tools\publish.ps1, so the
 #      installer payload is the small framework-dependent build (~50 MB), NOT a bloated
 #      self-contained .NET one (~150 MB).
 #   4. Compile tools\installer\Reframe.iss with ISCC.exe, passing the version and the
-#      absolute publish_out path as defines.
-#   5. Result: dist\Reframe-Setup-v<version>-win-x64.exe
+#      absolute publish path as defines, and <build root>\dist as the output dir (/O).
+#   5. Result: <build root>\dist\Reframe-Setup-v<version>-win-x64.exe
+#
+# <build root> is ReframeBuildRoot from Directory.Build.props (outside the repo, by default
+# %USERPROFILE%\ClaudeOutputs-local\build\<checkout folder name>\).
 #
 # Usage (from anywhere):
 #   pwsh -File tools\build-installer.ps1
@@ -23,8 +26,6 @@ $ErrorActionPreference = 'Stop'
 $ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $ProjectRoot = Split-Path -Parent $ScriptDir
 $Csproj      = Join-Path $ProjectRoot 'Reframe.csproj'
-$PublishDir  = Join-Path $ProjectRoot 'publish_out'
-$DistDir     = Join-Path $ProjectRoot 'dist'
 $IssFile     = Join-Path $ScriptDir 'installer\Reframe.iss'
 
 if (-not (Test-Path $Csproj)) {
@@ -33,6 +34,14 @@ if (-not (Test-Path $Csproj)) {
 if (-not (Test-Path $IssFile)) {
     throw "Cannot find installer script at $IssFile"
 }
+
+# --- Output folders live outside the repo, under ReframeBuildRoot (set in Directory.Build.props) ---
+$BuildRoot = (& dotnet msbuild $Csproj -nologo -getProperty:ReframeBuildRoot | Out-String).Trim()
+if ([string]::IsNullOrWhiteSpace($BuildRoot)) {
+    throw "Could not resolve ReframeBuildRoot via dotnet msbuild"
+}
+$PublishDir  = Join-Path $BuildRoot 'publish'
+$DistDir     = Join-Path $BuildRoot 'dist'
 
 # --- Locate ISCC.exe (PATH first, then known install locations) ---
 # winget installs Inno Setup either machine-wide (Program Files (x86)\Inno Setup 6)
@@ -96,7 +105,7 @@ if (-not (Test-Path $DistDir)) {
 
 # --- Compile the installer ---
 Write-Host 'Running ISCC ...'
-& $Iscc "/DMyAppVersion=$Version" "/DPublishDir=$PublishDir" $IssFile
+& $Iscc "/DMyAppVersion=$Version" "/DPublishDir=$PublishDir" "/O$DistDir" $IssFile
 if ($LASTEXITCODE -ne 0) {
     throw "ISCC failed with exit code $LASTEXITCODE"
 }

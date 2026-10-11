@@ -1,0 +1,16 @@
+<Project>
+  <!-- Build outside the repo: bin/ + obj/ (+ publish output) are ~1700 files / ~1 GB, which pushes the folder past the
+       file-count limit of tools that import it as a project. One subfolder per checkout (named after its directory) so
+       worktrees don't overwrite each other, then one per project (Reframe, Reframe.Core.Tests, IconGen) so their
+       obj/project.assets.json don't collide. tools\*.ps1 ask MSBuild for ReframeBuildRoot rather than repeating this.
+       Override with /p:ReframeBuildRoot=<dir>\ or a ReframeBuildRoot environment variable. -->
+  <PropertyGroup>
+    <ReframeBuildRoot Condition="'$(ReframeBuildRoot)' == ''">$(USERPROFILE)\ClaudeOutputs-local\build\$([System.IO.Path]::GetFileName($(MSBuildThisFileDirectory.TrimEnd('\'))))\</ReframeBuildRoot>
+    <BaseOutputPath>$(ReframeBuildRoot)$(MSBuildProjectName)\bin\</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(ReframeBuildRoot)$(MSBuildProjectName)\obj\</BaseIntermediateOutputPath>
+    <!-- The SDK only excludes the *current* bin/obj from the default globs. A stray in-repo obj\ (left by an older
+         checkout, or a build run with a BaseOutputPath override) would otherwise get its generated *.cs compiled
+         twice. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);bin\**;obj\**</DefaultItemExcludes>
+  </PropertyGroup>
+</Project>

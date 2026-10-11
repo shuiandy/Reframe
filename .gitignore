@@ -1,3 +1,5 @@
+# Build outputs. Since 2026-10-10 Directory.Build.props builds outside the repo
+# (%USERPROFILE%\ClaudeOutputs-local\build\<checkout>\); these stay ignored in case a stray build lands here.
 bin/
 obj/
 *.user

@@ -115,11 +115,13 @@ dotnet build -p:Platform=x64
 # Run the test suite (independent project, links Core source files)
 dotnet test Tests\Reframe.Core.Tests.csproj
 
-# Produce a Release zip -> dist\Reframe-v<version>-win-x64.zip
+# Produce a Release zip -> <build root>\dist\Reframe-v<version>-win-x64.zip
 powershell -ExecutionPolicy Bypass -File tools\publish.ps1
 ```
 
-`publish.ps1` produces a build that is **framework-dependent for .NET** (target machine needs the .NET 9 Desktop Runtime) but **self-contained for the Windows App SDK** (target machine does not). It publishes into a dedicated `publish_out\` folder so it never disturbs `bin\Debug` or a running instance.
+Build output lives **outside the repo**: `Directory.Build.props` puts every project's `bin\`/`obj\` under `%USERPROFILE%\ClaudeOutputs-local\build\<checkout folder name>\` (one folder per checkout, so worktrees don't collide). Set a `ReframeBuildRoot` environment variable to put it somewhere else; the scripts in `tools\` follow it too.
+
+`publish.ps1` produces a build that is **framework-dependent for .NET** (target machine needs the .NET 9 Desktop Runtime) but **self-contained for the Windows App SDK** (target machine does not). It publishes into a dedicated `<build root>\publish\` folder so it never disturbs `bin\Debug` or a running instance.
 
 ## Architecture
 
