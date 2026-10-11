@@ -25,7 +25,12 @@ public readonly record struct MemoryEntryRef(
 /// <param name="Handle">The live HWND.</param>
 /// <param name="Identity">Its cross-session identity.</param>
 /// <param name="Title">Its caption right now. Evidence for a <i>confident</i> pairing only — see <see cref="WindowMatcher"/>.</param>
-public readonly record struct LiveWindowRef(IntPtr Handle, WindowIdentity Identity, string Title = "");
+/// <param name="ProcessId">
+/// The process that owns it (0 when unknown). Not used by the matcher itself; it is stamped onto the record a
+/// pairing binds, so that the <i>next</i> time that record is unbound the store can tell whether the process
+/// is still running — see <see cref="RememberedWindow.ProcessId"/>.
+/// </param>
+public readonly record struct LiveWindowRef(IntPtr Handle, WindowIdentity Identity, string Title = "", uint ProcessId = 0);
 
 /// <summary>
 /// One (record → window) pairing produced by <see cref="WindowMatcher.Assign"/>.

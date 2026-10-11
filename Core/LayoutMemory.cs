@@ -16,8 +16,13 @@ public sealed record WindowRecord(
     int NormLeft, int NormTop, int NormRight, int NormBottom,  // WINDOWPLACEMENT.rcNormalPosition (workspace) — hidden/minimized/maximized SetWindowPlacement path
     int ShowCmd);
 
-/// <summary>One window as observed by a capture pass: who it is, what it's called, and where it sits.</summary>
-public readonly record struct CapturedWindow(IntPtr Handle, WindowIdentity Identity, string Title, WindowRecord Record);
+/// <summary>
+/// One window as observed by a capture pass: who it is, what it's called, where it sits — and which process
+/// owns it (<paramref name="ProcessId"/>, 0 when unknown), which is what later tells an app <i>restart</i>
+/// apart from the same app merely opening another window (see <see cref="RememberedWindow.ProcessId"/>).
+/// </summary>
+public readonly record struct CapturedWindow(IntPtr Handle, WindowIdentity Identity, string Title, WindowRecord Record,
+                                             uint ProcessId = 0);
 
 /// <summary>
 /// One entry of the layout memory: a remembered geometry plus everything needed to find its window again in a
@@ -120,6 +125,27 @@ public sealed class RememberedWindow
     /// </summary>
     public DateTime? UnboundAtUtc { get; private set; }
 
+    /// <summary>
+    /// The process that owned this record's window the last time it was bound (0 = unknown). Persisted.
+    ///
+    /// <para><b>This is the restart evidence.</b> Cross-session re-identification (a group-unique caption, a
+    /// forced 1:1) and the <see cref="UnboundAtUtc"/> clock together still could not tell two very different
+    /// events apart: <i>the app came back</i> (crash, self-update, reboot — the case adoption restore exists
+    /// for) and <i>the user opened another window of an app that never went anywhere</i>. Both produce an
+    /// unbound record meeting a fresh window minutes later, and the clock re-arms on every close, so an app
+    /// whose windows are opened and closed all day — chat windows, terminals, dialogs — had a permanently
+    /// fresh record, and every newly opened window was yanked to wherever the previous one had been. That is
+    /// the "my new windows keep jumping" complaint, and it is not what this feature is for: it exists to undo
+    /// the squeeze a display blackout inflicts, not to enforce positions on windows the user opens.</para>
+    ///
+    /// <para>Whether the process behind this pid is still running is the fact that separates the two. Same
+    /// process alive ⇒ the user opened a window ⇒ bind, track, never move. Process gone ⇒ the app restarted ⇒
+    /// the clock decides, as before. The store asks <see cref="LayoutMemory.ProcessGone"/>; a record with no
+    /// pid (a file written before this field existed, a failed lookup) offers no evidence and is never
+    /// adopted while such a predicate is installed.</para>
+    /// </summary>
+    public uint ProcessId { get; set; }
+
     private IntPtr _handle;
     private bool _confidentBinding;
 
@@ -141,11 +167,21 @@ public sealed class RememberedWindow
     /// Bind this record to a live window, recording whether the matcher was sure it is the same one. A record
     /// with a window again has no "unbound since" — the clock only starts when the window goes away.
     /// </summary>
-    public void Bind(IntPtr handle, bool confident)
+    public void Bind(IntPtr handle, bool confident) => Bind(handle, confident, processId: 0);
+
+    /// <summary>
+    /// Bind, and remember which process owns the window (<paramref name="processId"/> 0 = unknown, which keeps
+    /// whatever pid the record already had rather than erasing evidence). See <see cref="ProcessId"/>.
+    /// </summary>
+    public void Bind(IntPtr handle, bool confident, uint processId)
     {
         Handle = handle;
         ConfidentBinding = confident;
-        if (handle != IntPtr.Zero) UnboundAtUtc = null;
+        if (handle != IntPtr.Zero)
+        {
+            UnboundAtUtc = null;
+            if (processId != 0) ProcessId = processId;
+        }
     }
 
     /// <summary>
@@ -249,9 +285,28 @@ public sealed class LayoutMemory
     /// chat windows during a working day; minutes-scale is the only range where "it came back" and "the user
     /// opened it again" are actually distinguishable without asking the user.</para>
     ///
+    /// <para><b>The clock is a ceiling, not the evidence.</b> It re-arms every time a window closes, so on its
+    /// own it never expires for an app whose windows come and go all day — every new terminal, chat window or
+    /// dialog was being pulled to the previous one's rectangle. The evidence that an app actually <i>came
+    /// back</i> is that its process went away: see <see cref="ProcessGone"/> and
+    /// <see cref="RememberedWindow.ProcessId"/>. The clock only bounds how long after that the return still
+    /// counts.</para>
+    ///
     /// <para>Not persisted and not configurable: it is a property of the mechanism, not of a layout.</para>
     /// </summary>
     public static readonly TimeSpan AdoptionWindow = TimeSpan.FromMinutes(15);
+
+    /// <summary>
+    /// Restart evidence: <c>(pid, normalized process name) ⇒ true when that process is no longer running</c>
+    /// (or the pid now belongs to a different image). When installed, a record may only be adopted — moved
+    /// to its remembered rectangle by a cross-session pairing — if its <see cref="RememberedWindow.ProcessId"/>
+    /// is known <b>and</b> gone; the same live process opening another window is the user's doing and is never
+    /// moved. The <see cref="AdoptionWindow"/> clock still applies on top.
+    ///
+    /// <para>Null (the default, used by the pure tests) means "no process information available": the clock
+    /// alone decides, as it did before this hook existed. The engine always installs one.</para>
+    /// </summary>
+    public Func<uint, string, bool>? ProcessGone { get; set; }
 
     // ---- Capture ----
 
@@ -351,7 +406,7 @@ public sealed class LayoutMemory
 
         var live = new List<LiveWindowRef>(windows.Count);
         foreach (var w in windows)
-            live.Add(new LiveWindowRef(w.Handle, w.Identity, w.Title)); // the caption is what tells siblings apart
+            live.Add(new LiveWindowRef(w.Handle, w.Identity, w.Title, w.ProcessId)); // the caption is what tells siblings apart
         var assigned = BindHandles(bucket, live, nowUtc);
 
         // Deterministic creation order for the leftovers, so ordinals are handed out ascending-HWND.
@@ -398,7 +453,7 @@ public sealed class LayoutMemory
                 };
                 // A brand-new record is created *from* this window, so it is trivially the same window: this
                 // is what makes an ordinary session's records restorable on the next display change.
-                fresh.Bind(w.Handle, confident: true);
+                fresh.Bind(w.Handle, confident: true, w.ProcessId);
                 bucket.Add(fresh);
             }
         }
@@ -441,23 +496,41 @@ public sealed class LayoutMemory
     /// "unbound recently enough to be adopted" is evaluated here against <paramref name="nowUtc"/> and handed
     /// to the matcher as a plain bool, so the matcher stays a pure function of its inputs.</para>
     /// </summary>
-    private static Dictionary<IntPtr, (int Index, bool Confident)> BindHandles(
+    private Dictionary<IntPtr, (int Index, bool Confident)> BindHandles(
         List<RememberedWindow> bucket, IReadOnlyList<LiveWindowRef> candidates, DateTime nowUtc)
     {
         var refs = new List<MemoryEntryRef>(bucket.Count);
         for (int i = 0; i < bucket.Count; i++)
         {
             var e = bucket[i];
-            refs.Add(new MemoryEntryRef(i, e.Identity, e.Ordinal, e.Handle, e.Title, e.IsAdoptionEligible(nowUtc)));
+            refs.Add(new MemoryEntryRef(i, e.Identity, e.Ordinal, e.Handle, e.Title, IsAdoptable(e, nowUtc)));
         }
+
+        var pidByHandle = new Dictionary<IntPtr, uint>(candidates.Count);
+        foreach (var c in candidates) pidByHandle.TryAdd(c.Handle, c.ProcessId);
 
         var map = new Dictionary<IntPtr, (int, bool)>(candidates.Count);
         foreach (var a in WindowMatcher.Assign(refs, candidates))
         {
-            bucket[a.Id].Bind(a.Handle, a.Confident);
+            bucket[a.Id].Bind(a.Handle, a.Confident, pidByHandle.GetValueOrDefault(a.Handle));
             map[a.Handle] = (a.Id, a.Confident);
         }
         return map;
+    }
+
+    /// <summary>
+    /// Whether re-finding this record's window may be acted on by <i>moving</i> a window: fresh per the
+    /// <see cref="AdoptionWindow"/> clock, and — when <see cref="ProcessGone"/> is installed — backed by
+    /// evidence that its process actually went away. Only unbound records can be adoptable at all; the clock
+    /// test already implies that. The process check runs last and only for records the clock let through, so
+    /// the (memoized, but not free) liveness probe is paid for a handful of records per round, not the bucket.
+    /// </summary>
+    private bool IsAdoptable(RememberedWindow e, DateTime nowUtc)
+    {
+        if (!e.IsAdoptionEligible(nowUtc)) return false;
+        if (ProcessGone is null) return true;                 // no process information: the clock alone decides
+        if (e.ProcessId == 0) return false;                   // no evidence either way ⇒ never move on a guess
+        return ProcessGone(e.ProcessId, e.Identity.ProcessName);
     }
 
     /// <summary>Smallest ordinal not already used inside <paramref name="identity"/>'s group (ignoring <paramref name="self"/>).</summary>
@@ -698,6 +771,7 @@ public sealed class LayoutMemory
                     NormLeft = r.NormLeft, NormTop = r.NormTop, NormRight = r.NormRight, NormBottom = r.NormBottom,
                     ShowCmd = r.ShowCmd,
                     LastSeenUtc = e.LastSeenUtc,
+                    Pid = e.ProcessId,
                 });
             }
             file.Layouts.Add(layout);
@@ -762,6 +836,7 @@ public sealed class LayoutMemory
                     Record = new WindowRecord(w.Left, w.Top, w.Right, w.Bottom,
                                               w.NormLeft, w.NormTop, w.NormRight, w.NormBottom, w.ShowCmd),
                     LastSeenUtc = w.LastSeenUtc,
+                    ProcessId = w.Pid, // kept: "is that process still running?" is exactly the post-restart question
                 };
                 // Last session's handle is meaningless — identity-only from here — and the adoption clock for
                 // every imported record starts now (see the remarks above).

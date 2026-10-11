@@ -86,7 +86,8 @@ public sealed class PersistenceEngine : IDisposable
     private readonly Func<int> _getCaptureSeconds;
     private readonly Func<IEnumerable<string>> _getIgnoredProcesses;
 
-    private readonly LayoutMemory _memory = new();
+    private readonly LayoutMemory _memory;
+    private readonly ProcessLiveness _liveness = new();
     private readonly DisplayChangeListener _listener = new();
 
     // ---- Actor mailbox + worker ----
@@ -146,6 +147,11 @@ public sealed class PersistenceEngine : IDisposable
         _isEnabled = isEnabled;
         _getCaptureSeconds = getCaptureSeconds;
         _getIgnoredProcesses = getIgnoredProcesses;
+
+        // Adoption restore needs evidence that an app *restarted*, not merely that a window with a familiar
+        // caption appeared: the same live process opening another window is the user's doing and must never
+        // be moved. See RememberedWindow.ProcessId / ProcessLiveness. Worker-thread only, like the memory.
+        _memory = new LayoutMemory { ProcessGone = _liveness.IsGone };
     }
 
     public void Start()
@@ -446,11 +452,14 @@ public sealed class PersistenceEngine : IDisposable
                 return;
         }
 
-        // A real topology: this is the one the engine may act on and adopt.
+        // A real topology: this is the one the engine may act on and adopt — unless the enumeration came back
+        // empty (LayoutKey.None, mid-transition). Adopting *that* as current would make the very next capture
+        // see a "topology change" back to the real key and fire a full restore that nothing warranted; keep
+        // the last real key as the anchor and simply resume.
         NoteTransientEnded();
         _transientWaits = 0;
         _sawTransient = false;
-        _currentKey = live.Key;
+        if (live.Key != LayoutKey.None) _currentKey = live.Key;
 
         if (decision == SettleDecision.Restore)
         {
@@ -635,7 +644,7 @@ public sealed class PersistenceEngine : IDisposable
     /// (see <see cref="WindowMatcher"/>).
     /// </summary>
     private static LiveWindowRef ToLiveRef(WindowInfo w)
-        => new(w.Handle, WindowIdentity.Create(w.ProcessName, WindowScanner.ClassNameOf(w.Handle)), w.Title);
+        => new(w.Handle, WindowIdentity.Create(w.ProcessName, WindowScanner.ClassNameOf(w.Handle)), w.Title, w.ProcessId);
 
     /// <summary>Live windows offered to <see cref="LayoutMemory.Reclaim"/> as owners for orphaned records.</summary>
     private List<LiveWindowRef> ScanClaimCandidates()
@@ -662,7 +671,8 @@ public sealed class PersistenceEngine : IDisposable
             var n = gotWp ? wp.rcNormalPosition : r; // restore rect (workspace); fall back to the screen rect if placement is unavailable
             var identity = WindowIdentity.Create(w.ProcessName, WindowScanner.ClassNameOf(h));
             result.Add(new CapturedWindow(h, identity, w.Title,
-                new WindowRecord(r.Left, r.Top, r.Right, r.Bottom, n.Left, n.Top, n.Right, n.Bottom, showCmd)));
+                new WindowRecord(r.Left, r.Top, r.Right, r.Bottom, n.Left, n.Top, n.Right, n.Bottom, showCmd),
+                w.ProcessId));
         }
         return result;
     }
