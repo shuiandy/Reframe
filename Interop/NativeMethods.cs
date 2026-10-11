@@ -222,6 +222,26 @@ public static class NativeMethods
 
     public const uint WM_QUIT = 0x0012;
 
+    // ---- Process liveness (Core.ProcessLiveness) ----
+    // OpenProcess with the *limited* query right succeeds on almost every process (including many elevated
+    // ones) and is orders of magnitude cheaper than System.Diagnostics.Process, which snapshots the whole
+    // process table per call. ERROR_INVALID_PARAMETER back from it means "no such pid".
+    public const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+    public const uint STILL_ACTIVE = 259;
+    public const int ERROR_INVALID_PARAMETER = 87;
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern IntPtr OpenProcess(uint dwDesiredAccess, bool bInheritHandle, uint dwProcessId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool GetExitCodeProcess(IntPtr hProcess, out uint lpExitCode);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    public static extern bool QueryFullProcessImageName(IntPtr hProcess, uint dwFlags, System.Text.StringBuilder lpExeName, ref uint lpdwSize);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool CloseHandle(IntPtr hObject);
+
     // ---- Hidden host-window creation (Core.DisplayChangeListener) ----
     // A real (non-message-only) hidden top-level window is required to receive broadcast messages such as
     // WM_DISPLAYCHANGE: a HWND_MESSAGE window does NOT get broadcasts. These declarations live here (Interop)

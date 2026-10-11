@@ -32,6 +32,15 @@ public sealed class PersistedWindow
 
     /// <summary>Last time a capture refreshed this record; drives aging on load/save.</summary>
     public DateTime LastSeenUtc { get; set; }
+
+    /// <summary>
+    /// The process that owned the window when the record was last bound (0 = unknown; files written before
+    /// this field existed leave it at 0). Unlike a HWND this <i>is</i> worth persisting: after a reboot every
+    /// stored pid is dead, so the apps coming back up read as restarts and are put back on the layout; after a
+    /// Reframe-only restart (a self-update) the apps are still running under the very same pids, and nothing
+    /// is moved. See <see cref="RememberedWindow.ProcessId"/>.
+    /// </summary>
+    public uint Pid { get; set; }
 }
 
 /// <summary>All remembered windows for one DisplayKey.</summary>

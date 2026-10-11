@@ -219,6 +219,7 @@ public partial class App : Application
             getIgnoredProcesses: () => ConfigService.Instance.Config.PersistenceIgnoredProcesses);
         Persistence = _persistence;
         _persistence.Log += m => Engine.LogExternal(m); // surface restore activity in the dashboard log
+        _persistence.Log += PersistenceLog.Write;      // ...and keep it on disk, so a "why did that window move?" can be answered later
         _persistence.Start();
 
         _window = new MainWindow();
