@@ -65,6 +65,128 @@
                 <RowDefinition x:Name="SecondRow" Height="Auto"/>
             </Grid.RowDefinitions>
 
+            <!-- ===== Left card: profile list ===== -->
+            <Border Grid.Column="0" Style="{StaticResource CardBorderStyle}" Padding="16,8,8,8">
+            <Grid RowSpacing="4">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- Header: section title, then the actions on their own line (sharing one line squeezed the title) -->
+                <StackPanel Margin="0,6,8,0">
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <FontIcon Glyph="&#xE7FC;" FontSize="16"
+                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        <TextBlock x:Uid="/ProfilesPage/ProfileListHeader"
+                                   Style="{ThemeResource BodyStrongTextBlockStyle}"/>
+                    </StackPanel>
+
+                <CommandBar DefaultLabelPosition="Right"
+                            Background="Transparent" HorizontalAlignment="Left"
+                            Margin="-8,0,0,0"
+                            IsOpen="False">
+                    <AppBarButton x:Name="NewButton" x:Uid="/ProfilesPage/NewButton" Icon="Add" Click="NewButton_Click"/>
+                    <AppBarButton x:Name="EditButton" x:Uid="/ProfilesPage/EditButton" Icon="Edit"
+                                  Click="EditButton_Click" IsEnabled="False"/>
+                    <AppBarButton x:Name="DeleteButton" x:Uid="/ProfilesPage/DeleteButton" Icon="Delete"
+                                  Click="DeleteButton_Click" IsEnabled="False"/>
+                </CommandBar>
+                </StackPanel>
+
+                <ListView x:Name="ProfileList" Grid.Row="1"
+                          SelectionMode="Single"
+                          IsItemClickEnabled="False"
+                          DoubleTapped="ProfileList_DoubleTapped"
+                          SelectionChanged="ProfileList_SelectionChanged">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Setter Property="Padding" Value="8,8"/>
+                            <Setter Property="Margin" Value="0,0,8,2"/>
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="local:ProfileRow">
+                            <Grid ColumnSpacing="8" Background="Transparent"
+                                  ContextRequested="ProfileRow_ContextRequested">
+                                <Grid.ContextFlyout>
+                                    <MenuFlyout>
+                                        <MenuFlyoutItem x:Uid="/ProfilesPage/MenuEdit" Click="EditButton_Click">
+                                            <MenuFlyoutItem.Icon>
+                                                <SymbolIcon Symbol="Edit"/>
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutSeparator/>
+                                        <MenuFlyoutItem x:Uid="/ProfilesPage/MenuDelete" Click="DeleteButton_Click">
+                                            <MenuFlyoutItem.Icon>
+                                                <SymbolIcon Symbol="Delete"/>
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                    </MenuFlyout>
+                                </Grid.ContextFlyout>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*" MinWidth="60"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <ToggleSwitch Grid.Column="0"
+                                              VerticalAlignment="Center"
+                                              MinWidth="0"
+                                              OnContent="" OffContent=""
+                                              IsOn="{x:Bind Enabled, Mode=TwoWay}"
+                                              Toggled="EnabledToggle_Toggled"
+                                              Tag="{x:Bind ProfileId}"/>
+
+                                <!-- Leading icon: a process match shows its icon; missing icon / non-process match falls back to the default glyph (visibility is mutually exclusive). -->
+                                <Border Grid.Column="1" Style="{StaticResource IconTileStyle}">
+                                    <Grid Width="28" Height="28">
+                                        <FontIcon Glyph="&#xE7FC;"
+                                                  FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                                  FontSize="20" Opacity="0.6"
+                                                  Visibility="{x:Bind FallbackIconVisibility, Mode=OneWay}"/>
+                                        <Image Source="{x:Bind Icon, Mode=OneWay}" Width="28" Height="28"
+                                               Visibility="{x:Bind RealIconVisibility, Mode=OneWay}"/>
+                                    </Grid>
+                                </Border>
+
+                                <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Text="{x:Bind Name}" TextTrimming="CharacterEllipsis"
+                                               TextWrapping="NoWrap"
+                                               Style="{ThemeResource BodyStrongTextBlockStyle}"/>
+                                    <TextBlock Text="{x:Bind MatchSummary}"
+                                               TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
+                                               Style="{StaticResource SecondaryCaptionTextStyle}"/>
+                                    <TextBlock Text="{x:Bind RulesSummary}"
+                                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                               TextWrapping="NoWrap"
+                                               Style="{ThemeResource CaptionTextBlockStyle}"/>
+                                </StackPanel>
+
+                                <!-- Tooltip set from code-behind (Loc.T via Loaded) — see note on the left-column "+" button. -->
+                                <Button Grid.Column="3" VerticalAlignment="Center"
+                                        Padding="10,6"
+                                        IsEnabled="{x:Bind CanLaunch}"
+                                        Tag="{x:Bind ProfileId}"
+                                        Click="LaunchButton_Click"
+                                        Loaded="LaunchButton_Loaded">
+                                    <FontIcon Glyph="&#xE768;" FontSize="16"/>
+                                </Button>
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+
+                <TextBlock x:Name="EmptyHint" x:Uid="/ProfilesPage/EmptyHint" Grid.Row="1"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           TextWrapping="Wrap" TextAlignment="Center" MaxWidth="360"
+                           Visibility="Collapsed"/>
+            </Grid>
+            </Border>
+
             <!-- ===== Right card: running windows ===== -->
             <Border x:Name="RunningCard" Grid.Column="1" Style="{StaticResource CardBorderStyle}" Padding="16,14,8,8">
             <Grid RowSpacing="8">
@@ -224,128 +346,6 @@
                 <TextBlock x:Name="WindowEmptyHint" x:Uid="/ProfilesPage/WindowEmptyHint" Grid.Row="2"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                            HorizontalAlignment="Center" VerticalAlignment="Center"
-                           Visibility="Collapsed"/>
-            </Grid>
-            </Border>
-
-            <!-- ===== Left card: profile list ===== -->
-            <Border Grid.Column="0" Style="{StaticResource CardBorderStyle}" Padding="16,8,8,8">
-            <Grid RowSpacing="4">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-
-                <!-- Header: section title, then the actions on their own line (sharing one line squeezed the title) -->
-                <StackPanel Margin="0,6,8,0">
-                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                        <FontIcon Glyph="&#xE7FC;" FontSize="16"
-                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                        <TextBlock x:Uid="/ProfilesPage/ProfileListHeader"
-                                   Style="{ThemeResource BodyStrongTextBlockStyle}"/>
-                    </StackPanel>
-
-                <CommandBar DefaultLabelPosition="Right"
-                            Background="Transparent" HorizontalAlignment="Left"
-                            Margin="-8,0,0,0"
-                            IsOpen="False">
-                    <AppBarButton x:Name="NewButton" x:Uid="/ProfilesPage/NewButton" Icon="Add" Click="NewButton_Click"/>
-                    <AppBarButton x:Name="EditButton" x:Uid="/ProfilesPage/EditButton" Icon="Edit"
-                                  Click="EditButton_Click" IsEnabled="False"/>
-                    <AppBarButton x:Name="DeleteButton" x:Uid="/ProfilesPage/DeleteButton" Icon="Delete"
-                                  Click="DeleteButton_Click" IsEnabled="False"/>
-                </CommandBar>
-                </StackPanel>
-
-                <ListView x:Name="ProfileList" Grid.Row="1"
-                          SelectionMode="Single"
-                          IsItemClickEnabled="False"
-                          DoubleTapped="ProfileList_DoubleTapped"
-                          SelectionChanged="ProfileList_SelectionChanged">
-                    <ListView.ItemContainerStyle>
-                        <Style TargetType="ListViewItem">
-                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                            <Setter Property="Padding" Value="8,8"/>
-                            <Setter Property="Margin" Value="0,0,8,2"/>
-                        </Style>
-                    </ListView.ItemContainerStyle>
-                    <ListView.ItemTemplate>
-                        <DataTemplate x:DataType="local:ProfileRow">
-                            <Grid ColumnSpacing="8" Background="Transparent"
-                                  ContextRequested="ProfileRow_ContextRequested">
-                                <Grid.ContextFlyout>
-                                    <MenuFlyout>
-                                        <MenuFlyoutItem x:Uid="/ProfilesPage/MenuEdit" Click="EditButton_Click">
-                                            <MenuFlyoutItem.Icon>
-                                                <SymbolIcon Symbol="Edit"/>
-                                            </MenuFlyoutItem.Icon>
-                                        </MenuFlyoutItem>
-                                        <MenuFlyoutSeparator/>
-                                        <MenuFlyoutItem x:Uid="/ProfilesPage/MenuDelete" Click="DeleteButton_Click">
-                                            <MenuFlyoutItem.Icon>
-                                                <SymbolIcon Symbol="Delete"/>
-                                            </MenuFlyoutItem.Icon>
-                                        </MenuFlyoutItem>
-                                    </MenuFlyout>
-                                </Grid.ContextFlyout>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*" MinWidth="60"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-
-                                <ToggleSwitch Grid.Column="0"
-                                              VerticalAlignment="Center"
-                                              MinWidth="0"
-                                              OnContent="" OffContent=""
-                                              IsOn="{x:Bind Enabled, Mode=TwoWay}"
-                                              Toggled="EnabledToggle_Toggled"
-                                              Tag="{x:Bind ProfileId}"/>
-
-                                <!-- Leading icon: a process match shows its icon; missing icon / non-process match falls back to the default glyph (visibility is mutually exclusive). -->
-                                <Border Grid.Column="1" Style="{StaticResource IconTileStyle}">
-                                    <Grid Width="28" Height="28">
-                                        <FontIcon Glyph="&#xE7FC;"
-                                                  FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                                                  FontSize="20" Opacity="0.6"
-                                                  Visibility="{x:Bind FallbackIconVisibility, Mode=OneWay}"/>
-                                        <Image Source="{x:Bind Icon, Mode=OneWay}" Width="28" Height="28"
-                                               Visibility="{x:Bind RealIconVisibility, Mode=OneWay}"/>
-                                    </Grid>
-                                </Border>
-
-                                <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="2">
-                                    <TextBlock Text="{x:Bind Name}" TextTrimming="CharacterEllipsis"
-                                               TextWrapping="NoWrap"
-                                               Style="{ThemeResource BodyStrongTextBlockStyle}"/>
-                                    <TextBlock Text="{x:Bind MatchSummary}"
-                                               TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
-                                               Style="{StaticResource SecondaryCaptionTextStyle}"/>
-                                    <TextBlock Text="{x:Bind RulesSummary}"
-                                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                                               TextWrapping="NoWrap"
-                                               Style="{ThemeResource CaptionTextBlockStyle}"/>
-                                </StackPanel>
-
-                                <!-- Tooltip set from code-behind (Loc.T via Loaded) — see note on the left-column "+" button. -->
-                                <Button Grid.Column="3" VerticalAlignment="Center"
-                                        Padding="10,6"
-                                        IsEnabled="{x:Bind CanLaunch}"
-                                        Tag="{x:Bind ProfileId}"
-                                        Click="LaunchButton_Click"
-                                        Loaded="LaunchButton_Loaded">
-                                    <FontIcon Glyph="&#xE768;" FontSize="16"/>
-                                </Button>
-                            </Grid>
-                        </DataTemplate>
-                    </ListView.ItemTemplate>
-                </ListView>
-
-                <TextBlock x:Name="EmptyHint" x:Uid="/ProfilesPage/EmptyHint" Grid.Row="1"
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                           HorizontalAlignment="Center" VerticalAlignment="Center"
-                           TextWrapping="Wrap" TextAlignment="Center" MaxWidth="360"
                            Visibility="Collapsed"/>
             </Grid>
             </Border>
