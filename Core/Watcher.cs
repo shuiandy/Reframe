@@ -109,7 +109,7 @@ public sealed class Watcher : IDisposable
     // through, so throttle it to 5s minimum.
     private const int MinPollMs = 5000;
 
-    // Anti-thrash parameters (10s window / cap of 3 / 2 warnings / 5min decay) live in Core/ThrashPolicy.cs.
+    // Anti-thrash parameters (10s window / cap of 3 / 2 warnings / 5min decay / give-up) live in Core/ThrashPolicy.cs.
 
     public Watcher(Func<AppConfig> getConfig) => _getConfig = getConfig;
 
@@ -423,12 +423,22 @@ public sealed class Watcher : IDisposable
                 // Not exclusive: allow a future re-entry into exclusive full-screen to prompt again.
                 _exclusiveHinted.TryRemove(w.Handle, out _);
 
-                // Already-managed window: cap reapplies per unit time to avoid a fight-to-the-death loop
-                // with the game's own window management.
-                if (WindowOps.IsTracked(w.Handle) && !AllowReapply(w.Handle, p))
-                    break;
-
                 var target = PlacementResolver.Resolve(w, p, cfg);
+
+                // Already-managed window: cap reapplies per unit time to avoid a fight-to-the-death loop
+                // with the game's own window management. Only a window that has actually drifted off its target
+                // spends that budget: ticks fire on any window event anywhere, and a tick that finds the window
+                // still in place is not a fight (counting it would eat the budget and raise false warnings).
+                if (WindowOps.IsTracked(w.Handle))
+                {
+                    if (!WindowOps.NeedsApply(w.Handle, in target))
+                    {
+                        _takeover.TryAdd(w.Handle, p.Id);
+                        break;
+                    }
+                    if (!AllowReapply(w.Handle, p)) break;
+                }
+
                 var outcome = WindowOps.Apply(w.Handle, in target, MutationSource.Takeover);
 
                 if (outcome == ApplyOutcome.Failed)
@@ -462,24 +472,22 @@ public sealed class Watcher : IDisposable
 
     /// <summary>
     /// Reapply throttle for an already-managed window: a thin shell — all the logic lives in
-    /// <see cref="ThrashPolicy.Evaluate"/> (10s window / cap of 3 / 2 warnings / 5min decay). Here we
-    /// only turn a "should warn" signal into a log line.
+    /// <see cref="ThrashPolicy.Evaluate(ThrashState, DateTime, out bool, out bool)"/> (10s window / cap of 3 /
+    /// 2 warnings / 5min decay / give up after 3 capped windows in a row). Here we only turn its signals into log lines.
     /// </summary>
     private bool AllowReapply(IntPtr hWnd, Profile p)
     {
         var s = _thrash.GetOrAdd(hWnd, _ => new ThrashState { WindowStartUtc = DateTime.UtcNow });
-        bool allow, warn;
-        bool finalWarn;
+        bool allow, warn, gaveUp;
         lock (s)
         {
-            allow = ThrashPolicy.Evaluate(s, DateTime.UtcNow, out warn);
-            finalWarn = s.TotalWarns >= ThrashPolicy.MaxWarns;
+            allow = ThrashPolicy.Evaluate(s, DateTime.UtcNow, out warn, out gaveUp);
         }
-        if (warn)
-        {
-            string tail = finalWarn ? " (further identical conflicts will be silenced until the window is rebuilt or the engine restarts)" : "";
-            Emit($"\"{p.Name}\" keeps reverting; backing off this round (likely fighting the game's own window management){tail}");
-        }
+        if (gaveUp)
+            Emit($"\"{p.Name}\" undoes every reapply (the game is managing its own window style/size); stopped re-applying to this window. " +
+                 "Set the game to borderless/windowed in its own settings; edit or re-enable the profile, or reopen the game, to try again");
+        else if (warn)
+            Emit($"\"{p.Name}\" keeps reverting; backing off this round (likely fighting the game's own window management)");
         return allow;
     }
 
