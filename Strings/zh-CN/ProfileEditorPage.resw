@@ -344,4 +344,8 @@
   <data name="MonitorPickPlaceholder" xml:space="preserve">
     <value>选择一台显示器</value>
   </data>
+  <!-- Code-side tooltips (Loc.T cannot read 'X.ToolTip' keys: MRT maps the dot to a sub-resource) -->
+  <data name="BackButtonTooltip" xml:space="preserve">
+    <value>返回</value>
+  </data>
 </root>

@@ -37,10 +37,10 @@
                  (A horizontal StackPanel clipped W/H off the card on narrow windows.) -->
             <Grid ColumnSpacing="12">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" MinWidth="140"/>
-                    <ColumnDefinition Width="*" MinWidth="160"/>
-                    <ColumnDefinition Width="110"/>
-                    <ColumnDefinition Width="110"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="100"/>
+                    <ColumnDefinition Width="100"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0" Spacing="2">
                     <TextBlock x:Uid="/LayoutEditorPage/NameLabel" Style="{ThemeResource CaptionTextBlockStyle}"/>
@@ -68,33 +68,47 @@
 
             <Border Style="{StaticResource CardDividerStyle}"/>
 
-            <!-- Presets scroll sideways instead of being cut off when the window is narrow -->
-            <ScrollViewer HorizontalScrollBarVisibility="Auto" HorizontalScrollMode="Auto"
-                          VerticalScrollBarVisibility="Disabled" VerticalScrollMode="Disabled"
-                          Padding="0,0,0,4">
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <FontIcon Glyph="&#xE80A;" FontSize="14" VerticalAlignment="Center"
-                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                <TextBlock x:Uid="/LayoutEditorPage/PresetLabel" VerticalAlignment="Center"
-                           Margin="0,0,4,0"
-                           Style="{ThemeResource BodyStrongTextBlockStyle}"/>
-                <Button x:Uid="/LayoutEditorPage/PresetHalf" Tag="half" Click="Preset_Click"/>
-                <Button x:Uid="/LayoutEditorPage/PresetThirds" Tag="thirds" Click="Preset_Click"/>
-                <Button x:Uid="/LayoutEditorPage/PresetTwoThirds" Tag="twoThirds" Click="Preset_Click"/>
-                <Button x:Uid="/LayoutEditorPage/PresetCenter169" Tag="center169" Click="Preset_Click"/>
-                <Button x:Uid="/LayoutEditorPage/PresetLeft219" Tag="left219" Click="Preset_Click"/>
-                <AppBarSeparator/>
-                <Button Click="AddZone_Click" Style="{ThemeResource AccentButtonStyle}">
-                    <ToolTipService.ToolTip>
-                        <TextBlock x:Uid="/LayoutEditorPage/AddZoneTip"/>
-                    </ToolTipService.ToolTip>
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <FontIcon Glyph="&#xE710;" FontSize="12"/>
-                        <TextBlock x:Uid="/LayoutEditorPage/AddZoneLabel"/>
-                    </StackPanel>
-                </Button>
+            <!-- Presets: label on its own line, then a 3-column grid of equal buttons, so every preset
+                 stays visible at any window width (a single horizontal row was cut off when narrow). -->
+            <StackPanel Spacing="8">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon Glyph="&#xE80A;" FontSize="14" VerticalAlignment="Center"
+                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    <TextBlock x:Uid="/LayoutEditorPage/PresetLabel" VerticalAlignment="Center"
+                               Style="{ThemeResource BodyStrongTextBlockStyle}"/>
+                </StackPanel>
+                <Grid ColumnSpacing="8" RowSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Button Grid.Row="0" Grid.Column="0" HorizontalAlignment="Stretch"
+                            x:Uid="/LayoutEditorPage/PresetHalf" Tag="half" Click="Preset_Click"/>
+                    <Button Grid.Row="0" Grid.Column="1" HorizontalAlignment="Stretch"
+                            x:Uid="/LayoutEditorPage/PresetThirds" Tag="thirds" Click="Preset_Click"/>
+                    <Button Grid.Row="0" Grid.Column="2" HorizontalAlignment="Stretch"
+                            x:Uid="/LayoutEditorPage/PresetTwoThirds" Tag="twoThirds" Click="Preset_Click"/>
+                    <Button Grid.Row="1" Grid.Column="0" HorizontalAlignment="Stretch"
+                            x:Uid="/LayoutEditorPage/PresetCenter169" Tag="center169" Click="Preset_Click"/>
+                    <Button Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch"
+                            x:Uid="/LayoutEditorPage/PresetLeft219" Tag="left219" Click="Preset_Click"/>
+                    <Button Grid.Row="1" Grid.Column="2" HorizontalAlignment="Stretch"
+                            Click="AddZone_Click" Style="{ThemeResource AccentButtonStyle}">
+                        <ToolTipService.ToolTip>
+                            <TextBlock x:Uid="/LayoutEditorPage/AddZoneTip"/>
+                        </ToolTipService.ToolTip>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon Glyph="&#xE710;" FontSize="12"/>
+                            <TextBlock x:Uid="/LayoutEditorPage/AddZoneLabel"/>
+                        </StackPanel>
+                    </Button>
+                </Grid>
             </StackPanel>
-            </ScrollViewer>
         </StackPanel>
         </Border>
 

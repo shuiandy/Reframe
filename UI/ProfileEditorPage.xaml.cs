@@ -26,7 +26,7 @@ public sealed partial class ProfileEditorPage : Page
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         // Localize the back-button tooltip from code-behind (attached-property x:Uid is brittle in MRT Core).
-        ToolTipService.SetToolTip(BackButton, Loc.T("ProfileEditorPage/BackButton.ToolTip"));
+        ToolTipService.SetToolTip(BackButton, Loc.T("ProfileEditorPage/BackButtonTooltip"));
 
         // ToggleSwitch On/OffContent are set in code (per the i18n spec they aren't reliable via x:Uid); reuse the shared Common/On|Off words.
         string on = Loc.T("Common/On");

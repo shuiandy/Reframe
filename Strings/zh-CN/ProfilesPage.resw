@@ -229,4 +229,17 @@
   <data name="RunningWindowsHint.Text" xml:space="preserve">
     <value>点 + 根据窗口创建配置文件,右键可立即去边框或忽略该进程。</value>
   </data>
+  <!-- Code-side tooltips (Loc.T cannot read 'X.ToolTip' keys: MRT maps the dot to a sub-resource) -->
+  <data name="ShowFilteredTooltip" xml:space="preserve">
+    <value>显示被过滤掉的窗口(系统/已忽略/已隐藏/过小)</value>
+  </data>
+  <data name="RefreshTooltip" xml:space="preserve">
+    <value>刷新窗口列表</value>
+  </data>
+  <data name="CreateFromWindowTooltip" xml:space="preserve">
+    <value>据此窗口创建配置</value>
+  </data>
+  <data name="LaunchTooltip" xml:space="preserve">
+    <value>启动</value>
+  </data>
 </root>

@@ -14,21 +14,50 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
+        <!-- Adaptive: wide windows show the two cards side by side (profile list left, running windows
+             right as a picker); narrow windows (or high DPI scaling) stack them, so neither card is
+             squeezed or pushed off the page. -->
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup>
+                <VisualState x:Name="WideState">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="1000"/>
+                    </VisualState.StateTriggers>
+                </VisualState>
+                <VisualState x:Name="NarrowState">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="0"/>
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="RightColumn.Width" Value="0"/>
+                        <Setter Target="CardsGrid.ColumnSpacing" Value="0"/>
+                        <Setter Target="CardsGrid.RowSpacing" Value="16"/>
+                        <Setter Target="SecondRow.Height" Value="*"/>
+                        <Setter Target="RunningCard.(Grid.Column)" Value="0"/>
+                        <Setter Target="RunningCard.(Grid.Row)" Value="1"/>
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+
+
         <StackPanel>
             <TextBlock x:Uid="/ProfilesPage/Title" Style="{StaticResource PageTitleTextStyle}"/>
             <TextBlock x:Uid="/ProfilesPage/Subtitle" Style="{StaticResource PageSubtitleTextStyle}"/>
         </StackPanel>
 
-        <!-- Two cards side by side. The profile list (what the user manages) sits on the left and is wider;
-             running windows (the source to create profiles from) sit on the right as a picker. -->
-        <Grid Grid.Row="1" ColumnSpacing="16">
+        <Grid x:Name="CardsGrid" Grid.Row="1" ColumnSpacing="16">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" MinWidth="320"/>
-                <ColumnDefinition Width="*" MinWidth="320"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition x:Name="RightColumn" Width="*"/>
             </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition x:Name="SecondRow" Height="Auto"/>
+            </Grid.RowDefinitions>
 
             <!-- ===== Right card: running windows ===== -->
-            <Border Grid.Column="1" Style="{StaticResource CardBorderStyle}" Padding="16,14,8,8">
+            <Border x:Name="RunningCard" Grid.Column="1" Style="{StaticResource CardBorderStyle}" Padding="16,14,8,8">
             <Grid RowSpacing="8">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -48,18 +77,22 @@
                 </StackPanel>
 
                 <!-- Search + show-filtered + refresh -->
-                <Grid Grid.Row="1" ColumnSpacing="8" Margin="0,0,8,0">
+                <!-- Search box gets its own line (with refresh); the show-filtered toggle sits below -->
+                <Grid Grid.Row="1" ColumnSpacing="8" RowSpacing="8" Margin="0,0,8,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
                     <TextBox x:Name="SearchBox" x:Uid="/ProfilesPage/SearchBox" Grid.Column="0"
                              TextChanged="SearchBox_TextChanged"/>
                     <!-- Show filtered: when on, windows that were filtered out are also listed (greyed + reason), a fallback for recovering games that were filtered by mistake. -->
                     <!-- Tooltip is set from code-behind (Loc.T) because attached-property x:Uid is brittle in MRT Core. -->
-                    <ToggleButton x:Name="ShowFilteredToggle" Grid.Column="1"
-                                  VerticalAlignment="Stretch"
+                    <ToggleButton x:Name="ShowFilteredToggle" Grid.Row="1" Grid.Column="0"
+                                  HorizontalAlignment="Left"
                                   Checked="ShowFilteredToggle_Toggled"
                                   Unchecked="ShowFilteredToggle_Toggled">
                         <StackPanel Orientation="Horizontal" Spacing="6">
@@ -67,7 +100,8 @@
                             <TextBlock x:Uid="/ProfilesPage/ShowFilteredLabel"/>
                         </StackPanel>
                     </ToggleButton>
-                    <Button x:Name="RefreshButton" Grid.Column="2"
+                    <Button x:Name="RefreshButton" Grid.Column="1"
+                            VerticalAlignment="Stretch"
                             Click="RefreshButton_Click">
                         <FontIcon Glyph="&#xE72C;" FontFamily="{ThemeResource SymbolThemeFontFamily}"/>
                     </Button>
