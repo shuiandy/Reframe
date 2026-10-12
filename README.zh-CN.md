@@ -128,7 +128,7 @@ powershell -ExecutionPolicy Bypass -File tools\publish.ps1
 `.github/workflows/release.yml` 会在每个 PR 和推到 `main` 时编译、跑测试并打包(安装程序和 zip 作为 workflow 产物保留)。发版步骤:
 
 1. 改 `Reframe.csproj` 里的 `<Version>`(以及 `FileVersion` / `InformationalVersion`)并合并。
-2. 推一个对应的 tag,例如 `git tag v1.4.0 && git push origin v1.4.0`。tag 和 `<Version>` 对不上时 workflow 会直接失败。
+2. 推一个对应的 tag,例如 `git tag v1.4.0 && git push origin v1.4.0`。tag 和 `<Version>` 对不上时 workflow 会直接失败。(也可以在 `main` 上手动运行 workflow 并勾选 *release*,由 workflow 自己打 tag。)
 3. workflow 会建一个**草稿** release,附带 `Reframe-Setup-v<版本>-win-x64.exe` 和 `Reframe-v<版本>-win-x64.zip`。编辑好说明后发布,程序内的检查更新才会看到它。
 
 程序内更新只会从本仓库的 release 下载这两个名字完全一致的文件,并且下载内容必须和 GitHub 给出的 SHA-256 一致才会安装(见 `Services\UpdateAssets.cs`)。

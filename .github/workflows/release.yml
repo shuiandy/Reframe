@@ -6,6 +6,8 @@
 #                                              both packages. Publishing the draft is a person's call;
 #                                              until then the in-app update check cannot see it
 #                                              (api.github.com/.../releases/latest ignores drafts).
+#   manual run on main with release = true   : the same as a tag push, for when pushing a tag is not
+#                                              an option: the workflow tags the commit v<Version> itself.
 #
 # The asset names are a contract with Services\UpdateAssets.cs: the in-app updater only accepts
 #   Reframe-Setup-v<version>-win-x64.exe   (installed copies)
@@ -20,6 +22,11 @@ on:
     branches: [main]
     tags: ['v*.*.*']
   workflow_dispatch:
+    inputs:
+      release:
+        description: 'Tag this commit v<Version> and create a draft release (main only)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -123,12 +130,27 @@ jobs:
       version: ${{ steps.version.outputs.version }}
 
   release:
-    if: startsWith(github.ref, 'refs/tags/')
+    if: >-
+      startsWith(github.ref, 'refs/tags/') ||
+      (github.event_name == 'workflow_dispatch' && inputs.release && github.ref == 'refs/heads/main')
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      # Manual release: create the tag here. A tag pushed with the workflow token does not start another
+      # run, and a plain push refuses to move a tag that already exists.
+      - uses: actions/checkout@v4
+        if: github.event_name == 'workflow_dispatch'
+
+      - name: Tag v${{ needs.build.outputs.version }}
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: v${{ needs.build.outputs.version }}
+        run: |
+          git tag "$TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$TAG"
+
       - uses: actions/download-artifact@v4
         with:
           name: reframe-${{ needs.build.outputs.version }}
@@ -138,7 +160,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', needs.build.outputs.version) || github.ref_name }}
         run: |
           ls -l packages
           gh release create "$TAG" packages/* \
