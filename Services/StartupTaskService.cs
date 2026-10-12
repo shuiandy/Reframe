@@ -155,14 +155,19 @@ public static class StartupTaskService
     /// flag-based code, which inherited Task Scheduler's default 3-day (<c>PT72H</c>) limit and was
     /// therefore terminated after three days of uptime, is silently rebuilt with no limit.</item>
     /// </list>
-    /// If either check fails we rebuild via <see cref="Enable"/> (which writes the corrected XML). We
-    /// only leave the task alone when both are already satisfied.
+    /// When <paramref name="claimForCurrentExe"/> is true a third check applies: the action must start
+    /// this very exe. The installed copy passes true, so the first launch from Program Files takes over
+    /// a task that still points at an older portable or dev build; any other copy passes false, so
+    /// running a test build never steals start-on-login from the installed one.
+    ///
+    /// If any check fails we rebuild via <see cref="Enable"/> (which writes the corrected XML). We
+    /// only leave the task alone when all of them are already satisfied.
     ///
     /// No-op when the task doesn't exist (nothing to migrate). Best-effort and non-throwing; safe to call
     /// on every startup. Returns true when a rebuild was actually performed. Any failure is swallowed: a
     /// migration hiccup must never block startup, and the worst case is the pre-existing behaviour.
     /// </summary>
-    public static bool MigrateIfNeeded(bool minimized)
+    public static bool MigrateIfNeeded(bool minimized, bool claimForCurrentExe = false)
     {
         try
         {
@@ -179,11 +184,39 @@ public static class StartupTaskService
             // flag-created) task has PT72H, which fails this check and triggers a rebuild.
             bool unlimited = xml.Contains("<ExecutionTimeLimit>PT0S", StringComparison.OrdinalIgnoreCase);
 
-            // Both already correct → leave it alone.
-            if (flagMatches && unlimited) return false;
+            bool exeMatches = !claimForCurrentExe ||
+                              TaskCommandIs(xml, Environment.ProcessPath);
 
-            // Disagrees on either axis → rebuild with the current exe, the desired flag, and no limit.
+            // All already correct → leave it alone.
+            if (flagMatches && unlimited && exeMatches) return false;
+
+            // Disagrees on any axis → rebuild with the current exe, the desired flag, and no limit.
             return Enable(minimized);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Does the task definition <paramref name="taskXml"/> (as <c>schtasks /Query /XML</c> prints it)
+    /// start <paramref name="exePath"/>? Compares the first <c>Exec/Command</c> case-insensitively,
+    /// ignoring surrounding quotes (a task created by the old flag form stored the path quoted). Pure;
+    /// anything unreadable answers false, which only ever leads to a rebuild pointing at the current exe.
+    /// </summary>
+    public static bool TaskCommandIs(string? taskXml, string? exePath)
+    {
+        if (string.IsNullOrWhiteSpace(taskXml) || string.IsNullOrWhiteSpace(exePath)) return false;
+        try
+        {
+            var doc = System.Xml.Linq.XDocument.Parse(taskXml);
+            var command = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "Command")?.Value;
+            if (string.IsNullOrWhiteSpace(command)) return false;
+
+            string a = Environment.ExpandEnvironmentVariables(command.Trim().Trim('"'));
+            string b = exePath.Trim().Trim('"');
+            return string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
         }
         catch
         {

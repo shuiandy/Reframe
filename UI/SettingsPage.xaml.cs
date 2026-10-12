@@ -69,11 +69,11 @@ public sealed partial class SettingsPage : Page
         }
         finally { _loading = false; }
 
-        // 上次自升级没走完:更新脚本在 %TEMP%\Reframe-update\update.log 留了 ERROR 行。
+        // 上次自升级没走完:更新脚本在 update.log 留了 ERROR 行(安装版在安装目录\update,便携版在 %TEMP%\Reframe-update)。
         // 只做提示(脚本本身不删任何东西,安装目录最坏是"部分文件已换新"),用户可以再点一次更新。
         string? lastUpdateError = UpdateService.TryGetLastUpdateError();
         if (lastUpdateError is not null)
-            ShowUpdateStatus(Loc.T("SettingsPage/UpdatePreviousFailed"), error: true);
+            ShowUpdateStatus(Loc.T("SettingsPage/UpdatePreviousFailed", UpdateService.LastUpdateLogPath), error: true);
 
         // 外部热重载:config.json 被本程序之外(手改/同步/导入)改动时,ConfigService 会换 Config 引用并触发 Changed。
         // 订阅以把最新值读回控件。事件可能在任意线程触发,切回 UI 线程再动控件。Unloaded 退订防泄漏。

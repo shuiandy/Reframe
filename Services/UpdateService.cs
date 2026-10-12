@@ -40,6 +40,9 @@ public sealed class UpdateCheckResult
     /// <summary>Asset size reported by the GitHub API, used as a second check on the downloaded bytes. 0 = unknown.</summary>
     public long AssetSize { get; init; }
 
+    /// <summary>Lower-case hex SHA-256 of the asset, from the GitHub API <c>digest</c>. Set whenever <see cref="AssetUrl"/> is.</summary>
+    public string? AssetSha256 { get; init; }
+
     /// <summary>Failure detail when <see cref="Status"/> is <see cref="UpdateCheckStatus.Failed"/>.</summary>
     public string? Error { get; init; }
 
@@ -86,8 +89,20 @@ public sealed class UpdateService
     private const string UninstallKeyPath =
         @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{8F3C1A47-2E9B-4D6A-9C7F-1B5E0A2D6F84}_is1";
 
-    /// <summary>Staging folder for the download, the unpacked payload, the script and its log.</summary>
-    public static string StagingDir => Path.Combine(Path.GetTempPath(), "Reframe-update");
+    /// <summary>
+    /// Staging folder for the download, the unpacked payload, the script and its log.
+    ///
+    /// <para>The installed copy stages inside its own folder (<c>Program Files\Reframe\update</c>),
+    /// which only administrators can write. That matters because whatever is staged here is then run
+    /// elevated: in <c>%TEMP%</c> any unelevated process of the same user could swap the verified
+    /// Setup.exe or the generated script between the hash check and the launch, and so borrow
+    /// Reframe's elevation. The portable copy keeps using <c>%TEMP%</c>: its own folder is wherever the
+    /// user unpacked it and is just as writable, so there is no boundary to protect there.</para>
+    /// </summary>
+    public static string StagingDirFor(UpdateInstallMode mode) =>
+        mode == UpdateInstallMode.Installed
+            ? Path.Combine(AppContext.BaseDirectory, "update")
+            : Path.Combine(Path.GetTempPath(), "Reframe-update");
 
     // One client per role, kept static: HttpClient is meant to be reused (a per-call instance leaks
     // sockets). The API client has the short 10s budget the check needs; the download client gets a
@@ -222,6 +237,11 @@ public sealed class UpdateService
                     string? url = asset.TryGetProperty("browser_download_url", out var u) ? u.GetString() : null;
                     if (!UpdateAssets.IsTrustedDownloadUrl(url, wanted)) continue; // never relax this
 
+                    // No usable SHA-256, no automatic install: the hash is what proves the bytes we
+                    // are about to run elevated are the bytes that were uploaded.
+                    string? digest = asset.TryGetProperty("digest", out var d) && d.ValueKind == JsonValueKind.String ? d.GetString() : null;
+                    if (!UpdateAssets.TryParseSha256Digest(digest, out string sha256)) continue;
+
                     long size = asset.TryGetProperty("size", out var s) && s.TryGetInt64(out long parsed) ? parsed : 0;
 
                     return new UpdateCheckResult
@@ -232,6 +252,7 @@ public sealed class UpdateService
                         AssetName = wanted,
                         AssetUrl = url,
                         AssetSize = size,
+                        AssetSha256 = sha256,
                     };
                 }
             }
@@ -274,7 +295,8 @@ public sealed class UpdateService
         // Re-validate against the version and mode the result claims. Cheap, and it means a
         // hand-constructed result can never smuggle a URL past the rules in UpdateAssets.
         if (!UpdateAssets.IsExpectedAssetName(result.AssetName, result.Version, result.Mode) ||
-            !UpdateAssets.IsTrustedDownloadUrl(result.AssetUrl, result.AssetName))
+            !UpdateAssets.IsTrustedDownloadUrl(result.AssetUrl, result.AssetName) ||
+            !UpdateAssets.TryParseSha256Digest("sha256:" + result.AssetSha256, out string sha256))
         {
             throw new InvalidOperationException("The update package failed validation and was not downloaded.");
         }
@@ -282,11 +304,11 @@ public sealed class UpdateService
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            string staging = StagingDir;
+            string staging = StagingDirFor(result.Mode);
             ResetStagingDir(staging);
 
             string packagePath = Path.Combine(staging, result.AssetName);
-            await DownloadAsync(result.AssetUrl, packagePath, result.AssetSize, progress, ct).ConfigureAwait(false);
+            await DownloadAsync(result.AssetUrl, packagePath, result.AssetSize, sha256, progress, ct).ConfigureAwait(false);
 
             string logPath = Path.Combine(staging, UpdateScript.LogFileName);
             string scriptPath = Path.Combine(staging, UpdateScript.ScriptFileName);
@@ -325,6 +347,9 @@ public sealed class UpdateService
         }
     }
 
+    /// <summary>Where the update script of this copy's flavour writes its log.</summary>
+    public static string LastUpdateLogPath => Path.Combine(StagingDirFor(DetectInstallMode()), UpdateScript.LogFileName);
+
     /// <summary>
     /// Was the previous update attempt left unfinished? Returns the first <c>ERROR</c> line from the
     /// staged log, or null when there is no log or it records no failure. Never throws.
@@ -333,7 +358,7 @@ public sealed class UpdateService
     {
         try
         {
-            string log = Path.Combine(StagingDir, UpdateScript.LogFileName);
+            string log = LastUpdateLogPath;
             if (!File.Exists(log)) return null;
 
             foreach (string line in File.ReadLines(log))
@@ -352,8 +377,8 @@ public sealed class UpdateService
 
     /// <summary>
     /// Empty the staging folder so a previous attempt's package, payload and log cannot be confused
-    /// with this one's. This deletes only inside our own <c>%TEMP%\Reframe-update</c> folder — the
-    /// generated script, which touches the user's installation, deletes nothing at all.
+    /// with this one's. This deletes only inside our own staging folder (<see cref="StagingDirFor"/>) —
+    /// the generated script, which touches the user's installation, deletes nothing at all.
     /// </summary>
     private static void ResetStagingDir(string staging)
     {
@@ -367,12 +392,13 @@ public sealed class UpdateService
     }
 
     /// <summary>
-    /// Stream the asset to disk, reporting progress, and verify the size. Both the
+    /// Stream the asset to disk, reporting progress, and verify size and hash. Both the
     /// <c>Content-Length</c> of the response and the size the GitHub API reported must match the bytes
-    /// actually written; a mismatch deletes the partial file and throws, so a truncated download can
-    /// never be handed to the installer.
+    /// actually written, and their SHA-256 must equal <paramref name="expectedSha256"/>; any mismatch
+    /// deletes the file and throws, so a truncated or altered download can never be handed to the
+    /// installer.
     /// </summary>
-    private static async Task DownloadAsync(string url, string destination, long expectedSize,
+    private static async Task DownloadAsync(string url, string destination, long expectedSize, string expectedSha256,
                                             IProgress<double>? progress, CancellationToken ct)
     {
         using var response = await _download
@@ -382,6 +408,7 @@ public sealed class UpdateService
         long? contentLength = response.Content.Headers.ContentLength;
         long total = contentLength ?? (expectedSize > 0 ? expectedSize : 0);
         long written = 0;
+        using var hash = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
 
         try
         {
@@ -393,6 +420,7 @@ public sealed class UpdateService
                 while ((read = await input.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
                 {
                     await output.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+                    hash.AppendData(buffer, 0, read);
                     written += read;
                     if (total > 0) progress?.Report(Math.Min(1.0, (double)written / total));
                 }
@@ -402,6 +430,10 @@ public sealed class UpdateService
                 throw new IOException($"Download is incomplete: got {written} of {contentLength.Value} bytes.");
             if (expectedSize > 0 && written != expectedSize)
                 throw new IOException($"Download size mismatch: got {written} bytes, expected {expectedSize}.");
+
+            string actual = Convert.ToHexStringLower(hash.GetHashAndReset());
+            if (!string.Equals(actual, expectedSha256, StringComparison.Ordinal))
+                throw new IOException("Download failed its SHA-256 check and was discarded.");
         }
         catch
         {

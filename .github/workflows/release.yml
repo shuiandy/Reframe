@@ -1,0 +1,148 @@
+# Build, test and package Reframe on a Windows runner.
+#
+#   pull_request / push to main / manual run : build + test + package, keep the two packages as
+#                                              workflow artifacts (nothing is published).
+#   push of a tag v<major>.<minor>.<patch>   : the same, then create a DRAFT GitHub release carrying
+#                                              both packages. Publishing the draft is a person's call;
+#                                              until then the in-app update check cannot see it
+#                                              (api.github.com/.../releases/latest ignores drafts).
+#
+# The asset names are a contract with Services\UpdateAssets.cs: the in-app updater only accepts
+#   Reframe-Setup-v<version>-win-x64.exe   (installed copies)
+#   Reframe-v<version>-win-x64.zip         (portable copies)
+# and the tag must equal <Version> in Reframe.csproj, which is checked below.
+
+name: Build and release
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # Directory.Build.props and tools\*.ps1 put every output under ReframeBuildRoot (must end with '\').
+      # Set from a step because the runner context is not available in job-level env.
+      - name: Build root
+        shell: pwsh
+        run: |
+          $root = (Join-Path $env:RUNNER_TEMP 'reframe-build') + '\'
+          "ReframeBuildRoot=$root" >> $env:GITHUB_ENV
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Read version
+        id: version
+        shell: pwsh
+        run: |
+          [xml]$xml = Get-Content -Path Reframe.csproj
+          $version = ($xml.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version
+          if ([string]::IsNullOrWhiteSpace($version)) { throw 'No <Version> in Reframe.csproj' }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "Reframe version: $version"
+
+      - name: Tag matches Reframe.csproj version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if ($env:TAG -ne "v$env:VERSION") {
+            throw "Tag $env:TAG does not match Reframe.csproj <Version> $env:VERSION (expected v$env:VERSION)."
+          }
+
+      - name: Test
+        run: dotnet test Tests\Reframe.Core.Tests.csproj -c Release
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          $known = @(
+            (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'),
+            (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe')
+          )
+          if (-not (Get-Command ISCC.exe -ErrorAction SilentlyContinue) -and -not ($known | Where-Object { Test-Path $_ })) {
+            choco install innosetup --no-progress -y
+            if ($LASTEXITCODE -ne 0) { throw "choco install innosetup failed ($LASTEXITCODE)" }
+          }
+
+      - name: Portable zip
+        shell: pwsh
+        run: tools\publish.ps1
+
+      - name: Installer
+        shell: pwsh
+        run: tools\build-installer.ps1
+
+      - name: Collect packages
+        id: packages
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $dist = Join-Path $env:ReframeBuildRoot 'dist'
+          $names = @("Reframe-Setup-v$env:VERSION-win-x64.exe", "Reframe-v$env:VERSION-win-x64.zip")
+          foreach ($n in $names) {
+            $p = Join-Path $dist $n
+            if (-not (Test-Path $p)) { throw "Missing package $p" }
+            $h = (Get-FileHash -Algorithm SHA256 $p).Hash.ToLowerInvariant()
+            Write-Host "$n  sha256:$h  $((Get-Item $p).Length) bytes"
+          }
+          "dist=$dist" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reframe-${{ steps.version.outputs.version }}
+          path: |
+            ${{ steps.packages.outputs.dist }}\Reframe-Setup-v${{ steps.version.outputs.version }}-win-x64.exe
+            ${{ steps.packages.outputs.dist }}\Reframe-v${{ steps.version.outputs.version }}-win-x64.zip
+          if-no-files-found: error
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: reframe-${{ needs.build.outputs.version }}
+          path: packages
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          ls -l packages
+          gh release create "$TAG" packages/* \
+            --draft \
+            --verify-tag \
+            --title "Reframe $TAG" \
+            --generate-notes

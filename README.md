@@ -123,6 +123,16 @@ Build output lives **outside the repo**: `Directory.Build.props` puts every proj
 
 `publish.ps1` produces a build that is **framework-dependent for .NET** (target machine needs the .NET 9 Desktop Runtime) but **self-contained for the Windows App SDK** (target machine does not). It publishes into a dedicated `<build root>\publish\` folder so it never disturbs `bin\Debug` or a running instance.
 
+### Releasing
+
+`.github/workflows/release.yml` builds, tests and packages on every pull request and push to `main` (the installer and the zip are kept as workflow artifacts). To ship a version:
+
+1. Bump `<Version>` (and `FileVersion` / `InformationalVersion`) in `Reframe.csproj` and merge.
+2. Push a matching tag, e.g. `git tag v1.4.0 && git push origin v1.4.0`. The workflow refuses a tag that does not match `<Version>`.
+3. The workflow creates a **draft** release with `Reframe-Setup-v<version>-win-x64.exe` and `Reframe-v<version>-win-x64.zip`. Edit the notes and publish it; only then does the in-app update check see it.
+
+The in-app updater only installs those two exact asset names from this repository's releases, and only after the download matches the SHA-256 GitHub reports for the asset (see `Services\UpdateAssets.cs`).
+
 ## Architecture
 
 Reframe is split into a UI-free **Core** and a WinUI 3 shell on top of it:

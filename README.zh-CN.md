@@ -123,6 +123,16 @@ powershell -ExecutionPolicy Bypass -File tools\publish.ps1
 
 `publish.ps1` 产出的包对 **.NET 是框架依赖的**(目标机需 .NET 9 桌面运行时),但 **Windows App SDK 已自包含**(目标机无需另装)。它发布到独立的 `<构建根>\publish\` 目录,不影响 `bin\Debug` 与正在运行的实例。
 
+### 发布新版本
+
+`.github/workflows/release.yml` 会在每个 PR 和推到 `main` 时编译、跑测试并打包(安装程序和 zip 作为 workflow 产物保留)。发版步骤:
+
+1. 改 `Reframe.csproj` 里的 `<Version>`(以及 `FileVersion` / `InformationalVersion`)并合并。
+2. 推一个对应的 tag,例如 `git tag v1.4.0 && git push origin v1.4.0`。tag 和 `<Version>` 对不上时 workflow 会直接失败。
+3. workflow 会建一个**草稿** release,附带 `Reframe-Setup-v<版本>-win-x64.exe` 和 `Reframe-v<版本>-win-x64.zip`。编辑好说明后发布,程序内的检查更新才会看到它。
+
+程序内更新只会从本仓库的 release 下载这两个名字完全一致的文件,并且下载内容必须和 GitHub 给出的 SHA-256 一致才会安装(见 `Services\UpdateAssets.cs`)。
+
 ## 架构
 
 Reframe 分成零 UI 依赖的 **Core** 与其上的 WinUI 3 外壳:

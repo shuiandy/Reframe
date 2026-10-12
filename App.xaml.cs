@@ -261,8 +261,12 @@ public partial class App : Application
         // (e.g. an older task created before the flag existed, or after the user flips the option). Runs
         // schtasks, so do it off the UI thread; it's a no-op when autostart is disabled or the task already
         // matches, and never throws.
+        // The installed copy also claims the task when it still points at another exe (a portable or dev
+        // build enabled autostart before Reframe was installed); other copies leave its target alone.
         bool startMinimizedPref = ConfigService.Instance.Config.StartMinimizedOnLogin;
-        System.Threading.Tasks.Task.Run(() => StartupTaskService.MigrateIfNeeded(startMinimizedPref));
+        System.Threading.Tasks.Task.Run(() => StartupTaskService.MigrateIfNeeded(
+            startMinimizedPref,
+            claimForCurrentExe: UpdateService.DetectInstallMode() == UpdateInstallMode.Installed));
 
         // Update check (opt-out, Config.CheckUpdatesOnStartup). Deliberately late and off-thread: a
         // ~15s delay keeps it clear of the startup path entirely, and the whole thing is silent on

@@ -351,7 +351,7 @@
     <value>更新失败:{0}</value>
   </data>
   <data name="UpdatePreviousFailed" xml:space="preserve">
-    <value>上次更新未完成(详见 %TEMP%\Reframe-update\update.log)。你的文件没有被删除,可以再试一次。</value>
+    <value>上次更新未完成(详见 {0})。你的文件没有被删除,可以再试一次。</value>
   </data>
   <!-- UI redesign -->
   <data name="LanguageDesc.Text" xml:space="preserve">
