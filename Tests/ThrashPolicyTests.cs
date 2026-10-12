@@ -159,15 +159,14 @@ public class ThrashPolicyTests
             return warn;
         }
 
-        // Fill two windows, exhausting MaxWarns=2 (#1, #2); the third window is silent
+        // Fill two windows, exhausting MaxWarns=2 (#1, #2). (A third back-to-back one would give up for good — see the give-up tests.)
         Assert.True(SaturateAndGetWarn(T0));
         Assert.True(SaturateAndGetWarn(T0.AddSeconds(11)));
-        Assert.False(SaturateAndGetWarn(T0.AddSeconds(22)));
         Assert.Equal(ThrashPolicy.MaxWarns, s.TotalWarns);
 
         // Key: the previous window must be "below the cap" for decay to be allowed (quietLastWindow = Count < MaxApplies).
         // First a "quiet window" (only 1 allow, not at cap), and make it > 5min since the last warning.
-        // The last warning happened around T0+22 (about T0+26s); open this quiet window 6 minutes later.
+        // The last warning happened around T0+15s; open this quiet window 6 minutes later.
         var quiet = T0.AddMinutes(6);
         Assert.True(ThrashPolicy.Evaluate(s, quiet, out _)); // quiet window: only 1 allow, Count=1 < 3
         // Still not decayed at this moment (decay happens at the "open new window" decision and requires the previous window to be quiet — takes effect on the next new window)
@@ -204,5 +203,68 @@ public class ThrashPolicyTests
         bool warn3 = SaturateAndGetWarn(T0.AddMinutes(6));
         Assert.False(warn3);
         Assert.Equal(ThrashPolicy.MaxWarns, s.TotalWarns); // still at the cap, not reset
+    }
+
+    // ---- Give up: a window that undoes every reapply stops being fought ----
+
+    /// <summary>Allow up to the cap, then hit it once; returns the give-up signal of the cap-hitting call.</summary>
+    private static bool SaturateAndGetGiveUp(ThrashState s, DateTime baseTime)
+    {
+        for (int i = 1; i <= ThrashPolicy.MaxApplies; i++)
+            Assert.True(ThrashPolicy.Evaluate(s, baseTime.AddSeconds(i * 0.5), out _, out _));
+        Assert.False(ThrashPolicy.Evaluate(s, baseTime.AddSeconds(2), out _, out bool gaveUp));
+        return gaveUp;
+    }
+
+    [Fact(DisplayName = "Give up: the Genshin pattern (3 capped windows back to back) turns terminal and rejects from then on")]
+    public void GiveUp_AfterThreeCappedWindowsInARow()
+    {
+        var s = FreshAt(T0);
+        Assert.False(SaturateAndGetGiveUp(s, T0));
+        Assert.False(SaturateAndGetGiveUp(s, T0.AddSeconds(11)));
+        Assert.True(SaturateAndGetGiveUp(s, T0.AddSeconds(22)));
+        Assert.True(s.GaveUp);
+
+        // Terminal: no fresh window, no idle gap, no decay brings it back; and the signal fires only once.
+        Assert.False(ThrashPolicy.Evaluate(s, T0.AddSeconds(40), out bool warn, out bool again));
+        Assert.False(ThrashPolicy.Evaluate(s, T0.AddHours(1), out _, out _));
+        Assert.False(warn);
+        Assert.False(again);
+    }
+
+    [Fact(DisplayName = "Give up: a window that settles below the cap breaks the streak")]
+    public void GiveUp_StreakBrokenByQuietWindow()
+    {
+        var s = FreshAt(T0);
+        SaturateAndGetGiveUp(s, T0);
+        SaturateAndGetGiveUp(s, T0.AddSeconds(11));
+        Assert.True(ThrashPolicy.Evaluate(s, T0.AddSeconds(22), out _, out _)); // one reapply, then it stuck
+        Assert.False(SaturateAndGetGiveUp(s, T0.AddSeconds(33)));               // streak restarted at 1
+        Assert.False(s.GaveUp);
+        Assert.Equal(1, s.ConsecutiveCapped);
+    }
+
+    [Fact(DisplayName = "Give up: an idle gap between capped windows breaks the streak (the fight had stopped)")]
+    public void GiveUp_StreakBrokenByIdleGap()
+    {
+        var s = FreshAt(T0);
+        SaturateAndGetGiveUp(s, T0);
+        SaturateAndGetGiveUp(s, T0.AddSeconds(11));
+        Assert.False(SaturateAndGetGiveUp(s, T0.AddMinutes(2)));
+        Assert.False(s.GaveUp);
+        Assert.Equal(1, s.ConsecutiveCapped);
+    }
+
+    [Fact(DisplayName = "Give up: a fresh state (window rebuilt / profile re-enabled) gets the full budget again")]
+    public void GiveUp_FreshStateStartsOver()
+    {
+        var s = FreshAt(T0);
+        SaturateAndGetGiveUp(s, T0);
+        SaturateAndGetGiveUp(s, T0.AddSeconds(11));
+        SaturateAndGetGiveUp(s, T0.AddSeconds(22));
+        Assert.True(s.GaveUp);
+
+        var fresh = FreshAt(T0.AddSeconds(30));
+        Assert.True(ThrashPolicy.Evaluate(fresh, T0.AddSeconds(31), out _, out _));
     }
 }

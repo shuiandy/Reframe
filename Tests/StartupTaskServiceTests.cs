@@ -80,4 +80,42 @@ public class StartupTaskServiceTests
         string xml = StartupTaskService.BuildTaskXml(Exe, User, minimized: false);
         Assert.StartsWith("<?xml version=\"1.0\" encoding=\"UTF-16\"?>", xml);
     }
+
+    // ------------------------------------------------------------------ TaskCommandIs (installed copy claims the task)
+
+    [Fact(DisplayName = "TaskCommandIs: a task built for this exe matches it")]
+    public void TaskCommandIs_RoundTrip()
+    {
+        string xml = StartupTaskService.BuildTaskXml(Exe, User, minimized: true);
+        Assert.True(StartupTaskService.TaskCommandIs(xml, Exe));
+        Assert.True(StartupTaskService.TaskCommandIs(xml, @"c:\program files\reframe\REFRAME.EXE"));
+    }
+
+    [Fact(DisplayName = "TaskCommandIs: a task pointing at a dev build does not match the installed exe")]
+    public void TaskCommandIs_OtherExe()
+    {
+        string xml = StartupTaskService.BuildTaskXml(@"C:\Users\andy\ClaudeOutputs-local\build\Reframe\Reframe\bin\x64\Debug\Reframe.exe", User, minimized: true);
+        Assert.False(StartupTaskService.TaskCommandIs(xml, Exe));
+    }
+
+    [Fact(DisplayName = "TaskCommandIs: escaped and quoted commands are compared as paths")]
+    public void TaskCommandIs_EscapedAndQuoted()
+    {
+        string escaped = StartupTaskService.BuildTaskXml(@"C:\a&b\Reframe.exe", User, minimized: false);
+        Assert.True(StartupTaskService.TaskCommandIs(escaped, @"C:\a&b\Reframe.exe"));
+
+        // The old flag-based schtasks /TR form stored the path with quotes.
+        string quoted = StartupTaskService.BuildTaskXml(Exe, User, minimized: false)
+            .Replace($"<Command>{Exe}</Command>", $"<Command>\"{Exe}\"</Command>");
+        Assert.Contains("<Command>\"", quoted);
+        Assert.True(StartupTaskService.TaskCommandIs(quoted, Exe));
+    }
+
+    [Theory(DisplayName = "TaskCommandIs: unreadable input never matches")]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("not xml")]
+    [InlineData("<Task><Actions><Exec></Exec></Actions></Task>")]
+    public void TaskCommandIs_Unreadable(string? xml)
+        => Assert.False(StartupTaskService.TaskCommandIs(xml, Exe));
 }

@@ -355,7 +355,7 @@
     <value>Update failed: {0}</value>
   </data>
   <data name="UpdatePreviousFailed" xml:space="preserve">
-    <value>The last update did not finish (see %TEMP%\Reframe-update\update.log). Nothing of yours was deleted; you can try again.</value>
+    <value>The last update did not finish (see {0}). Nothing of yours was deleted; you can try again.</value>
   </data>
   <!-- UI redesign -->
   <data name="LanguageDesc.Text" xml:space="preserve">

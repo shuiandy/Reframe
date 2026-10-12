@@ -19,6 +19,8 @@ namespace Reframe.Services;
 /// <c>/shuiandy/Reframe/releases/download/</c>, and a final segment equal to the expected asset
 /// name. A <c>browser_download_url</c> that does not look like that is discarded even though it came
 /// back from the GitHub API.</item>
+/// <item>The asset must carry a SHA-256 <c>digest</c> (see <see cref="TryParseSha256Digest"/>), and
+/// the downloaded bytes must hash to it before anything is staged for execution.</item>
 /// </list>
 /// <para>Consequence: the app never executes or writes a file fetched from a URL that some other
 /// party could have put in the response body. GitHub redirects release downloads from
@@ -94,5 +96,28 @@ public static class UpdateAssets
         // not part of AbsolutePath, and the file we write is named from expectedAssetName, not the URL).
         string last = path.Substring(path.LastIndexOf('/') + 1);
         return string.Equals(last, expectedAssetName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Parse the <c>digest</c> GitHub reports for a release asset, <c>sha256:&lt;64 hex&gt;</c>, into
+    /// lower-case hex. GitHub computes it server-side when the asset is uploaded, so checking the
+    /// downloaded bytes against it catches a truncated, corrupted or swapped file between GitHub's
+    /// storage and this machine. Anything else (missing, another algorithm, wrong length, a non-hex
+    /// character) fails, and the caller treats a release without a usable digest as "nothing we can
+    /// install automatically": the hash is mandatory, never best-effort.
+    /// </summary>
+    public static bool TryParseSha256Digest(string? digest, out string sha256Hex)
+    {
+        sha256Hex = "";
+        const string prefix = "sha256:";
+        if (digest is null || !digest.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return false;
+
+        string hex = digest.Substring(prefix.Length);
+        if (hex.Length != 64) return false;
+        foreach (char c in hex)
+            if (!char.IsAsciiHexDigit(c)) return false;
+
+        sha256Hex = hex.ToLowerInvariant();
+        return true;
     }
 }

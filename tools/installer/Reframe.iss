@@ -57,6 +57,11 @@ AllowNoIcons=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 
+; Refuse to install over a running Reframe (interactive setup asks the user to exit it first).
+; Same named mutex Services\SingleInstance.cs holds for the process lifetime. The self-update path
+; never trips this: its script waits for the old process to exit before starting setup.
+AppMutex=Global\Reframe.SingleInstance
+
 ; MIT license shown in the wizard.
 LicenseFile=..\..\LICENSE
 
@@ -94,6 +99,11 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 ; Offer to launch right after install. Reframe is requireAdministrator, but the
 ; setup is already elevated (PrivilegesRequired=admin), so the child launches OK.
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+
+[UninstallDelete]
+; Self-update staging folder (Services\UpdateService.cs, StagingDirFor): the downloaded setup, the
+; generated script and update.log. Not part of [Files], so uninstall would otherwise leave it behind.
+Type: filesandordirs; Name: "{app}\update"
 
 [UninstallRun]
 ; Remove the start-on-login scheduled task Reframe creates (task name "Reframe",

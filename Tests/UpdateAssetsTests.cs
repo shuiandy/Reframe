@@ -121,4 +121,28 @@ public class UpdateAssetsTests
     [Fact(DisplayName = "The metadata endpoint is the hard-coded api.github.com release URL for this repo")]
     public void ApiUrl_IsPinned()
         => Assert.Equal("https://api.github.com/repos/shuiandy/Reframe/releases/latest", UpdateAssets.LatestReleaseApiUrl);
+
+    // ------------------------------------------------------------------ SHA-256 digest
+
+    [Fact(DisplayName = "Digest: the GitHub sha256:<hex> form parses to lower-case hex")]
+    public void Digest_Parses()
+    {
+        const string hex = "DEFFA86AF9073AB15EC87D1AC8AF9EED269E15281D7B82D0F3F224C122B6543F";
+        Assert.True(UpdateAssets.TryParseSha256Digest("sha256:" + hex, out string parsed));
+        Assert.Equal(hex.ToLowerInvariant(), parsed);
+    }
+
+    [Theory(DisplayName = "Digest: anything but a full SHA-256 is rejected")]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("sha256:")]
+    [InlineData("deffa86af9073ab15ec87d1ac8af9eed269e15281d7b82d0f3f224c122b6543f")]          // no algorithm prefix
+    [InlineData("sha1:deffa86af9073ab15ec87d1ac8af9eed269e1528")]                               // another algorithm
+    [InlineData("sha512:deffa86af9073ab15ec87d1ac8af9eed269e15281d7b82d0f3f224c122b6543f")]
+    [InlineData("sha256:deffa86af9073ab15ec87d1ac8af9eed269e15281d7b82d0f3f224c122b6543")]    // 63 chars
+    [InlineData("sha256:deffa86af9073ab15ec87d1ac8af9eed269e15281d7b82d0f3f224c122b6543f0")]  // 65 chars
+    [InlineData("sha256:geffa86af9073ab15ec87d1ac8af9eed269e15281d7b82d0f3f224c122b6543f")]   // non-hex
+    [InlineData(" sha256:deffa86af9073ab15ec87d1ac8af9eed269e15281d7b82d0f3f224c122b6543f")]  // leading space
+    public void Digest_Rejected(string? digest)
+        => Assert.False(UpdateAssets.TryParseSha256Digest(digest, out _));
 }

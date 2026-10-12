@@ -57,6 +57,7 @@ public static class WindowScanner
         "systemsettings",           // Settings (immersive shell, usually cloaked; belt and suspenders)
         "applicationframehost",     // UWP frame host (a suspended UWP often surfaces as this, and is cloaked)
         "explorer",                 // Explorer desktop/taskbar shell windows (real file windows have a different class, but its shell windows leak in)
+        "dwm",                      // "Ghost" stand-ins DWM shows for a hung app ("Genshin (Not Responding)"): moving one moves the hung app once it recovers
     };
 
     /// <summary>Whether the process name (lowercase, without .exe) is in the system-shell blacklist. Pure function, unit-test target.</summary>

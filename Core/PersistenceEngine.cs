@@ -85,6 +85,7 @@ public sealed class PersistenceEngine : IDisposable
     private readonly Func<bool> _isEnabled;
     private readonly Func<int> _getCaptureSeconds;
     private readonly Func<IEnumerable<string>> _getIgnoredProcesses;
+    private readonly Func<WindowInfo, bool> _isProfileWindow;
 
     private readonly LayoutMemory _memory = new();
     private readonly DisplayChangeListener _listener = new();
@@ -138,7 +139,8 @@ public sealed class PersistenceEngine : IDisposable
         Func<bool> isEngineBusy,
         Func<bool> isEnabled,
         Func<int> getCaptureSeconds,
-        Func<IEnumerable<string>> getIgnoredProcesses)
+        Func<IEnumerable<string>> getIgnoredProcesses,
+        Func<WindowInfo, bool> isProfileWindow)
     {
         _getMonitors = getMonitors;
         _getEngineOwned = getEngineOwned;
@@ -146,6 +148,7 @@ public sealed class PersistenceEngine : IDisposable
         _isEnabled = isEnabled;
         _getCaptureSeconds = getCaptureSeconds;
         _getIgnoredProcesses = getIgnoredProcesses;
+        _isProfileWindow = isProfileWindow;
     }
 
     public void Start()
@@ -609,7 +612,11 @@ public sealed class PersistenceEngine : IDisposable
     // ---- Window eligibility (shared by capture and restore) ----
 
     /// <summary>
-    /// Windows persistence may manage right now: real app windows, not engine-owned, not just engine-moved.
+    /// Windows persistence may manage right now: real app windows, not engine-owned, not just engine-moved, and
+    /// not matched by any profile. The last one matters before the takeover lands: during a profile's DelayMs (or
+    /// while a game rebuilds its window) the window is not in the takeover set yet, so capture used to record the
+    /// game's own startup geometry (Genshin: 7702x2216) and the next launch's adoption restore dragged the game back
+    /// to it, only for the engine to snap it into its zone again. A profile window's placement is the profile's job.
     /// Minimized windows are excluded from <b>capture</b> (their geometry isn't meaningful) but included when
     /// only identity is needed (<paramref name="includeIconic"/>) — an app that restarts straight to the
     /// taskbar should still be able to reclaim its record, since the restore path then fixes its
@@ -622,6 +629,7 @@ public sealed class PersistenceEngine : IDisposable
         {
             var h = w.Handle;
             if (owned.Contains(h)) continue;
+            if (_isProfileWindow(w)) continue;
             if (WindowOps.WasRecentlyMutatedByEngine(h)) continue;
             if (!includeIconic && NativeMethods.IsIconic(h)) continue;
             list.Add(w);
