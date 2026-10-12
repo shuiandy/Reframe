@@ -1,0 +1,44 @@
+# Publish a draft release made by release.yml, with hand-written notes.
+#
+# Run by hand with the tag (e.g. v1.4.0). If docs/release-notes/<tag>.md exists on the chosen ref,
+# it replaces the generated notes. The release is then published and marked latest, which is the
+# moment the in-app update check starts offering it.
+
+name: Publish release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag of the draft release to publish, e.g. v1.4.0'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          case "$TAG" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "Not a release tag: $TAG"; exit 1 ;; esac
+          gh release view "$TAG" --json isDraft,assets --jq '{draft: .isDraft, assets: [.assets[].name]}'
+          notes="docs/release-notes/$TAG.md"
+          if [ -f "$notes" ]; then
+            gh release edit "$TAG" --notes-file "$notes" --draft=false --latest
+          else
+            gh release edit "$TAG" --draft=false --latest
+          fi
+          gh release view "$TAG" --json isDraft,url --jq '"published: \(.isDraft | not)  \(.url)"'
