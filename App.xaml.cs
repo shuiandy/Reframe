@@ -216,7 +216,8 @@ public partial class App : Application
             isEngineBusy: () => Engine.IsSystemMutationActive,
             isEnabled: () => ConfigService.Instance.Config.WindowPersistenceEnabled,
             getCaptureSeconds: () => ConfigService.Instance.Config.WindowPersistenceCaptureSeconds,
-            getIgnoredProcesses: () => ConfigService.Instance.Config.PersistenceIgnoredProcesses);
+            getIgnoredProcesses: () => ConfigService.Instance.Config.PersistenceIgnoredProcesses,
+            isProfileWindow: w => ConfigService.Instance.Config.Profiles.Any(p => MatchEngine.Matches(w, p)));
         Persistence = _persistence;
         _persistence.Log += m => Engine.LogExternal(m); // surface restore activity in the dashboard log
         _persistence.Start();

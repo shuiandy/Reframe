@@ -125,6 +125,38 @@ public static class WindowOps
         return changed ? ApplyOutcome.Changed : ApplyOutcome.NoChange;
     }
 
+    /// <summary>
+    /// Whether <see cref="Apply"/> would have anything to do right now: a border left to strip, the rect off target
+    /// beyond the ±2px tolerance, or topmost missing. Read-only. The watcher asks this before spending anti-thrash
+    /// budget, so only a window that really drifted counts as a reapply.
+    /// </summary>
+    public static bool NeedsApply(IntPtr hWnd, in PlacementResolver.Target t)
+    {
+        if (t.MakeBorderless)
+        {
+            long style = (long)NativeMethods.GetWindowLongPtr(hWnd, NativeMethods.GWL_STYLE);
+            long ex = (long)NativeMethods.GetWindowLongPtr(hWnd, NativeMethods.GWL_EXSTYLE);
+            var (newStyle, newEx) = BorderlessStyles(style, ex);
+            if (newStyle != style || newEx != ex) return true;
+        }
+
+        if (t.Rect is { } r && NativeMethods.GetWindowRect(hWnd, out var cur))
+        {
+            bool same = Near(cur.Left, r.Left) && Near(cur.Top, r.Top) &&
+                        Near(cur.Right - cur.Left, r.Right - r.Left) && Near(cur.Bottom - cur.Top, r.Bottom - r.Top);
+            if (!same || NativeMethods.IsIconic(hWnd)) return true;
+        }
+
+        return t.Topmost && !IsTopmost(hWnd);
+    }
+
+    /// <summary>The style/ex-style pair with every border bit removed (what <see cref="StripBorder"/> writes).</summary>
+    private static (long Style, long ExStyle) BorderlessStyles(long style, long ex)
+        => (style & ~(NativeMethods.WS_CAPTION | NativeMethods.WS_THICKFRAME |
+                      NativeMethods.WS_BORDER | NativeMethods.WS_DLGFRAME),
+            ex & ~(NativeMethods.WS_EX_DLGMODALFRAME | NativeMethods.WS_EX_WINDOWEDGE |
+                   NativeMethods.WS_EX_CLIENTEDGE | NativeMethods.WS_EX_STATICEDGE));
+
     /// <summary>Pixel tolerance for position/size comparison (DPI rounding jitter).</summary>
     private const int PosTolerance = 2;
     private static bool Near(int a, int b) => Math.Abs(a - b) <= PosTolerance;
@@ -267,10 +299,7 @@ public static class WindowOps
         long style = (long)NativeMethods.GetWindowLongPtr(hWnd, NativeMethods.GWL_STYLE);
         long ex = (long)NativeMethods.GetWindowLongPtr(hWnd, NativeMethods.GWL_EXSTYLE);
 
-        long newStyle = style & ~(NativeMethods.WS_CAPTION | NativeMethods.WS_THICKFRAME |
-                                  NativeMethods.WS_BORDER | NativeMethods.WS_DLGFRAME);
-        long newEx = ex & ~(NativeMethods.WS_EX_DLGMODALFRAME | NativeMethods.WS_EX_WINDOWEDGE |
-                            NativeMethods.WS_EX_CLIENTEDGE | NativeMethods.WS_EX_STATICEDGE);
+        var (newStyle, newEx) = BorderlessStyles(style, ex);
 
         if (newStyle == style && newEx == ex) return ApplyOutcome.NoChange;
 
