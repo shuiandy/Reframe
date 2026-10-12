@@ -146,7 +146,7 @@
     <value>Launch</value>
   </data>
   <data name="EmptyHint.Text" xml:space="preserve">
-    <value>No profiles yet. Click “New” above, or create one from a window on the left.</value>
+    <value>No profiles yet. Click New above, or click + on a running window on the right.</value>
   </data>
 
   <!-- Right-column row context menu -->
@@ -221,5 +221,25 @@
   </data>
   <data name="DuplicateDialogPrimary" xml:space="preserve">
     <value>Create anyway</value>
+  </data>
+  <!-- UI redesign -->
+  <data name="Subtitle.Text" xml:space="preserve">
+    <value>Each profile targets one game or app and applies its borderless and placement rules for the current display.</value>
+  </data>
+  <data name="RunningWindowsHint.Text" xml:space="preserve">
+    <value>Click + to create a profile from a window. Right-click to go borderless now or ignore the process.</value>
+  </data>
+  <!-- Code-side tooltips (Loc.T cannot read 'X.ToolTip' keys: MRT maps the dot to a sub-resource) -->
+  <data name="ShowFilteredTooltip" xml:space="preserve">
+    <value>Show windows that were filtered out (system / ignored / hidden / too small)</value>
+  </data>
+  <data name="RefreshTooltip" xml:space="preserve">
+    <value>Refresh window list</value>
+  </data>
+  <data name="CreateFromWindowTooltip" xml:space="preserve">
+    <value>Create a profile from this window</value>
+  </data>
+  <data name="LaunchTooltip" xml:space="preserve">
+    <value>Launch</value>
   </data>
 </root>

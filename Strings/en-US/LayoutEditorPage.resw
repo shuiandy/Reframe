@@ -111,7 +111,7 @@
   </data>
 
   <!-- Add zone -->
-  <data name="AddZoneButton.Content" xml:space="preserve">
+  <data name="AddZoneLabel.Text" xml:space="preserve">
     <value>Add zone</value>
   </data>
   <data name="AddZoneTip.Text" xml:space="preserve">

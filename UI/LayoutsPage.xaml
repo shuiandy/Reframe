@@ -9,24 +9,31 @@
     xmlns:local="using:Reframe.UI"
     mc:Ignorable="d">
 
-    <Grid Margin="24,16,24,16" RowSpacing="12">
+    <Grid Padding="{StaticResource PageContentPadding}" RowSpacing="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" x:Uid="/LayoutsPage/Title" Style="{ThemeResource TitleTextBlockStyle}"/>
+        <StackPanel Grid.Row="0">
+            <TextBlock x:Uid="/LayoutsPage/Title" Style="{StaticResource PageTitleTextStyle}"/>
+            <TextBlock x:Uid="/LayoutsPage/Subtitle" Style="{StaticResource PageSubtitleTextStyle}"/>
+        </StackPanel>
 
-        <CommandBar Grid.Row="1"
-                    DefaultLabelPosition="Right"
-                    HorizontalAlignment="Left"
-                    Background="Transparent">
-            <AppBarButton x:Name="NewButton" x:Uid="/LayoutsPage/NewButton" Icon="Add" Click="NewButton_Click"/>
-            <AppBarButton x:Name="DuplicateButton" x:Uid="/LayoutsPage/DuplicateButton" Icon="Copy" Click="DuplicateButton_Click"/>
-            <AppBarButton x:Name="EditButton" x:Uid="/LayoutsPage/EditButton" Icon="Edit" Click="EditButton_Click"/>
-            <AppBarButton x:Name="DeleteButton" x:Uid="/LayoutsPage/DeleteButton" Icon="Delete" Click="DeleteButton_Click"/>
-        </CommandBar>
+        <!-- Toolbar in a slim card so the actions read as one group, left-aligned above the grid -->
+        <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}" Padding="4"
+                HorizontalAlignment="Left">
+            <CommandBar DefaultLabelPosition="Right"
+                        HorizontalAlignment="Left"
+                        Background="Transparent">
+                <AppBarButton x:Name="NewButton" x:Uid="/LayoutsPage/NewButton" Icon="Add" Click="NewButton_Click"/>
+                <AppBarSeparator/>
+                <AppBarButton x:Name="EditButton" x:Uid="/LayoutsPage/EditButton" Icon="Edit" Click="EditButton_Click"/>
+                <AppBarButton x:Name="DuplicateButton" x:Uid="/LayoutsPage/DuplicateButton" Icon="Copy" Click="DuplicateButton_Click"/>
+                <AppBarButton x:Name="DeleteButton" x:Uid="/LayoutsPage/DeleteButton" Icon="Delete" Click="DeleteButton_Click"/>
+            </CommandBar>
+        </Border>
 
         <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
             <Grid>
@@ -41,7 +48,7 @@
                          locally to an accent outline plus a slightly lifted layer color. -->
                     <GridView.ItemContainerStyle>
                         <Style TargetType="GridViewItem">
-                            <Setter Property="Margin" Value="4"/>
+                            <Setter Property="Margin" Value="0,0,12,12"/>
                             <Setter Property="CornerRadius" Value="8"/>
                             <Setter Property="BorderThickness" Value="1"/>
                             <Setter Property="UseSystemFocusVisuals" Value="True"/>
@@ -60,7 +67,7 @@
                             <!-- The card background is painted with the card color; the hover lift comes
                                  from the outer container's border/background. The inner card border is
                                  transparent so the container's accent outline is the only edge (no double line). -->
-                            <Grid Width="220" Height="180" Padding="10" RowSpacing="6"
+                            <Grid Width="240" Height="196" Padding="12" RowSpacing="4"
                                   Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                                   CornerRadius="7"
                                   ContextRequested="LayoutCard_ContextRequested">
@@ -89,7 +96,7 @@
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
-                                <ctrl:LayoutPreview Grid.Row="0" Layout="{x:Bind Model}"/>
+                                <ctrl:LayoutPreview Grid.Row="0" Layout="{x:Bind Model}" Margin="0,0,0,6"/>
                                 <TextBlock Grid.Row="1"
                                            Text="{x:Bind Model.Name}"
                                            Style="{ThemeResource BodyStrongTextBlockStyle}"
@@ -106,12 +113,21 @@
                 <StackPanel x:Name="EmptyHint"
                             VerticalAlignment="Center"
                             HorizontalAlignment="Center"
-                            Spacing="8"
+                            Spacing="12"
+                            Margin="0,48,0,0"
                             Visibility="Collapsed">
                     <FontIcon Glyph="&#xE80A;" FontSize="40"
-                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                              Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
                     <TextBlock x:Uid="/LayoutsPage/EmptyHintText"
+                               HorizontalAlignment="Center"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    <Button HorizontalAlignment="Center" Style="{ThemeResource AccentButtonStyle}"
+                            Click="NewButton_Click">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE710;" FontSize="14"/>
+                            <TextBlock x:Uid="/LayoutsPage/EmptyCreateButton"/>
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
             </Grid>
         </ScrollViewer>

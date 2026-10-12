@@ -14,63 +14,87 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <ScrollViewer Grid.Row="0" Padding="24,24,24,12">
-            <StackPanel Spacing="20" MaxWidth="820" HorizontalAlignment="Left">
+        <ScrollViewer Grid.Row="0" Padding="{StaticResource PageContentPadding}">
+            <!-- Each section is a card with an icon + heading, so the long form reads as a few clear blocks:
+                 what to match → how to launch → borderless → per-display rules → advanced. -->
+            <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MaxWidth="920"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Spacing="16">
 
                 <!-- Title -->
                 <StackPanel Orientation="Horizontal" Spacing="12">
                     <!-- Tooltip set from code-behind (Loc.T) — attached-property x:Uid is brittle in MRT Core. -->
-                    <Button x:Name="BackButton" Click="Back_Click">
+                    <Button x:Name="BackButton" Click="Back_Click"
+                            Width="36" Height="36" Padding="0"
+                            VerticalAlignment="Center">
                         <FontIcon Glyph="&#xE72B;" FontSize="14"/>
                     </Button>
-                    <TextBlock x:Uid="/ProfileEditorPage/Title" Style="{ThemeResource TitleTextBlockStyle}"
+                    <TextBlock x:Uid="/ProfileEditorPage/Title" Style="{StaticResource PageTitleTextStyle}"
                                VerticalAlignment="Center"/>
                 </StackPanel>
 
                 <!-- Basic section -->
+                <Border Style="{StaticResource CardBorderStyle}" Padding="20">
                 <StackPanel Spacing="12">
-                    <TextBlock x:Uid="/ProfileEditorPage/BasicHeader" Style="{ThemeResource SubtitleTextBlockStyle}"/>
-                    <TextBox x:Name="NameBox" x:Uid="/ProfileEditorPage/NameBox" Width="360"
-                             HorizontalAlignment="Left"
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <FontIcon Glyph="&#xE8EC;" FontSize="18"
+                                  Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
+                        <TextBlock x:Uid="/ProfileEditorPage/BasicHeader" Style="{ThemeResource SubtitleTextBlockStyle}"/>
+                    </StackPanel>
+                    <TextBox x:Name="NameBox" x:Uid="/ProfileEditorPage/NameBox"
+                             HorizontalAlignment="Stretch"
                              TextChanged="NameBox_TextChanged"/>
-                    <StackPanel Orientation="Horizontal" Spacing="12">
-                        <ComboBox x:Name="MatchKindBox" x:Uid="/ProfileEditorPage/MatchKindBox" Width="200"
+                    <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <ComboBox x:Name="MatchKindBox" x:Uid="/ProfileEditorPage/MatchKindBox" Width="180"
                                   SelectionChanged="MatchKindBox_SelectionChanged">
                             <ComboBoxItem x:Uid="/ProfileEditorPage/MatchKindProcess"/>
                             <ComboBoxItem x:Uid="/ProfileEditorPage/MatchKindTitle"/>
                             <ComboBoxItem x:Uid="/ProfileEditorPage/MatchKindTitleRegex"/>
                         </ComboBox>
-                        <TextBox x:Name="MatchValueBox" x:Uid="/ProfileEditorPage/MatchValueBox" Width="360"
+                        <TextBox x:Name="MatchValueBox" x:Uid="/ProfileEditorPage/MatchValueBox" Grid.Column="1"
+                                 HorizontalAlignment="Stretch"
                                  TextChanged="MatchValueBox_TextChanged"/>
-                    </StackPanel>
+                    </Grid>
 
                     <!-- Executable (icon source): manually specified when an anti-cheat game's MainModule can't be read; IconCache extracts the icon straight from this exe. -->
-                    <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Bottom">
-                        <TextBox x:Name="ExePathBox" x:Uid="/ProfileEditorPage/ExePathBox" Width="480"
+                    <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="ExePathBox" x:Uid="/ProfileEditorPage/ExePathBox"
+                                 HorizontalAlignment="Stretch"
                                  TextChanged="ExePathBox_TextChanged"/>
-                        <Button x:Name="BrowseExeButton" x:Uid="/ProfileEditorPage/BrowseExeButton" Click="BrowseExe_Click"
+                        <Button x:Name="BrowseExeButton" x:Uid="/ProfileEditorPage/BrowseExeButton" Grid.Column="1"
+                                Click="BrowseExe_Click"
                                 VerticalAlignment="Bottom"/>
-                    </StackPanel>
+                    </Grid>
                     <TextBlock x:Uid="/ProfileEditorPage/ExePathHint"
-                               Opacity="0.6" Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"/>
+                               Style="{StaticResource SecondaryCaptionTextStyle}" Margin="0,-4,0,0"/>
 
                     <!-- Launch command (optional): for one-click launch. Empty = run the executable directly; can be a launcher command or URI (e.g. hoyoplay://). -->
-                    <TextBox x:Name="LaunchCommandBox" x:Uid="/ProfileEditorPage/LaunchCommandBox" Width="480"
-                             HorizontalAlignment="Left"
+                    <TextBox x:Name="LaunchCommandBox" x:Uid="/ProfileEditorPage/LaunchCommandBox"
+                             HorizontalAlignment="Stretch"
                              TextChanged="LaunchCommandBox_TextChanged"/>
                 </StackPanel>
+                </Border>
 
                 <!-- Startup resolution preset (Unity). ToggleSwitch On/OffContent are set from code-behind (Common/On|Off) — see note in code-behind. -->
                 <Expander x:Name="ResolutionExpander" x:Uid="/ProfileEditorPage/ResolutionExpander" IsExpanded="False"
                           HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                     <StackPanel Spacing="12" Padding="0,8,0,0">
                         <TextBlock x:Uid="/ProfileEditorPage/ResolutionDesc"
-                                   Opacity="0.7" TextWrapping="Wrap"
-                                   Style="{ThemeResource CaptionTextBlockStyle}"/>
+                                   Style="{StaticResource SecondaryCaptionTextStyle}"/>
                         <ToggleSwitch x:Name="ResEnabledToggle" x:Uid="/ProfileEditorPage/ResEnabledToggle"
                                       Toggled="ResEnabled_Toggled"/>
-                        <TextBox x:Name="ResPathBox" x:Uid="/ProfileEditorPage/ResPathBox" Width="420"
-                                 HorizontalAlignment="Left"
+                        <TextBox x:Name="ResPathBox" x:Uid="/ProfileEditorPage/ResPathBox"
+                                 HorizontalAlignment="Stretch"
                                  TextChanged="ResPath_TextChanged"/>
                         <StackPanel Orientation="Horizontal" Spacing="12">
                             <NumberBox x:Name="ResWidthBox" x:Uid="/ProfileEditorPage/ResWidthBox" Width="160"
@@ -87,31 +111,48 @@
                     </StackPanel>
                 </Expander>
 
-                <!-- Borderless section -->
+                <!-- Borderless section: toggle and delay side by side -->
+                <Border Style="{StaticResource CardBorderStyle}" Padding="20">
                 <StackPanel Spacing="12">
-                    <TextBlock x:Uid="/ProfileEditorPage/BorderlessHeader" Style="{ThemeResource SubtitleTextBlockStyle}"/>
-                    <ToggleSwitch x:Name="BorderlessToggle" x:Uid="/ProfileEditorPage/BorderlessToggle"
-                                  Toggled="BorderlessToggle_Toggled"/>
-                    <NumberBox x:Name="DelayBox" x:Uid="/ProfileEditorPage/DelayBox" Width="240"
-                               HorizontalAlignment="Left"
-                               Minimum="0" Maximum="60000" SmallChange="100" LargeChange="500"
-                               SpinButtonPlacementMode="Compact"
-                               ValueChanged="DelayBox_ValueChanged"/>
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <FontIcon Glyph="&#xE740;" FontSize="18"
+                                  Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
+                        <TextBlock x:Uid="/ProfileEditorPage/BorderlessHeader" Style="{ThemeResource SubtitleTextBlockStyle}"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="32">
+                        <ToggleSwitch x:Name="BorderlessToggle" x:Uid="/ProfileEditorPage/BorderlessToggle"
+                                      VerticalAlignment="Top"
+                                      Toggled="BorderlessToggle_Toggled"/>
+                        <NumberBox x:Name="DelayBox" x:Uid="/ProfileEditorPage/DelayBox" Width="240"
+                                   VerticalAlignment="Top"
+                                   Minimum="0" Maximum="60000" SmallChange="100" LargeChange="500"
+                                   SpinButtonPlacementMode="Compact"
+                                   ValueChanged="DelayBox_ValueChanged"/>
+                    </StackPanel>
                 </StackPanel>
+                </Border>
 
-                <!-- Rules list -->
-                <StackPanel Spacing="12">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <TextBlock x:Uid="/ProfileEditorPage/RulesHeader" Style="{ThemeResource SubtitleTextBlockStyle}"
-                                   VerticalAlignment="Center"/>
+                <!-- Rules list: heading + hint on their own lines, then one card per rule (built in code-behind) -->
+                <StackPanel Spacing="12" Margin="0,8,0,0">
+                    <StackPanel Spacing="2">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <FontIcon Glyph="&#xE7F4;" FontSize="18"
+                                      Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
+                            <TextBlock x:Uid="/ProfileEditorPage/RulesHeader" Style="{ThemeResource SubtitleTextBlockStyle}"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
                         <TextBlock x:Uid="/ProfileEditorPage/RulesHint"
-                                   Opacity="0.6" VerticalAlignment="Center"
-                                   Style="{ThemeResource CaptionTextBlockStyle}"/>
+                                   Margin="28,0,0,0"
+                                   Style="{StaticResource SecondaryCaptionTextStyle}"/>
                     </StackPanel>
 
                     <StackPanel x:Name="RulesPanel" Spacing="12"/>
 
-                    <Button Click="AddRule_Click" HorizontalAlignment="Left">
+                    <Button Click="AddRule_Click" HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"
+                            Padding="12,10"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            Background="{ThemeResource SubtleFillColorTransparentBrush}">
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <FontIcon Glyph="&#xE710;" FontSize="14"/>
                             <TextBlock x:Uid="/ProfileEditorPage/AddRuleButton"/>
@@ -125,22 +166,29 @@
                     <StackPanel Spacing="16" Padding="0,8,0,0">
                         <StackPanel Spacing="8">
                             <TextBlock x:Uid="/ProfileEditorPage/OffsetsHeader" Style="{ThemeResource BodyStrongTextBlockStyle}"/>
-                            <TextBlock x:Uid="/ProfileEditorPage/OffsetsDesc" Opacity="0.6"
-                                       Style="{ThemeResource CaptionTextBlockStyle}"/>
-                            <StackPanel Orientation="Horizontal" Spacing="12">
-                                <NumberBox x:Name="OffLeftBox" x:Uid="/ProfileEditorPage/OffLeftBox" Width="120"
+                            <TextBlock x:Uid="/ProfileEditorPage/OffsetsDesc"
+                                       Style="{StaticResource SecondaryCaptionTextStyle}"/>
+                            <!-- Four equal columns so the boxes shrink with the window instead of overflowing the card -->
+                            <Grid ColumnSpacing="12" MaxWidth="560" HorizontalAlignment="Left">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <NumberBox x:Name="OffLeftBox" x:Uid="/ProfileEditorPage/OffLeftBox"
                                            SpinButtonPlacementMode="Compact"
                                            ValueChanged="Offset_ValueChanged"/>
-                                <NumberBox x:Name="OffTopBox" x:Uid="/ProfileEditorPage/OffTopBox" Width="120"
+                                <NumberBox x:Name="OffTopBox" x:Uid="/ProfileEditorPage/OffTopBox" Grid.Column="1"
                                            SpinButtonPlacementMode="Compact"
                                            ValueChanged="Offset_ValueChanged"/>
-                                <NumberBox x:Name="OffRightBox" x:Uid="/ProfileEditorPage/OffRightBox" Width="120"
+                                <NumberBox x:Name="OffRightBox" x:Uid="/ProfileEditorPage/OffRightBox" Grid.Column="2"
                                            SpinButtonPlacementMode="Compact"
                                            ValueChanged="Offset_ValueChanged"/>
-                                <NumberBox x:Name="OffBottomBox" x:Uid="/ProfileEditorPage/OffBottomBox" Width="120"
+                                <NumberBox x:Name="OffBottomBox" x:Uid="/ProfileEditorPage/OffBottomBox" Grid.Column="3"
                                            SpinButtonPlacementMode="Compact"
                                            ValueChanged="Offset_ValueChanged"/>
-                            </StackPanel>
+                            </Grid>
                         </StackPanel>
 
                         <StackPanel Spacing="8">
@@ -160,18 +208,22 @@
                     </StackPanel>
                 </Expander>
             </StackPanel>
+            </Grid>
         </ScrollViewer>
 
         <!-- Bottom action bar -->
         <Border Grid.Row="1" BorderThickness="0,1,0,0"
                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                Padding="24,12">
+                Background="{ThemeResource LayerFillColorDefaultBrush}"
+                Padding="32,12">
             <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
                 <TextBlock x:Name="MissingHint" x:Uid="/ProfileEditorPage/MissingHint"
                            Foreground="{ThemeResource SystemFillColorCautionBrush}"
                            VerticalAlignment="Center" Visibility="Collapsed"/>
-                <Button x:Name="CancelButton" x:Uid="/ProfileEditorPage/CancelButton" Click="Cancel_Click"/>
+                <Button x:Name="CancelButton" x:Uid="/ProfileEditorPage/CancelButton" Click="Cancel_Click"
+                        MinWidth="96"/>
                 <Button x:Name="SaveButton" x:Uid="/ProfileEditorPage/SaveButton" Style="{ThemeResource AccentButtonStyle}"
+                        MinWidth="96"
                         Click="Save_Click"/>
             </StackPanel>
         </Border>

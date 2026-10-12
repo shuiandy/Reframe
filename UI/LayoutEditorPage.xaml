@@ -7,60 +7,110 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
-    <Grid Margin="20,12,20,12" RowSpacing="12">
+    <Grid Padding="{StaticResource PageContentPadding}" RowSpacing="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- Title row -->
-        <TextBlock Grid.Row="0" x:Uid="/LayoutEditorPage/Title" Style="{ThemeResource TitleTextBlockStyle}"/>
+        <!-- Title row: title at left, Cancel/Save at right so the commit actions are always in view -->
+        <Grid Grid.Row="0" ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Uid="/LayoutEditorPage/Title" Style="{StaticResource PageTitleTextStyle}"
+                       VerticalAlignment="Center"/>
+            <Button Grid.Column="1" x:Uid="/LayoutEditorPage/CancelButton" Click="Cancel_Click"
+                    MinWidth="96" VerticalAlignment="Center"/>
+            <Button Grid.Column="2" x:Uid="/LayoutEditorPage/SaveButton" Style="{ThemeResource AccentButtonStyle}"
+                    MinWidth="96" VerticalAlignment="Center" Click="Save_Click"/>
+        </Grid>
 
-        <!-- Toolbar -->
-        <StackPanel Grid.Row="1" Orientation="Vertical" Spacing="8">
-            <StackPanel Orientation="Horizontal" Spacing="12">
-                <StackPanel Orientation="Vertical" Spacing="2">
+        <!-- Toolbar card: properties on the first line, presets on the second, separated by a divider -->
+        <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}">
+        <StackPanel Orientation="Vertical" Spacing="12">
+            <!-- Name and reference monitor take the free width; W/H are fixed narrow columns.
+                 (A horizontal StackPanel clipped W/H off the card on narrow windows.) -->
+            <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="100"/>
+                    <ColumnDefinition Width="100"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Spacing="2">
                     <TextBlock x:Uid="/LayoutEditorPage/NameLabel" Style="{ThemeResource CaptionTextBlockStyle}"/>
-                    <TextBox x:Name="NameBox" Width="220" TextChanged="NameBox_TextChanged"/>
+                    <TextBox x:Name="NameBox" HorizontalAlignment="Stretch" TextChanged="NameBox_TextChanged"/>
                 </StackPanel>
-                <StackPanel Orientation="Vertical" Spacing="2">
+                <StackPanel Grid.Column="1" Spacing="2">
                     <TextBlock x:Uid="/LayoutEditorPage/RefResLabel" Style="{ThemeResource CaptionTextBlockStyle}"/>
-                    <ComboBox x:Name="MonitorCombo" Width="240"
+                    <ComboBox x:Name="MonitorCombo" HorizontalAlignment="Stretch"
                               x:Uid="/LayoutEditorPage/MonitorCombo"
                               SelectionChanged="MonitorCombo_SelectionChanged"/>
                 </StackPanel>
-                <StackPanel Orientation="Vertical" Spacing="2">
+                <StackPanel Grid.Column="2" Spacing="2">
                     <TextBlock x:Uid="/LayoutEditorPage/WidthLabel" Style="{ThemeResource CaptionTextBlockStyle}"/>
-                    <NumberBox x:Name="RefWidthBox" Width="110"
+                    <NumberBox x:Name="RefWidthBox"
                                SpinButtonPlacementMode="Compact" Minimum="1" Maximum="61440"
                                ValueChanged="RefSize_ValueChanged"/>
                 </StackPanel>
-                <StackPanel Orientation="Vertical" Spacing="2">
+                <StackPanel Grid.Column="3" Spacing="2">
                     <TextBlock x:Uid="/LayoutEditorPage/HeightLabel" Style="{ThemeResource CaptionTextBlockStyle}"/>
-                    <NumberBox x:Name="RefHeightBox" Width="110"
+                    <NumberBox x:Name="RefHeightBox"
                                SpinButtonPlacementMode="Compact" Minimum="1" Maximum="34560"
                                ValueChanged="RefSize_ValueChanged"/>
                 </StackPanel>
-            </StackPanel>
+            </Grid>
 
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock x:Uid="/LayoutEditorPage/PresetLabel" VerticalAlignment="Center"
-                           Style="{ThemeResource CaptionTextBlockStyle}"/>
-                <Button x:Uid="/LayoutEditorPage/PresetHalf" Tag="half" Click="Preset_Click"/>
-                <Button x:Uid="/LayoutEditorPage/PresetThirds" Tag="thirds" Click="Preset_Click"/>
-                <Button x:Uid="/LayoutEditorPage/PresetTwoThirds" Tag="twoThirds" Click="Preset_Click"/>
-                <Button x:Uid="/LayoutEditorPage/PresetCenter169" Tag="center169" Click="Preset_Click"/>
-                <Button x:Uid="/LayoutEditorPage/PresetLeft219" Tag="left219" Click="Preset_Click"/>
-                <AppBarSeparator/>
-                <Button x:Uid="/LayoutEditorPage/AddZoneButton" Click="AddZone_Click">
-                    <ToolTipService.ToolTip>
-                        <TextBlock x:Uid="/LayoutEditorPage/AddZoneTip"/>
-                    </ToolTipService.ToolTip>
-                </Button>
+            <Border Style="{StaticResource CardDividerStyle}"/>
+
+            <!-- Presets: label on its own line, then a 3-column grid of equal buttons, so every preset
+                 stays visible at any window width (a single horizontal row was cut off when narrow). -->
+            <StackPanel Spacing="8">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon Glyph="&#xE80A;" FontSize="14" VerticalAlignment="Center"
+                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    <TextBlock x:Uid="/LayoutEditorPage/PresetLabel" VerticalAlignment="Center"
+                               Style="{ThemeResource BodyStrongTextBlockStyle}"/>
+                </StackPanel>
+                <Grid ColumnSpacing="8" RowSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Button Grid.Row="0" Grid.Column="0" HorizontalAlignment="Stretch"
+                            x:Uid="/LayoutEditorPage/PresetHalf" Tag="half" Click="Preset_Click"/>
+                    <Button Grid.Row="0" Grid.Column="1" HorizontalAlignment="Stretch"
+                            x:Uid="/LayoutEditorPage/PresetThirds" Tag="thirds" Click="Preset_Click"/>
+                    <Button Grid.Row="0" Grid.Column="2" HorizontalAlignment="Stretch"
+                            x:Uid="/LayoutEditorPage/PresetTwoThirds" Tag="twoThirds" Click="Preset_Click"/>
+                    <Button Grid.Row="1" Grid.Column="0" HorizontalAlignment="Stretch"
+                            x:Uid="/LayoutEditorPage/PresetCenter169" Tag="center169" Click="Preset_Click"/>
+                    <Button Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch"
+                            x:Uid="/LayoutEditorPage/PresetLeft219" Tag="left219" Click="Preset_Click"/>
+                    <Button Grid.Row="1" Grid.Column="2" HorizontalAlignment="Stretch"
+                            Click="AddZone_Click" Style="{ThemeResource AccentButtonStyle}">
+                        <ToolTipService.ToolTip>
+                            <TextBlock x:Uid="/LayoutEditorPage/AddZoneTip"/>
+                        </ToolTipService.ToolTip>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon Glyph="&#xE710;" FontSize="12"/>
+                            <TextBlock x:Uid="/LayoutEditorPage/AddZoneLabel"/>
+                        </StackPanel>
+                    </Button>
+                </Grid>
             </StackPanel>
         </StackPanel>
+        </Border>
 
         <!-- Body: canvas on the left + property panel on the right.
              BodyGrid sits in the "*" row, so its size is driven by the window alone and never by the
@@ -82,7 +132,7 @@
                     Background="{ThemeResource LayerFillColorDefaultBrush}"
                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                     BorderThickness="1"
-                    CornerRadius="6"
+                    CornerRadius="{StaticResource CardCornerRadius}"
                     Padding="16"
                     VerticalAlignment="Top"
                     SizeChanged="CanvasArea_SizeChanged">
@@ -104,14 +154,15 @@
             </Border>
 
             <!-- Property panel -->
-            <Border Grid.Column="1" Width="280"
-                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                    BorderThickness="1"
-                    CornerRadius="6"
-                    Padding="16">
+            <Border Grid.Column="1" Width="260"
+                    Style="{StaticResource CardBorderStyle}"
+                    VerticalAlignment="Top">
                 <StackPanel Spacing="12">
-                    <TextBlock x:Uid="/LayoutEditorPage/PropHeader" Style="{ThemeResource BodyStrongTextBlockStyle}"/>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xE70F;" FontSize="14"
+                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        <TextBlock x:Uid="/LayoutEditorPage/PropHeader" Style="{ThemeResource BodyStrongTextBlockStyle}"/>
+                    </StackPanel>
 
                     <StackPanel x:Name="PropPanel" Spacing="10" Visibility="Collapsed">
                         <StackPanel Spacing="2">
@@ -165,10 +216,5 @@
             </Border>
         </Grid>
 
-        <!-- Bottom buttons -->
-        <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-            <Button x:Uid="/LayoutEditorPage/CancelButton" Click="Cancel_Click"/>
-            <Button x:Uid="/LayoutEditorPage/SaveButton" Style="{ThemeResource AccentButtonStyle}" Click="Save_Click"/>
-        </StackPanel>
     </Grid>
 </Page>

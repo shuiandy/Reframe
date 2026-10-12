@@ -115,6 +115,7 @@ public sealed partial class DashboardPage : Page
     {
         var cfg = ConfigService.Instance.Config;
         EngineToggle.IsOn = cfg.EngineEnabled;
+        UpdateEngineBadge();
         RefreshSummary();
 
         // Refresh the summary whenever config changes (may fire on any thread -> hop to the UI thread).
@@ -200,6 +201,19 @@ public sealed partial class DashboardPage : Page
         // EngineEnabled may be changed externally; keep the toggle in sync (no Toggled fires if IsOn is unchanged).
         if (EngineToggle.IsOn != cfg.EngineEnabled)
             EngineToggle.IsOn = cfg.EngineEnabled;
+        UpdateEngineBadge();
+    }
+
+    /// <summary>
+    /// Engine status badge on the dashboard card: accent circle with a play glyph while running, a
+    /// neutral circle with a pause glyph when stopped, so the state reads at a glance without parsing
+    /// the toggle's text. Both badges are styled in XAML; this only flips which one is visible.
+    /// </summary>
+    private void UpdateEngineBadge()
+    {
+        bool on = EngineToggle.IsOn;
+        EngineBadgeOn.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        EngineBadgeOff.Visibility = on ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void Timer_Tick(object? sender, object e) => RefreshLive();
@@ -395,6 +409,7 @@ public sealed partial class DashboardPage : Page
 
     private void EngineToggle_Toggled(object sender, RoutedEventArgs e)
     {
+        UpdateEngineBadge();
         var svc = ConfigService.Instance;
         if (svc.Config.EngineEnabled == EngineToggle.IsOn) return;
         // Forensic marker (only on a real change; matches App.SetEngineEnabled's format), recorded before

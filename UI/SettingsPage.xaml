@@ -5,191 +5,417 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!-- 所有静态文案经 x:Uid 从 Strings\<lang>\SettingsPage.resw 取(键见各 x:Uid 末段 + .Text/.Content/.Header)。
-         运行时拼装的字符串(状态行/版本号/对话框)在 code-behind 走 Loc.T。详见 docs\dev\I18N.md。 -->
+         运行时拼装的字符串(状态行/版本号/对话框)在 code-behind 走 Loc.T。详见 docs\dev\I18N.md。
+
+         布局是 Win11 设置页风格:分组标题 + 一组紧贴的"设置卡片"。每张卡片左边图标、中间标题与一句说明、
+         右边控件;需要更多输入的项(热键、窗口位置记忆、更新)在卡片内向下展开。
+         卡片样式统一取 App.xaml 的 SettingsCard* / CardBorderStyle。 -->
     <ScrollViewer>
-        <StackPanel Padding="24" Spacing="20" MaxWidth="720" HorizontalAlignment="Left">
-            <TextBlock x:Uid="/SettingsPage/Title" FontSize="28" FontWeight="SemiBold"/>
+        <!-- Single star column capped by MaxWidth: cards stretch with the window up to the cap, then stay left-aligned. -->
+        <Grid Padding="{StaticResource PageContentPadding}">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" MaxWidth="{StaticResource PageMaxWidth}"/>
+        </Grid.ColumnDefinitions>
+        <StackPanel Spacing="4">
+            <TextBlock x:Uid="/SettingsPage/Title" Style="{StaticResource PageTitleTextStyle}" Margin="0,0,0,20"/>
 
-            <!-- 外观 -->
-            <StackPanel Spacing="6">
-                <TextBlock x:Uid="/SettingsPage/AppearanceHeader" FontWeight="SemiBold"/>
-                <TextBlock x:Uid="/SettingsPage/AppearanceDesc" Opacity="0.7" FontSize="12" TextWrapping="Wrap"/>
-                <ComboBox x:Name="LanguageCombo"
-                          x:Uid="/SettingsPage/LanguageCombo"
-                          SelectionChanged="LanguageCombo_SelectionChanged"
-                          Width="240" HorizontalAlignment="Left">
-                    <ComboBoxItem x:Uid="/SettingsPage/LanguageSystem"/>
-                    <!-- 语言项本身用各语言自称(不随界面语言变):简体中文 / English。 -->
-                    <ComboBoxItem Content="简体中文"/>
-                    <ComboBoxItem Content="English"/>
-                </ComboBox>
-                <ComboBox x:Name="ThemeCombo"
-                          x:Uid="/SettingsPage/ThemeCombo"
-                          SelectionChanged="ThemeCombo_SelectionChanged"
-                          Width="240" HorizontalAlignment="Left">
-                    <ComboBoxItem x:Uid="/SettingsPage/ThemeSystem"/>
-                    <ComboBoxItem x:Uid="/SettingsPage/ThemeLight"/>
-                    <ComboBoxItem x:Uid="/SettingsPage/ThemeDark"/>
-                </ComboBox>
-                <ComboBox x:Name="BackdropCombo"
-                          x:Uid="/SettingsPage/BackdropCombo"
-                          SelectionChanged="BackdropCombo_SelectionChanged"
-                          Width="240" HorizontalAlignment="Left">
-                    <ComboBoxItem x:Uid="/SettingsPage/BackdropMica"/>
-                    <ComboBoxItem x:Uid="/SettingsPage/BackdropMicaAlt"/>
-                    <ComboBoxItem x:Uid="/SettingsPage/BackdropAcrylic"/>
-                </ComboBox>
-            </StackPanel>
+            <!-- ================= 外观 ================= -->
+            <TextBlock x:Uid="/SettingsPage/AppearanceHeader" Style="{StaticResource SectionHeaderTextStyle}"/>
 
-            <!-- 在线图标(SteamGridDB) -->
-            <StackPanel Spacing="6">
-                <TextBlock x:Uid="/SettingsPage/SgdbHeader" FontWeight="SemiBold"/>
-                <TextBlock TextWrapping="Wrap" Opacity="0.7" FontSize="12">
-                    <Run x:Uid="/SettingsPage/SgdbDescLine1"/>
-                    <LineBreak/>
-                    <Run x:Uid="/SettingsPage/SgdbDescApply"/>
-                    <Hyperlink NavigateUri="https://www.steamgriddb.com/profile/preferences/api">https://www.steamgriddb.com/profile/preferences/api</Hyperlink>
-                </TextBlock>
-                <TextBox x:Name="SgdbKeyBox"
-                         x:Uid="/SettingsPage/SgdbKeyBox"
-                         LostFocus="SgdbKeyBox_LostFocus"
-                         Width="420" HorizontalAlignment="Left"/>
-            </StackPanel>
+            <Border Style="{StaticResource SettingsCardStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <FontIcon Glyph="&#xE774;" Style="{StaticResource SettingsCardIconStyle}"/>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock x:Uid="/SettingsPage/LanguageLabel" Style="{StaticResource SettingsCardTitleStyle}"/>
+                        <TextBlock x:Uid="/SettingsPage/LanguageDesc" Style="{StaticResource SettingsCardDescStyle}"/>
+                    </StackPanel>
+                    <ComboBox x:Name="LanguageCombo" Grid.Column="2"
+                              SelectionChanged="LanguageCombo_SelectionChanged"
+                              MinWidth="200" VerticalAlignment="Center">
+                        <ComboBoxItem x:Uid="/SettingsPage/LanguageSystem"/>
+                        <!-- 语言项本身用各语言自称(不随界面语言变):简体中文 / English。 -->
+                        <ComboBoxItem Content="简体中文"/>
+                        <ComboBoxItem Content="English"/>
+                    </ComboBox>
+                </Grid>
+            </Border>
 
-            <!-- 轮询间隔 -->
-            <StackPanel Spacing="6">
-                <TextBlock x:Uid="/SettingsPage/PollHeader" FontWeight="SemiBold"/>
-                <TextBlock x:Uid="/SettingsPage/PollDesc" Opacity="0.7" FontSize="12"/>
-                <NumberBox x:Name="PollBox"
-                           Minimum="300" Maximum="60000"
-                           SmallChange="100" LargeChange="500"
-                           SpinButtonPlacementMode="Inline"
-                           ValueChanged="PollBox_ValueChanged"
-                           Width="200" HorizontalAlignment="Left"/>
-            </StackPanel>
+            <Border Style="{StaticResource SettingsCardStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <FontIcon Glyph="&#xE790;" Style="{StaticResource SettingsCardIconStyle}"/>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock x:Uid="/SettingsPage/ThemeLabel" Style="{StaticResource SettingsCardTitleStyle}"/>
+                    </StackPanel>
+                    <ComboBox x:Name="ThemeCombo" Grid.Column="2"
+                              SelectionChanged="ThemeCombo_SelectionChanged"
+                              MinWidth="200" VerticalAlignment="Center">
+                        <ComboBoxItem x:Uid="/SettingsPage/ThemeSystem"/>
+                        <ComboBoxItem x:Uid="/SettingsPage/ThemeLight"/>
+                        <ComboBoxItem x:Uid="/SettingsPage/ThemeDark"/>
+                    </ComboBox>
+                </Grid>
+            </Border>
 
-            <!-- 开机自启 -->
-            <StackPanel Spacing="6">
-                <TextBlock x:Uid="/SettingsPage/StartupHeader" FontWeight="SemiBold"/>
-                <TextBlock x:Uid="/SettingsPage/StartupDesc" Opacity="0.7" FontSize="12"/>
-                <!-- OnContent/OffContent 经 code-behind 用 Common/On|Off 设(ToggleSwitch 的 On/OffContent 用 x:Uid 同样走附加式较脆,改代码设)。 -->
-                <ToggleSwitch x:Name="StartupToggle"
-                              Toggled="StartupToggle_Toggled"/>
-                <!-- 从属开关:仅在开机自启开启时可用(IsEnabled 联动);决定计划任务的启动参数是否带静默标志。
-                     Header 与 On/OffContent 同样经 code-behind 设(ToggleSwitch 上的 x:Uid 走附加式较脆)。 -->
-                <ToggleSwitch x:Name="StartMinimizedToggle"
-                              Toggled="StartMinimizedToggle_Toggled"
-                              Margin="0,4,0,0"/>
-                <TextBlock x:Uid="/SettingsPage/StartMinimizedDesc" Opacity="0.7" FontSize="12" TextWrapping="Wrap"/>
-            </StackPanel>
+            <Border Style="{StaticResource SettingsCardStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <FontIcon Glyph="&#xE771;" Style="{StaticResource SettingsCardIconStyle}"/>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock x:Uid="/SettingsPage/BackdropLabel" Style="{StaticResource SettingsCardTitleStyle}"/>
+                        <TextBlock x:Uid="/SettingsPage/BackdropDesc" Style="{StaticResource SettingsCardDescStyle}"/>
+                    </StackPanel>
+                    <ComboBox x:Name="BackdropCombo" Grid.Column="2"
+                              SelectionChanged="BackdropCombo_SelectionChanged"
+                              MinWidth="200" VerticalAlignment="Center">
+                        <ComboBoxItem x:Uid="/SettingsPage/BackdropMica"/>
+                        <ComboBoxItem x:Uid="/SettingsPage/BackdropMicaAlt"/>
+                        <ComboBoxItem x:Uid="/SettingsPage/BackdropAcrylic"/>
+                    </ComboBox>
+                </Grid>
+            </Border>
 
-            <!-- 拖拽吸附 -->
-            <StackPanel Spacing="6">
-                <TextBlock x:Uid="/SettingsPage/DragSnapHeader" FontWeight="SemiBold"/>
-                <TextBlock x:Uid="/SettingsPage/DragSnapDesc" Opacity="0.7" FontSize="12"/>
-                <ToggleSwitch x:Name="DragSnapToggle"
-                              Toggled="DragSnapToggle_Toggled"/>
-            </StackPanel>
+            <!-- ================= 启动与引擎 ================= -->
+            <TextBlock x:Uid="/SettingsPage/GroupStartupEngine" Style="{StaticResource SectionHeaderTextStyle}" Margin="2,24,0,4"/>
 
-            <!-- 窗口位置记忆 -->
-            <StackPanel Spacing="6">
-                <TextBlock x:Uid="/SettingsPage/PersistenceHeader" FontWeight="SemiBold"/>
-                <TextBlock x:Uid="/SettingsPage/PersistenceDesc" Opacity="0.7" FontSize="12"/>
-                <ToggleSwitch x:Name="PersistenceToggle"
-                              Toggled="PersistenceToggle_Toggled"/>
-
-                <TextBlock x:Uid="/SettingsPage/CaptureIntervalLabel" Opacity="0.7" FontSize="12" Margin="0,4,0,0"/>
-                <NumberBox x:Name="CaptureIntervalBox"
-                           Minimum="1" Maximum="30"
-                           SmallChange="1" LargeChange="5"
-                           SpinButtonPlacementMode="Inline"
-                           ValueChanged="CaptureIntervalBox_ValueChanged"
-                           Width="200" HorizontalAlignment="Left"/>
-
-                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
-                    <Button x:Name="CaptureNowButton" Click="CaptureNowButton_Click"/>
-                    <Button x:Name="RestoreNowButton" Click="RestoreNowButton_Click"/>
+            <!-- 开机自启 + 从属开关(缩到托盘)放同一张卡,下半部分用分隔线隔开,一眼看出从属关系 -->
+            <Border Style="{StaticResource SettingsCardStyle}">
+                <StackPanel Spacing="12">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE7E8;" Style="{StaticResource SettingsCardIconStyle}"/>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                            <TextBlock x:Uid="/SettingsPage/StartupHeader" Style="{StaticResource SettingsCardTitleStyle}"/>
+                            <TextBlock x:Uid="/SettingsPage/StartupDesc" Style="{StaticResource SettingsCardDescStyle}"/>
+                        </StackPanel>
+                        <!-- OnContent/OffContent 经 code-behind 用 Common/On|Off 设(ToggleSwitch 的 On/OffContent 用 x:Uid 同样走附加式较脆,改代码设)。 -->
+                        <ToggleSwitch x:Name="StartupToggle" Grid.Column="2" MinWidth="0"
+                                      VerticalAlignment="Center"
+                                      Toggled="StartupToggle_Toggled"/>
+                    </Grid>
+                    <Border Style="{StaticResource CardDividerStyle}"/>
+                    <!-- 从属开关:仅在开机自启开启时可用(IsEnabled 联动);决定计划任务的启动参数是否带静默标志。
+                         标题文字经 code-behind 设到 StartMinimizedLabel(原先是 ToggleSwitch.Header)。 -->
+                    <Grid ColumnSpacing="16" Padding="44,0,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center" Spacing="2">
+                            <TextBlock x:Name="StartMinimizedLabel" Style="{StaticResource SettingsCardTitleStyle}"/>
+                            <TextBlock x:Uid="/SettingsPage/StartMinimizedDesc" Style="{StaticResource SettingsCardDescStyle}"/>
+                        </StackPanel>
+                        <ToggleSwitch x:Name="StartMinimizedToggle" Grid.Column="1" MinWidth="0"
+                                      VerticalAlignment="Center"
+                                      Toggled="StartMinimizedToggle_Toggled"/>
+                    </Grid>
                 </StackPanel>
+            </Border>
 
-                <TextBlock x:Uid="/SettingsPage/PersistenceIgnoreLabel" Opacity="0.7" FontSize="12" Margin="0,4,0,0"/>
-                <TextBox x:Name="PersistenceIgnoreBox"
-                         AcceptsReturn="True" TextWrapping="Wrap"
-                         Height="80" Width="320" HorizontalAlignment="Left"
-                         LostFocus="PersistenceIgnoreBox_LostFocus"/>
-            </StackPanel>
+            <Border Style="{StaticResource SettingsCardStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <FontIcon Glyph="&#xE916;" Style="{StaticResource SettingsCardIconStyle}"/>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock x:Uid="/SettingsPage/PollHeader" Style="{StaticResource SettingsCardTitleStyle}"/>
+                        <TextBlock x:Uid="/SettingsPage/PollDesc" Style="{StaticResource SettingsCardDescStyle}"/>
+                    </StackPanel>
+                    <NumberBox x:Name="PollBox" Grid.Column="2"
+                               Minimum="300" Maximum="60000"
+                               SmallChange="100" LargeChange="500"
+                               SpinButtonPlacementMode="Inline"
+                               ValueChanged="PollBox_ValueChanged"
+                               Width="200" VerticalAlignment="Center"/>
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource SettingsCardStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <FontIcon Glyph="&#xE7C2;" Style="{StaticResource SettingsCardIconStyle}"/>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock x:Uid="/SettingsPage/DragSnapHeader" Style="{StaticResource SettingsCardTitleStyle}"/>
+                        <TextBlock x:Uid="/SettingsPage/DragSnapDesc" Style="{StaticResource SettingsCardDescStyle}"/>
+                    </StackPanel>
+                    <ToggleSwitch x:Name="DragSnapToggle" Grid.Column="2" MinWidth="0"
+                                  VerticalAlignment="Center"
+                                  Toggled="DragSnapToggle_Toggled"/>
+                </Grid>
+            </Border>
+
+            <!-- 热键:标题行 + 动作表 + 操作按钮 -->
+            <Border Style="{StaticResource SettingsCardStyle}">
+                <StackPanel Spacing="12">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE765;" Style="{StaticResource SettingsCardIconStyle}"/>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                            <TextBlock x:Uid="/SettingsPage/HotkeysHeader" Style="{StaticResource SettingsCardTitleStyle}"/>
+                            <TextBlock x:Uid="/SettingsPage/HotkeysDesc" Style="{StaticResource SettingsCardDescStyle}"/>
+                        </StackPanel>
+                    </Grid>
+                    <Border Style="{StaticResource CardDividerStyle}"/>
+                    <StackPanel Spacing="12" Padding="44,0,0,0">
+                        <!-- 每个动作一行:动作名 + 手势 TextBox,运行时按动作表填充 -->
+                        <StackPanel x:Name="HotkeyRows" Spacing="8"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <Button x:Name="ApplyHotkeysButton" x:Uid="/SettingsPage/ApplyHotkeysButton"
+                                    Style="{ThemeResource AccentButtonStyle}"
+                                    Click="ApplyHotkeysButton_Click"/>
+                            <Button x:Name="ResetHotkeysButton" x:Uid="/SettingsPage/ResetHotkeysButton"
+                                    Click="ResetHotkeysButton_Click"/>
+                        </StackPanel>
+                        <TextBlock x:Name="HotkeyStatusText" TextWrapping="Wrap" FontSize="12"
+                                   Visibility="Collapsed"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- ================= 窗口管理 ================= -->
+            <TextBlock x:Uid="/SettingsPage/GroupWindows" Style="{StaticResource SectionHeaderTextStyle}" Margin="2,24,0,4"/>
+
+            <!-- 窗口位置记忆:主开关 + 下方的细项(捕获间隔、立即捕获/还原、排除名单) -->
+            <Border Style="{StaticResource SettingsCardStyle}">
+                <StackPanel Spacing="12">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE81C;" Style="{StaticResource SettingsCardIconStyle}"/>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                            <TextBlock x:Uid="/SettingsPage/PersistenceHeader" Style="{StaticResource SettingsCardTitleStyle}"/>
+                            <TextBlock x:Uid="/SettingsPage/PersistenceDesc" Style="{StaticResource SettingsCardDescStyle}"/>
+                        </StackPanel>
+                        <ToggleSwitch x:Name="PersistenceToggle" Grid.Column="2" MinWidth="0"
+                                      VerticalAlignment="Center"
+                                      Toggled="PersistenceToggle_Toggled"/>
+                    </Grid>
+                    <Border Style="{StaticResource CardDividerStyle}"/>
+                    <Grid ColumnSpacing="16" Padding="44,0,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center" Spacing="2">
+                            <TextBlock x:Uid="/SettingsPage/CaptureIntervalTitle" Style="{StaticResource SettingsCardTitleStyle}"/>
+                            <TextBlock x:Uid="/SettingsPage/CaptureIntervalLabel" Style="{StaticResource SettingsCardDescStyle}"/>
+                        </StackPanel>
+                        <NumberBox x:Name="CaptureIntervalBox" Grid.Column="1"
+                                   Minimum="1" Maximum="30"
+                                   SmallChange="1" LargeChange="5"
+                                   SpinButtonPlacementMode="Inline"
+                                   ValueChanged="CaptureIntervalBox_ValueChanged"
+                                   Width="200" VerticalAlignment="Center"/>
+                    </Grid>
+                    <Border Style="{StaticResource CardDividerStyle}"/>
+                    <StackPanel Spacing="8" Padding="44,0,0,0">
+                        <StackPanel Spacing="2">
+                            <TextBlock x:Uid="/SettingsPage/PersistenceIgnoreTitle" Style="{StaticResource SettingsCardTitleStyle}"/>
+                            <TextBlock x:Uid="/SettingsPage/PersistenceIgnoreLabel" Style="{StaticResource SettingsCardDescStyle}"/>
+                        </StackPanel>
+                        <TextBox x:Name="PersistenceIgnoreBox"
+                                 AcceptsReturn="True" TextWrapping="Wrap"
+                                 Height="88" HorizontalAlignment="Stretch"
+                                 FontFamily="Consolas"
+                                 LostFocus="PersistenceIgnoreBox_LostFocus"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+                            <Button x:Name="CaptureNowButton" Click="CaptureNowButton_Click"/>
+                            <Button x:Name="RestoreNowButton" Click="RestoreNowButton_Click"/>
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
 
             <!-- 还原全部 -->
-            <StackPanel Spacing="6">
-                <TextBlock x:Uid="/SettingsPage/TakeoverHeader" FontWeight="SemiBold"/>
-                <TextBlock x:Uid="/SettingsPage/TakeoverDesc" Opacity="0.7" FontSize="12"/>
-                <Button x:Name="RestoreAllButton" x:Uid="/SettingsPage/RestoreAllButton"
-                        Click="RestoreAllButton_Click"/>
-            </StackPanel>
+            <Border Style="{StaticResource SettingsCardStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <FontIcon Glyph="&#xE7A7;" Style="{StaticResource SettingsCardIconStyle}"/>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock x:Uid="/SettingsPage/TakeoverHeader" Style="{StaticResource SettingsCardTitleStyle}"/>
+                        <TextBlock x:Uid="/SettingsPage/TakeoverDesc" Style="{StaticResource SettingsCardDescStyle}"/>
+                    </StackPanel>
+                    <Button x:Name="RestoreAllButton" x:Uid="/SettingsPage/RestoreAllButton" Grid.Column="2"
+                            VerticalAlignment="Center"
+                            Click="RestoreAllButton_Click"/>
+                </Grid>
+            </Border>
 
-            <!-- 热键 -->
-            <StackPanel Spacing="6">
-                <TextBlock x:Uid="/SettingsPage/HotkeysHeader" FontWeight="SemiBold"/>
-                <TextBlock x:Uid="/SettingsPage/HotkeysDesc" TextWrapping="Wrap" Opacity="0.7" FontSize="12"/>
-                <!-- 每个动作一行:动作名 + 手势 TextBox,运行时按动作表填充 -->
-                <StackPanel x:Name="HotkeyRows" Spacing="8"/>
-                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                    <Button x:Name="ApplyHotkeysButton" x:Uid="/SettingsPage/ApplyHotkeysButton"
-                            Click="ApplyHotkeysButton_Click"/>
-                    <Button x:Name="ResetHotkeysButton" x:Uid="/SettingsPage/ResetHotkeysButton"
-                            Click="ResetHotkeysButton_Click"/>
+            <!-- ================= 数据与集成 ================= -->
+            <TextBlock x:Uid="/SettingsPage/GroupData" Style="{StaticResource SectionHeaderTextStyle}" Margin="2,24,0,4"/>
+
+            <!-- 在线图标(SteamGridDB) -->
+            <Border Style="{StaticResource SettingsCardStyle}">
+                <StackPanel Spacing="12">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE8B9;" Style="{StaticResource SettingsCardIconStyle}"/>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                            <TextBlock x:Uid="/SettingsPage/SgdbHeader" Style="{StaticResource SettingsCardTitleStyle}"/>
+                            <TextBlock Style="{StaticResource SettingsCardDescStyle}">
+                                <Run x:Uid="/SettingsPage/SgdbDescLine1"/>
+                                <LineBreak/>
+                                <Run x:Uid="/SettingsPage/SgdbDescApply"/>
+                                <Hyperlink NavigateUri="https://www.steamgriddb.com/profile/preferences/api">https://www.steamgriddb.com/profile/preferences/api</Hyperlink>
+                            </TextBlock>
+                        </StackPanel>
+                    </Grid>
+                    <TextBox x:Name="SgdbKeyBox"
+                             x:Uid="/SettingsPage/SgdbKeyBox"
+                             LostFocus="SgdbKeyBox_LostFocus"
+                             Margin="44,0,0,0"
+                             HorizontalAlignment="Stretch"/>
                 </StackPanel>
-                <TextBlock x:Name="HotkeyStatusText" TextWrapping="Wrap" FontSize="12"
-                           Visibility="Collapsed"/>
-            </StackPanel>
+            </Border>
 
             <!-- 配置备份 -->
-            <StackPanel Spacing="6">
-                <TextBlock x:Uid="/SettingsPage/BackupHeader" FontWeight="SemiBold"/>
-                <TextBlock x:Uid="/SettingsPage/BackupDesc" Opacity="0.7" FontSize="12" TextWrapping="Wrap"/>
-                <StackPanel Orientation="Horizontal" Spacing="12">
-                    <Button x:Name="ExportConfigButton" x:Uid="/SettingsPage/ExportConfigButton"
-                            Click="ExportConfigButton_Click"/>
-                    <Button x:Name="ImportConfigButton" x:Uid="/SettingsPage/ImportConfigButton"
-                            Click="ImportConfigButton_Click"/>
-                </StackPanel>
-                <TextBlock x:Name="BackupStatusText" TextWrapping="Wrap" FontSize="12"
-                           Visibility="Collapsed"/>
-            </StackPanel>
+            <Border Style="{StaticResource SettingsCardStyle}">
+                <Grid ColumnSpacing="16" RowSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <FontIcon Glyph="&#xE8F1;" Style="{StaticResource SettingsCardIconStyle}"/>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock x:Uid="/SettingsPage/BackupHeader" Style="{StaticResource SettingsCardTitleStyle}"/>
+                        <TextBlock x:Uid="/SettingsPage/BackupDesc" Style="{StaticResource SettingsCardDescStyle}"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <Button x:Name="ExportConfigButton" x:Uid="/SettingsPage/ExportConfigButton"
+                                Click="ExportConfigButton_Click"/>
+                        <Button x:Name="ImportConfigButton" x:Uid="/SettingsPage/ImportConfigButton"
+                                Click="ImportConfigButton_Click"/>
+                    </StackPanel>
+                    <TextBlock x:Name="BackupStatusText" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
+                               TextWrapping="Wrap" FontSize="12"
+                               Visibility="Collapsed"/>
+                </Grid>
+            </Border>
 
             <!-- 配置文件路径 -->
-            <StackPanel Spacing="6">
-                <TextBlock x:Uid="/SettingsPage/ConfigFileHeader" FontWeight="SemiBold"/>
-                <TextBlock x:Name="ConfigPathText" Opacity="0.7" FontSize="12"
-                           IsTextSelectionEnabled="True" TextWrapping="Wrap"/>
-                <Button x:Name="OpenFolderButton" x:Uid="/SettingsPage/OpenFolderButton"
-                        Click="OpenFolderButton_Click"/>
-            </StackPanel>
+            <Border Style="{StaticResource SettingsCardStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <FontIcon Glyph="&#xE8B7;" Style="{StaticResource SettingsCardIconStyle}"/>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock x:Uid="/SettingsPage/ConfigFileHeader" Style="{StaticResource SettingsCardTitleStyle}"/>
+                        <TextBlock x:Name="ConfigPathText" Style="{StaticResource SettingsCardDescStyle}"
+                                   FontFamily="Consolas"
+                                   IsTextSelectionEnabled="True"/>
+                    </StackPanel>
+                    <Button x:Name="OpenFolderButton" x:Uid="/SettingsPage/OpenFolderButton" Grid.Column="2"
+                            VerticalAlignment="Center"
+                            Click="OpenFolderButton_Click"/>
+                </Grid>
+            </Border>
 
-            <!-- 关于(含检查更新) -->
-            <StackPanel Spacing="6">
-                <TextBlock x:Uid="/SettingsPage/AboutHeader" FontWeight="SemiBold"/>
-                <TextBlock x:Name="VersionText" Opacity="0.7" FontSize="12"/>
-                <TextBlock x:Uid="/SettingsPage/AboutBlurb" Opacity="0.7" FontSize="12" TextWrapping="Wrap"/>
+            <!-- ================= 关于 ================= -->
+            <TextBlock x:Uid="/SettingsPage/AboutHeader" Style="{StaticResource SectionHeaderTextStyle}" Margin="2,24,0,4"/>
 
-                <!-- 检查更新:从 GitHub Releases 取最新版号比对。开关只管"启动时自动查",
-                     手动查随时可用;下载与安装永远是用户点的按钮触发。
-                     ToggleSwitch 的 Header / On/OffContent 与两个按钮的 Content 走代码后置 Loc.T
-                     (ContentControl / ToggleSwitch 上的 x:Uid 较脆,见本文件其他处同样处理)。 -->
-                <ToggleSwitch x:Name="CheckUpdatesToggle"
-                              Toggled="CheckUpdatesToggle_Toggled"
-                              Margin="0,10,0,0"/>
-                <TextBlock x:Uid="/SettingsPage/UpdateDesc" Opacity="0.7" FontSize="12" TextWrapping="Wrap"/>
-                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                    <Button x:Name="CheckUpdateButton" Click="CheckUpdateButton_Click"/>
-                    <Button x:Name="InstallUpdateButton" Click="InstallUpdateButton_Click"
-                            Style="{ThemeResource AccentButtonStyle}"
-                            Visibility="Collapsed"/>
+            <!-- 应用信息卡:图标 + 名称/版本 + 一句话简介 -->
+            <Border Style="{StaticResource SettingsCardStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <!-- Source set in code-behind from the output-dir Assets\reframe.ico (same as the title bar icon; unpackaged app). -->
+                    <Image x:Name="AboutIcon" Width="32" Height="32"
+                           VerticalAlignment="Center"/>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="Reframe" Style="{ThemeResource BodyStrongTextBlockStyle}"/>
+                            <TextBlock x:Name="VersionText" Style="{StaticResource SettingsCardDescStyle}"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <TextBlock x:Uid="/SettingsPage/AboutBlurb" Style="{StaticResource SettingsCardDescStyle}"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- 检查更新:从 GitHub Releases 取最新版号比对。开关只管"启动时自动查",
+                 手动查随时可用;下载与安装永远是用户点的按钮触发。
+                 开关标题 / On/OffContent 与两个按钮的 Content 走代码后置 Loc.T
+                 (ContentControl / ToggleSwitch 上的 x:Uid 较脆,见本文件其他处同样处理)。 -->
+            <Border Style="{StaticResource SettingsCardStyle}">
+                <StackPanel Spacing="12">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE895;" Style="{StaticResource SettingsCardIconStyle}"/>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                            <TextBlock x:Name="CheckUpdatesLabel" Style="{StaticResource SettingsCardTitleStyle}"/>
+                            <TextBlock x:Uid="/SettingsPage/UpdateDesc" Style="{StaticResource SettingsCardDescStyle}"/>
+                        </StackPanel>
+                        <ToggleSwitch x:Name="CheckUpdatesToggle" Grid.Column="2" MinWidth="0"
+                                      VerticalAlignment="Center"
+                                      Toggled="CheckUpdatesToggle_Toggled"/>
+                    </Grid>
+                    <Border Style="{StaticResource CardDividerStyle}"/>
+                    <StackPanel Spacing="8" Padding="44,0,0,0">
+                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <Button x:Name="CheckUpdateButton" Click="CheckUpdateButton_Click"/>
+                            <Button x:Name="InstallUpdateButton" Click="InstallUpdateButton_Click"
+                                    Style="{ThemeResource AccentButtonStyle}"
+                                    Visibility="Collapsed"/>
+                        </StackPanel>
+                        <ProgressBar x:Name="UpdateProgressBar" Maximum="100"
+                                     HorizontalAlignment="Stretch" Visibility="Collapsed"/>
+                        <TextBlock x:Name="UpdateStatusText" TextWrapping="Wrap" FontSize="12"
+                                   Visibility="Collapsed"/>
+                    </StackPanel>
                 </StackPanel>
-                <ProgressBar x:Name="UpdateProgressBar" Maximum="100" Width="420"
-                             HorizontalAlignment="Left" Visibility="Collapsed"/>
-                <TextBlock x:Name="UpdateStatusText" TextWrapping="Wrap" FontSize="12"
-                           Visibility="Collapsed"/>
-            </StackPanel>
+            </Border>
         </StackPanel>
+        </Grid>
     </ScrollViewer>
 </Page>

@@ -109,7 +109,8 @@
                 </muxc:NavigationViewItem>
                 <muxc:NavigationViewItem x:Uid="/MainWindow/NavProfiles" Tag="profiles">
                     <muxc:NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE7C1;" FontSize="20"/>
+                        <!-- 手柄图标(E7FC):配置文件本质是"每个游戏一份",比旧的旗帜图标更直观 -->
+                        <FontIcon Glyph="&#xE7FC;" FontSize="20"/>
                     </muxc:NavigationViewItem.Icon>
                 </muxc:NavigationViewItem>
                 <muxc:NavigationViewItem x:Uid="/MainWindow/NavLayouts" Tag="layouts">

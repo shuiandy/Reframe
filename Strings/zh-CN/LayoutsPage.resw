@@ -132,4 +132,11 @@
   <data name="DuplicateNameFormat" xml:space="preserve">
     <value>{0} 副本</value>
   </data>
+  <!-- UI redesign -->
+  <data name="Subtitle.Text" xml:space="preserve">
+    <value>布局把一块屏幕划分成若干分区,可被多个配置文件共同引用。</value>
+  </data>
+  <data name="EmptyCreateButton.Text" xml:space="preserve">
+    <value>新建布局</value>
+  </data>
 </root>

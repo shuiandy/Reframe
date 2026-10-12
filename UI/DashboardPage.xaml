@@ -6,118 +6,208 @@
     xmlns:local="using:Reframe.UI"
     xmlns:controls="using:Reframe.UI.Controls">
 
-    <Grid Padding="24" RowSpacing="16">
+    <!-- 视觉层次(自上而下):页面标题与摘要 → 引擎状态卡(最重要的开关,独占一张卡) →
+         显示器实时图 → 接管中的窗口 + 日志 两张并排卡片。样式统一取 App.xaml 的共享资源。 -->
+    <!-- The page scrolls so the bottom cards keep a usable height on short windows / high DPI
+         (with a fixed "*" row they were squeezed to ~110px and the empty state fell out of view). -->
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <Grid Padding="{StaticResource PageContentPadding}" RowSpacing="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Title + engine master switch: title at left, engine label + toggle at right, centered on one row -->
-        <Grid VerticalAlignment="Center">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" x:Uid="/DashboardPage/Title" FontSize="28" FontWeight="SemiBold"
-                       VerticalAlignment="Center"/>
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10"
-                        VerticalAlignment="Center">
-                <TextBlock x:Uid="/DashboardPage/EngineLabel" VerticalAlignment="Center"/>
+        <!-- Title + summary -->
+        <StackPanel Grid.Row="0">
+            <TextBlock x:Uid="/DashboardPage/Title" Style="{StaticResource PageTitleTextStyle}"/>
+            <TextBlock x:Name="SummaryText" Style="{StaticResource PageSubtitleTextStyle}"/>
+        </StackPanel>
+
+        <!-- Engine status card: badge (color follows the engine state, set in code-behind) + label/description + master switch -->
+        <Border Grid.Row="1" Style="{StaticResource SettingsCardStyle}" Padding="16">
+            <Grid ColumnSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Two pre-styled badges, one visible at a time (switched in code-behind). Keeping the
+                     brushes as ThemeResource here, rather than assigning them from code, means they follow
+                     the in-app light/dark override instead of the system theme. -->
+                <Grid Grid.Column="0" Width="44" Height="44" VerticalAlignment="Center">
+                    <Border x:Name="EngineBadgeOff" CornerRadius="22"
+                            Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+                        <FontIcon Glyph="&#xE769;" FontSize="18"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </Border>
+                    <Border x:Name="EngineBadgeOn" CornerRadius="22" Visibility="Collapsed"
+                            Background="{ThemeResource AccentFillColorDefaultBrush}">
+                        <FontIcon Glyph="&#xE768;" FontSize="18"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                                  Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"/>
+                    </Border>
+                </Grid>
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                    <TextBlock x:Uid="/DashboardPage/EngineLabel"
+                               Style="{ThemeResource SubtitleTextBlockStyle}"/>
+                    <TextBlock x:Uid="/DashboardPage/EngineDesc"
+                               Style="{StaticResource SettingsCardDescStyle}"/>
+                </StackPanel>
+
                 <!-- On/OffContent are set in code-behind (Loc.T); x:Uid for those attached contents is unreliable in MRT Core. -->
-                <ToggleSwitch x:Name="EngineToggle"
+                <ToggleSwitch x:Name="EngineToggle" Grid.Column="2"
+                              MinWidth="0"
                               VerticalAlignment="Center"
                               Loaded="EngineToggle_Loaded"
                               Toggled="EngineToggle_Toggled"/>
+            </Grid>
+        </Border>
+
+        <!-- Live monitor mini-map (primary visual). Height auto-fits the desktop bounding-box aspect (clamped 90..320). -->
+        <Border Grid.Row="2" Style="{StaticResource CardBorderStyle}">
+            <StackPanel Spacing="12">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon Glyph="&#xE7F4;" FontSize="16"
+                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    <TextBlock x:Uid="/DashboardPage/MonitorsHeader"
+                               Style="{ThemeResource BodyStrongTextBlockStyle}"/>
+                </StackPanel>
+                <controls:LiveMonitorMap x:Name="MonitorMap"
+                                         HorizontalAlignment="Stretch" VerticalAlignment="Top"/>
             </StackPanel>
-        </Grid>
+        </Border>
 
-        <!-- Summary row -->
-        <TextBlock x:Name="SummaryText" Grid.Row="1" Opacity="0.7"/>
-
-        <!-- Live monitor mini-map (primary visual). Height auto-fits the desktop bounding-box aspect (clamped 90..320), no longer fixed at 260. -->
-        <controls:LiveMonitorMap x:Name="MonitorMap" Grid.Row="2"
-                                 HorizontalAlignment="Stretch" VerticalAlignment="Top"/>
-
-        <!-- Bottom split: left = taken-window cards, right = log (narrow) -->
-        <Grid Grid.Row="3" ColumnSpacing="16">
+        <!-- Bottom split: left = taken-window cards, right = log -->
+        <Grid Grid.Row="3" ColumnSpacing="16" MinHeight="280">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="3*"/>
                 <ColumnDefinition Width="2*"/>
             </Grid.ColumnDefinitions>
 
             <!-- Active windows -->
-            <Grid Grid.Column="0" RowSpacing="8">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-                <TextBlock x:Uid="/DashboardPage/TakenHeader" FontWeight="SemiBold"/>
-                <Grid Grid.Row="1">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <ItemsControl x:Name="TakenList">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="local:TakenCard">
-                                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                            BorderThickness="1" CornerRadius="6"
-                                            Padding="12,10" Margin="0,0,0,8">
-                                        <Grid ColumnSpacing="12">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
+            <Border Grid.Column="0" Style="{StaticResource CardBorderStyle}" Padding="16,14,8,8">
+                <Grid RowSpacing="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xE737;" FontSize="16"
+                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        <TextBlock x:Uid="/DashboardPage/TakenHeader"
+                                   Style="{ThemeResource BodyStrongTextBlockStyle}"/>
+                    </StackPanel>
+                    <Grid Grid.Row="1">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,8,0" MaxHeight="420">
+                            <ItemsControl x:Name="TakenList">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="local:TakenCard">
+                                        <Border Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                                BorderThickness="1" CornerRadius="6"
+                                                Padding="12,10" Margin="0,0,0,6">
+                                            <Grid ColumnSpacing="12">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
 
-                                            <!-- Window icon: falls back to a default glyph when unavailable (visibility is mutually exclusive) -->
-                                            <Grid Grid.Column="0" Width="32" Height="32"
-                                                  VerticalAlignment="Center">
-                                                <FontIcon Glyph="&#xE737;"
-                                                          FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                                                          FontSize="22" Opacity="0.6"
-                                                          Visibility="{Binding FallbackIconVisibility, Mode=OneWay}"/>
-                                                <Image Source="{Binding Icon, Mode=OneWay}"
-                                                       Width="32" Height="32"
-                                                       Visibility="{Binding RealIconVisibility, Mode=OneWay}"/>
+                                                <!-- Window icon: falls back to a default glyph when unavailable (visibility is mutually exclusive) -->
+                                                <Border Grid.Column="0" Style="{StaticResource IconTileStyle}">
+                                                    <Grid Width="28" Height="28">
+                                                        <FontIcon Glyph="&#xE737;"
+                                                                  FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                                                  FontSize="20" Opacity="0.6"
+                                                                  Visibility="{Binding FallbackIconVisibility, Mode=OneWay}"/>
+                                                        <Image Source="{Binding Icon, Mode=OneWay}"
+                                                               Width="28" Height="28"
+                                                               Visibility="{Binding RealIconVisibility, Mode=OneWay}"/>
+                                                    </Grid>
+                                                </Border>
+
+                                                <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding ProfileName, Mode=OneWay}"
+                                                               Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="{Binding SubInfo, Mode=OneWay}"
+                                                               Style="{StaticResource SecondaryCaptionTextStyle}"
+                                                               TextWrapping="NoWrap"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="{Binding RectText, Mode=OneWay}"
+                                                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                                               FontSize="12"
+                                                               FontFamily="Consolas"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2" Orientation="Horizontal"
+                                                            Spacing="6" VerticalAlignment="Center">
+                                                    <Button x:Uid="/DashboardPage/RestoreButton" Tag="{Binding Handle}"
+                                                            Click="RestoreWindow_Click"/>
+                                                    <Button x:Uid="/DashboardPage/RescanButton"
+                                                            Click="Reapply_Click"
+                                                            Loaded="RescanButton_Loaded"/>
+                                                </StackPanel>
                                             </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
 
-                                            <StackPanel Grid.Column="1" Spacing="2">
-                                                <TextBlock Text="{Binding ProfileName, Mode=OneWay}"
-                                                           FontWeight="SemiBold"/>
-                                                <TextBlock Text="{Binding SubInfo, Mode=OneWay}" Opacity="0.85"
-                                                           TextTrimming="CharacterEllipsis"/>
-                                                <TextBlock Text="{Binding RectText, Mode=OneWay}" Opacity="0.6"
-                                                           FontSize="12"
-                                                           FontFamily="Consolas"/>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="2" Orientation="Horizontal"
-                                                        Spacing="8" VerticalAlignment="Center">
-                                                <Button x:Uid="/DashboardPage/RestoreButton" Tag="{Binding Handle}"
-                                                        Click="RestoreWindow_Click"/>
-                                                <Button x:Uid="/DashboardPage/RescanButton"
-                                                        Click="Reapply_Click"
-                                                        Loaded="RescanButton_Loaded"/>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
-                    <TextBlock x:Name="TakenEmpty" x:Uid="/DashboardPage/TakenEmptyLabel"
-                               Opacity="0.5" VerticalAlignment="Top" Margin="2,4"/>
+                        <!-- Empty state: centered icon + text instead of a lone grey line -->
+                        <StackPanel x:Name="TakenEmpty" Spacing="8"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    Margin="0,12,8,20">
+                            <FontIcon Glyph="&#xE7B3;" FontSize="28" HorizontalAlignment="Center"
+                                      Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+                            <TextBlock x:Uid="/DashboardPage/TakenEmptyLabel" HorizontalAlignment="Center"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <TextBlock x:Uid="/DashboardPage/TakenEmptyHint" HorizontalAlignment="Center"
+                                       TextAlignment="Center" MaxWidth="320"
+                                       Style="{StaticResource SecondaryCaptionTextStyle}"/>
+                        </StackPanel>
+                    </Grid>
                 </Grid>
-            </Grid>
+            </Border>
 
-            <!-- Log (narrow, ~5 scrollable rows) -->
-            <StackPanel Grid.Column="1" Spacing="8">
-                <TextBlock x:Uid="/DashboardPage/LogHeader" FontWeight="SemiBold"/>
-                <ListView x:Name="LogList" SelectionMode="None" IsItemClickEnabled="False"
-                          MaxHeight="160"
-                          BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                          BorderThickness="1" CornerRadius="6"/>
-            </StackPanel>
+            <!-- Log -->
+            <Border Grid.Column="1" Style="{StaticResource CardBorderStyle}" Padding="16,14,8,8">
+                <Grid RowSpacing="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xE81C;" FontSize="16"
+                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        <TextBlock x:Uid="/DashboardPage/LogHeader"
+                                   Style="{ThemeResource BodyStrongTextBlockStyle}"/>
+                    </StackPanel>
+                    <ListView x:Name="LogList" Grid.Row="1"
+                              SelectionMode="None" IsItemClickEnabled="False"
+                              MinHeight="200" MaxHeight="420">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="MinHeight" Value="28"/>
+                                <Setter Property="Padding" Value="4,2"/>
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                        <!-- Long entries wrap instead of being cut at the card edge -->
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}" TextWrapping="Wrap"
+                                           FontFamily="Consolas" FontSize="12" Margin="0,2"/>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Grid>
+            </Border>
         </Grid>
     </Grid>
+    </ScrollViewer>
 </Page>

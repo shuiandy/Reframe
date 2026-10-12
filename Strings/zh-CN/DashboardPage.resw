@@ -139,4 +139,14 @@
   <data name="UnknownProfile" xml:space="preserve">
     <value>?</value>
   </data>
+  <!-- UI redesign -->
+  <data name="EngineDesc.Text" xml:space="preserve">
+    <value>开启后自动识别匹配配置文件的窗口,并按规则去边框和摆放。</value>
+  </data>
+  <data name="MonitorsHeader.Text" xml:space="preserve">
+    <value>显示器</value>
+  </data>
+  <data name="TakenEmptyHint.Text" xml:space="preserve">
+    <value>引擎运行时,匹配配置文件的窗口会出现在这里。</value>
+  </data>
 </root>

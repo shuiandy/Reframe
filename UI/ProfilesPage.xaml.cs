@@ -190,8 +190,8 @@ public sealed partial class ProfilesPage : Page
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         // Localize the named-element tooltips from code-behind (attached-property x:Uid is brittle in MRT Core).
-        ToolTipService.SetToolTip(ShowFilteredToggle, Loc.T("ProfilesPage/ShowFilteredToggle.ToolTip"));
-        ToolTipService.SetToolTip(RefreshButton, Loc.T("ProfilesPage/RefreshButton.ToolTip"));
+        ToolTipService.SetToolTip(ShowFilteredToggle, Loc.T("ProfilesPage/ShowFilteredTooltip"));
+        ToolTipService.SetToolTip(RefreshButton, Loc.T("ProfilesPage/RefreshTooltip"));
 
         ConfigService.Instance.Changed += OnConfigChanged;
         Reload();
@@ -206,13 +206,13 @@ public sealed partial class ProfilesPage : Page
     private void CreateFromWindowButton_Loaded(object sender, RoutedEventArgs e)
     {
         if (sender is Button b)
-            ToolTipService.SetToolTip(b, Loc.T("ProfilesPage/CreateFromWindowButton.ToolTip"));
+            ToolTipService.SetToolTip(b, Loc.T("ProfilesPage/CreateFromWindowTooltip"));
     }
 
     private void LaunchButton_Loaded(object sender, RoutedEventArgs e)
     {
         if (sender is Button b)
-            ToolTipService.SetToolTip(b, Loc.T("ProfilesPage/LaunchButton.ToolTip"));
+            ToolTipService.SetToolTip(b, Loc.T("ProfilesPage/LaunchTooltip"));
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)

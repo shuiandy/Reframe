@@ -16,6 +16,78 @@
             <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="Transparent" />
             <!-- 内容区与 Pane 之间的分隔边框,透明背景下默认描边显脏,去掉 -->
             <Thickness x:Key="NavigationViewContentGridBorderThickness">0</Thickness>
+
+            <!-- ===== 统一视觉规范(所有页面共用) =====
+                 页面直接坐在云母上,内容用"卡片"分组:卡片底色/描边沿用系统 Card* 刷,自动适配浅/深色。
+                 间距节奏:页面边距 PageContentPadding;分组之间 24;同组卡片之间 4(Win11 设置页同款紧贴);
+                 卡片内 16。改这里即全局生效,页面里不要再写死同类数值。 -->
+            <Thickness x:Key="PageContentPadding">32,20,32,24</Thickness>
+            <x:Double x:Key="PageMaxWidth">1100</x:Double>
+            <CornerRadius x:Key="CardCornerRadius">8</CornerRadius>
+
+            <!-- 页面大标题 + 标题下的一行说明 -->
+            <Style x:Key="PageTitleTextStyle" TargetType="TextBlock" BasedOn="{StaticResource TitleTextBlockStyle}">
+                <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+            </Style>
+            <Style x:Key="PageSubtitleTextStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}"/>
+                <Setter Property="TextWrapping" Value="Wrap"/>
+                <Setter Property="Margin" Value="0,4,0,0"/>
+            </Style>
+
+            <!-- 分组标题(卡片组上方的小标题,Win11 设置页风格) -->
+            <Style x:Key="SectionHeaderTextStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyStrongTextBlockStyle}">
+                <Setter Property="Margin" Value="2,0,0,4"/>
+            </Style>
+
+            <!-- 通用卡片容器 -->
+            <Style x:Key="CardBorderStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}"/>
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="CornerRadius" Value="{StaticResource CardCornerRadius}"/>
+                <Setter Property="Padding" Value="16"/>
+            </Style>
+
+            <!-- 设置行卡片:左图标 + 标题/说明 + 右侧控件,最小高度对齐系统 SettingsCard -->
+            <Style x:Key="SettingsCardStyle" TargetType="Border" BasedOn="{StaticResource CardBorderStyle}">
+                <Setter Property="Padding" Value="16,12"/>
+                <Setter Property="MinHeight" Value="68"/>
+            </Style>
+            <Style x:Key="SettingsCardIconStyle" TargetType="FontIcon">
+                <Setter Property="FontSize" Value="20"/>
+                <Setter Property="VerticalAlignment" Value="Center"/>
+                <Setter Property="Margin" Value="4,0,4,0"/>
+            </Style>
+            <Style x:Key="SettingsCardTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+                <Setter Property="TextWrapping" Value="Wrap"/>
+            </Style>
+            <Style x:Key="SettingsCardDescStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}"/>
+                <Setter Property="TextWrapping" Value="Wrap"/>
+            </Style>
+
+            <!-- 次要说明文字(卡片内的提示、列表里的副信息) -->
+            <Style x:Key="SecondaryCaptionTextStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}"/>
+                <Setter Property="TextWrapping" Value="Wrap"/>
+            </Style>
+
+            <!-- 卡片内的分隔线 -->
+            <Style x:Key="CardDividerStyle" TargetType="Border">
+                <Setter Property="Height" Value="1"/>
+                <Setter Property="Background" Value="{ThemeResource DividerStrokeColorDefaultBrush}"/>
+                <Setter Property="Margin" Value="-16,0,-16,0"/>
+            </Style>
+
+            <!-- 列表图标底座:圆角小方块,让应用图标/占位图标在卡片里有统一的落点 -->
+            <Style x:Key="IconTileStyle" TargetType="Border">
+                <Setter Property="Width" Value="40"/>
+                <Setter Property="Height" Value="40"/>
+                <Setter Property="CornerRadius" Value="6"/>
+                <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}"/>
+                <Setter Property="VerticalAlignment" Value="Center"/>
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>
