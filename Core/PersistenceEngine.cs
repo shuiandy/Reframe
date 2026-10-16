@@ -368,9 +368,10 @@ public sealed class PersistenceEngine : IDisposable
         var snap = CaptureEligibleWindows();
         if (snap.Count > 0)
         {
-            // adoptGeometry (default): a record claimed by a restarted app keeps its remembered geometry and
-            // comes back here as a pending adoption restore instead of being overwritten by the window's
-            // current (usually wrong) position.
+            // adoptGeometry (default): a record claimed by a restarted app *that came back squeezed into the
+            // display fallback box* (AdoptionGate) keeps its remembered geometry and comes back here as a
+            // pending adoption restore instead of being overwritten by the window's squashed position. A
+            // restarted window that sits where its app put it is just bound and tracked from there.
             var adopted = _memory.Capture(_currentKey, snap);
             _dirty = true;
             if (adopted.Count > 0) RestoreAdopted(adopted);
@@ -400,7 +401,7 @@ public sealed class PersistenceEngine : IDisposable
         var plan = FilterWritable(adopted, _getEngineOwned());
         if (plan.Count == 0) return;
         int moved = ApplyPlacements(plan);
-        if (moved > 0) Log?.Invoke($"Adopted and restored {moved} window(s) (app restart)");
+        if (moved > 0) Log?.Invoke($"Adopted and restored {moved} window(s) squeezed into the display fallback box");
     }
 
     private void OnSettle()

@@ -114,9 +114,10 @@ public sealed class RememberedWindow
     /// describe a machine state that no longer exists (the app may have been restarted, or the machine
     /// rebooted, with no way to tell from the file). Records read back from disk are instead all anchored to
     /// the moment of the load (<see cref="LayoutMemory.ImportFromDisk"/>), which is exactly the semantics we
-    /// want after a reboot: apps that come up in the first quarter of an hour go home, anything opened later
-    /// in the day is left where the user opened it. Contrast <see cref="LastSeenUtc"/>, which <i>is</i>
-    /// persisted and drives aging of the geometry itself.</para>
+    /// want after a reboot: apps that come up squeezed in the first quarter of an hour (the TV was on another
+    /// input) go home, anything opened later in the day is left where the user opened it. Freshness is one of
+    /// the conditions, not the whole test — see <see cref="AdoptionGate"/> for the other. Contrast
+    /// <see cref="LastSeenUtc"/>, which <i>is</i> persisted and drives aging of the geometry itself.</para>
     /// </summary>
     public DateTime? UnboundAtUtc { get; private set; }
 
@@ -282,16 +283,24 @@ public sealed class LayoutMemory
     /// the new window of the same identity instead of a duplicate entry piling up next to it.</para>
     ///
     /// <para><b>Adoption ⇒ restore, never overwrite</b> (<paramref name="adoptGeometry"/> = true, the periodic
-    /// path). When a record that was <i>unbound at the start of this call</i> gets claimed <b>confidently</b>,
-    /// the right meaning is "move that window to the remembered place", not "the remembered place is now
-    /// wherever the window happens to be". Overwriting is what made the whole feature invisible: Chrome
-    /// restarts in the squashed position, the next 2 s capture claims its record and stamps the bad geometry
-    /// over the good one, and nothing ever restores it — and after a reboot the entire disk layout would be
-    /// destroyed within one capture tick of startup. So such a record keeps its remembered
-    /// <see cref="RememberedWindow.Record"/> (only handle / title / timestamp are refreshed) and is
-    /// <b>returned to the caller</b> as a pending adoption restore. Records that were already bound keep the
-    /// old behaviour: their geometry tracks the window, which is what makes this the live layout for this
-    /// display.</para>
+    /// path). When a record that was <i>unbound at the start of this call</i> gets claimed <b>confidently</b>
+    /// by a window that is <b>squeezed</b> (see below), the right meaning is "move that window to the
+    /// remembered place", not "the remembered place is now wherever the window happens to be". Overwriting is
+    /// what made the whole feature invisible: Chrome comes back squashed into the 1024×768 fallback box, the
+    /// next 2 s capture claims its record and stamps the bad geometry over the good one, and nothing ever
+    /// restores it. So such a record keeps its remembered <see cref="RememberedWindow.Record"/> (only handle /
+    /// title / timestamp are refreshed) and is <b>returned to the caller</b> as a pending adoption restore.
+    /// Records that were already bound keep the old behaviour: their geometry tracks the window, which is
+    /// what makes this the live layout for this display.</para>
+    ///
+    /// <para><b>Adoption only repairs a squeeze</b> (<see cref="AdoptionGate"/>). Knowing <i>which</i> window a
+    /// record describes, and that its window went away recently, still says nothing about whether the new
+    /// window is in the wrong place. In the common case it is not: the user closed one window and opened
+    /// another, or started an app at login, and the app placed the window itself. Moving it then is a fight
+    /// nobody asked for. So a confident, fresh claim is only acted on when the window sits inside the display
+    /// fallback box (where Windows squeezes everything while the only panel is away) and its remembered
+    /// rectangle does not; otherwise the record is bound — confidently, so the next display change restores
+    /// the window to <i>its own</i> place — and simply starts tracking where the window is.</para>
     ///
     /// <para><b>Binding and adoption are two different things.</b> Every window the matcher pairs is bound —
     /// that is what stops a duplicate record piling up next to the old one on each restart. Only a pairing the
@@ -318,9 +327,9 @@ public sealed class LayoutMemory
     /// wins for every window and nothing is reported — that gesture means "remember where things are right now".
     /// </param>
     /// <returns>
-    /// Windows that just claimed a remembered record <b>and</b> are confidently the same window that record
-    /// came from, so they should be moved to it. Empty in most rounds — and deliberately empty whenever the
-    /// pairing was a guess.
+    /// Windows that just claimed a remembered record, are confidently the same window that record came from,
+    /// <b>and</b> look squeezed into the display fallback box, so they should be moved to it. Empty in most
+    /// rounds — and deliberately empty whenever the pairing was a guess or the window is where its app put it.
     /// </returns>
     public IReadOnlyList<(IntPtr Handle, WindowRecord Target)> Capture(
         string displayKey, IReadOnlyList<CapturedWindow> windows, bool adoptGeometry = true)
@@ -374,10 +383,14 @@ public sealed class LayoutMemory
                     e.Ordinal = NextOrdinal(bucket, w.Identity, e);
                 }
 
-                // Adoption needs all three: the periodic path, a record that was unbound coming into this
-                // call, and a pairing the matcher is *sure* about. Drop any one of them and this is an
-                // ordinary capture — the window stays put and the record learns its current shape.
-                if (adoptGeometry && idx < wasUnbound.Length && wasUnbound[idx] && hit.Confident)
+                // Adoption needs all four: the periodic path, a record that was unbound coming into this
+                // call, a pairing the matcher is *sure* about, and a window that actually looks squeezed
+                // into the display fallback box while its record does not (AdoptionGate). Drop any one of
+                // them and this is an ordinary capture — the window stays put and the record learns its
+                // current shape. The gate is what keeps "I closed one window and opened another" from
+                // turning into a move: the app placed the new window itself, and that placement wins.
+                if (adoptGeometry && idx < wasUnbound.Length && wasUnbound[idx] && hit.Confident
+                    && AdoptionGate.ShouldRestore(w.Record, e.Record))
                     (adoptions ??= new List<(IntPtr, WindowRecord)>()).Add((w.Handle, e.Record)); // keep e.Record: the window moves, not the memory
                 else
                     e.Record = w.Record;
@@ -724,9 +737,10 @@ public sealed class LayoutMemory
     /// <see cref="AdoptionWindow"/> is measured from startup rather than from a per-record timestamp. That is
     /// the honest reading of the file: it cannot say when each window went away (the machine may have been off
     /// for a week), only that none of them exist yet. The behaviour that falls out is the one we want after a
-    /// reboot — apps that come up in the first quarter of an hour are put back on the remembered layout, while
-    /// something the user opens hours later is left exactly where it opened, even if a record with its caption
-    /// is still sitting in the file.</para>
+    /// reboot — apps that come up squeezed into the display fallback box in the first quarter of an hour are
+    /// put back on the remembered layout (subject to <see cref="AdoptionGate"/>: a window that comes up where
+    /// its app put it is left there), while something the user opens hours later is left exactly where it
+    /// opened, even if a record with its caption is still sitting in the file.</para>
     /// </summary>
     public void ImportFromDisk(LayoutFile? file) => ImportFromDisk(file, DateTime.UtcNow);
 
