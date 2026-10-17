@@ -28,6 +28,7 @@
     <Compile Include="..\Core\MonitorDesc.cs" LinkBase="Linked" />
     <Compile Include="..\Core\LayoutKey.cs" LinkBase="Linked" />
     <Compile Include="..\Core\LayoutMemory.cs" LinkBase="Linked" />
+    <Compile Include="..\Core\AdoptionGate.cs" LinkBase="Linked" />
     <Compile Include="..\Core\WindowIdentity.cs" LinkBase="Linked" />
     <Compile Include="..\Core\WindowMatcher.cs" LinkBase="Linked" />
     <Compile Include="..\Core\LayoutStore.cs" LinkBase="Linked" />

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Reframe.Core;
+using Reframe.Interop;
 using Xunit;
 
 namespace Reframe.Core.Tests;
@@ -21,6 +22,14 @@ namespace Reframe.Core.Tests;
 /// window the user opened themselves. Every test here therefore drives <c>PruneDead</c> with an explicit
 /// clock: the gap between a record losing its window and a window claiming it is now load-bearing, so it is
 /// never left to wall time.</para>
+///
+/// <para><b>And it only repairs a squeeze the engine saw happen</b> (<see cref="LayoutMemory.NoteFallbackEpisodeEnded"/>,
+/// <see cref="AdoptionGate"/>). Even a fresh, confident claim moves nothing unless the engine watched the display
+/// fall back and return within the adoption window <i>and</i> the window sits inside the box it fell back to while
+/// its record does not — the one shape Windows itself produces when the only display goes away. A restarted window
+/// that comes back where its app put it, or comes back squeezed-looking when no fallback happened, is bound and
+/// tracked from there. The fixtures make the shapes explicit: <c>W</c> is a normal 1600×1000 window, <c>S</c> the
+/// same window squeezed to 800×600 near the origin, and <c>FallbackEnded</c> is the engine's report of an episode.</para>
 /// </summary>
 public class LayoutAdoptionTests
 {
@@ -29,8 +38,25 @@ public class LayoutAdoptionTests
     private static WindowIdentity Chrome => WindowIdentity.Create("chrome", "Chrome_WidgetWin_1");
     private static WindowIdentity Notepad => WindowIdentity.Create("notepad", "Notepad");
 
+    /// <summary>A normal-sized window on a big desktop: 1600×1000 at (x, y). Never fits the display fallback box.</summary>
     private static CapturedWindow W(int handle, WindowIdentity identity, int x, int y, string title = "")
+        => new(new IntPtr(handle), identity, title, new WindowRecord(x, y, x + 1600, y + 1000, x, y, x + 1600, y + 1000, 1));
+
+    /// <summary>
+    /// The same window as it comes back <i>squeezed</i>: 800×600 near the origin, i.e. inside the 1024×768 box
+    /// Windows collapses the desktop to while the only display is away. This is the shape adoption exists to
+    /// repair (<see cref="AdoptionGate"/>); a restarted window that is not squeezed is bound and tracked, never moved.
+    /// </summary>
+    private static CapturedWindow S(int handle, WindowIdentity identity, int x, int y, string title = "")
         => new(new IntPtr(handle), identity, title, new WindowRecord(x, y, x + 800, y + 600, x, y, x + 800, y + 600, 1));
+
+    /// <summary>
+    /// The engine's report that the desktop fell back (to <paramref name="w"/>×<paramref name="h"/>, 1024×768 unless
+    /// said otherwise) and came back at <paramref name="endedUtc"/>. Without this, adoption never fires: a
+    /// squeezed-looking window with no fallback behind it is a window the user opened in the corner.
+    /// </summary>
+    private static void FallbackEnded(LayoutMemory m, DateTime endedUtc, int w = 1024, int h = 768)
+        => m.NoteFallbackEpisodeEnded(endedUtc, w, h);
 
     // ---- (1) A newly claimed record keeps its geometry and is reported for restore ----
 
@@ -40,9 +66,10 @@ public class LayoutAdoptionTests
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20) }, T0);   // the good position
         m.PruneDead(_ => false, T0);                                  // Chrome exits
+        FallbackEnded(m, T0);                                         // ...while the display was away, and came back
 
-        // Chrome restarts, squashed into the corner by whatever it remembered itself.
-        var adopted = m.Capture("desk", new[] { W(0x500, Chrome, 0, 0) }, T0.AddMinutes(1));
+        // Chrome comes back squashed into the fallback corner (closed and reopened while the display was away).
+        var adopted = m.Capture("desk", new[] { S(0x500, Chrome, 0, 0) }, T0.AddMinutes(1));
 
         // The memory is untouched — and the caller is told to move the window there.
         Assert.Equal(10, m.EntriesFor("desk")[0].Record.Left);
@@ -59,8 +86,9 @@ public class LayoutAdoptionTests
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20, "Inbox") }, T0);
         m.PruneDead(_ => false, T0);
+        FallbackEnded(m, T0);
 
-        m.Capture("desk", new[] { W(0x500, Chrome, 0, 0, "GitHub") }, T0.AddMinutes(1));
+        m.Capture("desk", new[] { S(0x500, Chrome, 0, 0, "GitHub") }, T0.AddMinutes(1));
 
         var e = m.EntriesFor("desk")[0];
         Assert.Equal(new IntPtr(0x500), e.Handle);          // bound to the new window
@@ -99,13 +127,14 @@ public class LayoutAdoptionTests
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20) }, T0);
         m.PruneDead(_ => false, T0);
+        FallbackEnded(m, T0);
 
-        var first = m.Capture("desk", new[] { W(0x500, Chrome, 0, 0) }, T0.AddMinutes(1));
+        var first = m.Capture("desk", new[] { S(0x500, Chrome, 0, 0) }, T0.AddMinutes(1));
         Assert.Single(first);
 
         // Next round: the record is bound, so it is reported once and only once — even if the window sprang
         // back to its own position, we record that rather than fight it every two seconds.
-        var second = m.Capture("desk", new[] { W(0x500, Chrome, 0, 0) }, T0.AddMinutes(2));
+        var second = m.Capture("desk", new[] { S(0x500, Chrome, 0, 0) }, T0.AddMinutes(2));
         Assert.Empty(second);
         Assert.Equal(0, m.EntriesFor("desk")[0].Record.Left);
 
@@ -121,10 +150,11 @@ public class LayoutAdoptionTests
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20) }, T0);
         m.PruneDead(_ => false, T0);
-        Assert.Single(m.Capture("desk", new[] { W(0x500, Chrome, 0, 0) }, T0.AddMinutes(1)));
+        FallbackEnded(m, T0);
+        Assert.Single(m.Capture("desk", new[] { S(0x500, Chrome, 0, 0) }, T0.AddMinutes(1)));
 
         m.PruneDead(_ => false, T0.AddMinutes(1)); // restarted again — and unbound afresh, so the clock restarts
-        var again = m.Capture("desk", new[] { W(0x900, Chrome, 55, 66) }, T0.AddMinutes(2));
+        var again = m.Capture("desk", new[] { S(0x900, Chrome, 55, 66) }, T0.AddMinutes(2));
 
         Assert.Single(again);
         Assert.Equal(10, again[0].Target.Left); // the good geometry was never overwritten by either restart
@@ -138,8 +168,10 @@ public class LayoutAdoptionTests
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20) }, T0);
         m.PruneDead(_ => false, T0);
+        FallbackEnded(m, T0);
 
-        var adopted = m.Capture("desk", new[] { W(0x500, Chrome, 55, 66) }, T0.AddMinutes(1), adoptGeometry: false);
+        // Squeezed or not (this one is), "Capture now" records the window as it stands.
+        var adopted = m.Capture("desk", new[] { S(0x500, Chrome, 55, 66) }, T0.AddMinutes(1), adoptGeometry: false);
 
         Assert.Empty(adopted);                                   // nothing gets moved as a side effect
         Assert.Equal(55, m.EntriesFor("desk")[0].Record.Left);   // current position wins: that was the request
@@ -171,9 +203,10 @@ public class LayoutAdoptionTests
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20), W(0x200, Notepad, 30, 40) }, T0);
         m.PruneDead(_ => false, T0);
+        FallbackEnded(m, T0);
 
         // This round the engine owns the Chrome window, so only Notepad is offered.
-        var adopted = m.Capture("desk", new[] { W(0x600, Notepad, 0, 0) }, T0.AddMinutes(1));
+        var adopted = m.Capture("desk", new[] { S(0x600, Notepad, 0, 0) }, T0.AddMinutes(1));
 
         Assert.Single(adopted);
         Assert.Equal(new IntPtr(0x600), adopted[0].Handle);
@@ -195,16 +228,17 @@ public class LayoutAdoptionTests
             before.Capture("desk", new[] { W(0x100, Chrome, 10, 20), W(0x200, Notepad, 300, 400) }, T0);
             Assert.True(LayoutStore.Save(before.ExportForDisk(), file));
 
-            // New boot a day later: everything is unbound, and both apps reopen wherever they feel like. The
-            // record timestamps are yesterday's, but the adoption clock is anchored to the *load*, so the two
-            // minutes it takes the apps to come up is what counts.
+            // New boot a day later with the TV on another input: everything is unbound, and both apps come up
+            // squeezed into the fallback box. The record timestamps are yesterday's, but the adoption clock is
+            // anchored to the *load*, so the two minutes it takes the apps to come up is what counts.
             var boot = T0.AddDays(1);
             var after = new LayoutMemory();
             after.ImportFromDisk(LayoutStore.Load(file), boot);
+            FallbackEnded(after, boot.AddMinutes(1));   // the engine watched the desktop come back off the fallback
             var adopted = after.Capture("desk", new[]
             {
-                W(0x910, Chrome, 0, 0),
-                W(0x920, Notepad, 5, 5),
+                S(0x910, Chrome, 0, 0),
+                S(0x920, Notepad, 5, 5),
             }, boot.AddMinutes(2));
 
             // The remembered layout is intact and both windows are queued to be moved onto it.
@@ -228,11 +262,12 @@ public class LayoutAdoptionTests
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 100, 0, "Docs"), W(0x200, Chrome, 200, 0, "Mail") }, T0);
         m.PruneDead(_ => false, T0);
+        FallbackEnded(m, T0);
 
         var adopted = m.Capture("desk", new[]
         {
-            W(0x820, Chrome, 0, 0, "Docs"),
-            W(0x810, Chrome, 0, 0, "Mail"),
+            S(0x820, Chrome, 0, 0, "Docs"),
+            S(0x810, Chrome, 0, 0, "Mail"),
         }, T0.AddMinutes(1));
 
         Assert.Equal(2, adopted.Count);
@@ -269,6 +304,7 @@ public class LayoutAdoptionTests
             Q(0x400, 0, 0, 1921, 1152, "图片查看器"),
         }, T0);
         m.PruneDead(_ => false, T0); // QQ restarts: every record is unbound
+        FallbackEnded(m, T0);        // right after a fallback, even: ambiguity still wins
 
         var adopted = m.Capture("desk", new[]
         {
@@ -300,12 +336,13 @@ public class LayoutAdoptionTests
             Q(0x300, 0, 0, 2220, 1487, "这是个什么群"),
         }, T0);
         m.PruneDead(_ => false, T0);
+        FallbackEnded(m, T0);
 
         var adopted = m.Capture("desk", new[]
         {
-            Q(0x4400, 0, 0, 900, 900, "QQ"),
-            Q(0x5500, 0, 0, 900, 900, "这是个什么群"),
-            Q(0x6600, 0, 0, 900, 900, "这是个什么群"),
+            Q(0x4400, 0, 0, 900, 700, "QQ"),            // all three squeezed into the fallback box
+            Q(0x5500, 0, 0, 900, 700, "这是个什么群"),
+            Q(0x6600, 0, 0, 900, 700, "这是个什么群"),
         }, T0.AddMinutes(1));
 
         var one = Assert.Single(adopted);
@@ -322,8 +359,9 @@ public class LayoutAdoptionTests
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20, "Untitled"), W(0x200, Chrome, 500, 600, "Untitled") }, T0);
         m.PruneDead(_ => false, T0);
+        FallbackEnded(m, T0);
 
-        var adopted = m.Capture("desk", new[] { W(0x900, Chrome, 0, 0, "Untitled") }, T0.AddMinutes(1));
+        var adopted = m.Capture("desk", new[] { S(0x900, Chrome, 0, 0, "Untitled") }, T0.AddMinutes(1)); // squeezed, even
 
         Assert.Empty(adopted);
         Assert.Equal(2, m.CountFor("desk"));
@@ -338,8 +376,9 @@ public class LayoutAdoptionTests
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20, "Inbox - Gmail") }, T0);
         m.PruneDead(_ => false, T0);
+        FallbackEnded(m, T0);
 
-        var adopted = m.Capture("desk", new[] { W(0x900, Chrome, 0, 0, "Reframe - GitHub") }, T0.AddMinutes(1));
+        var adopted = m.Capture("desk", new[] { S(0x900, Chrome, 0, 0, "Reframe - GitHub") }, T0.AddMinutes(1));
 
         var one = Assert.Single(adopted);
         Assert.Equal(new IntPtr(0x900), one.Handle);
@@ -405,15 +444,17 @@ public class LayoutAdoptionTests
             Q(0x300, 0, 0, 1921, 1152, "图片查看器"),
         }, T0);
         m.PruneDead(h => h != new IntPtr(0x100), T0);      // just that chat window closed
+        FallbackEnded(m, T0.AddDays(3).AddMinutes(-1));     // and the display even blinked a minute before the reopen
 
+        // (Squeezed on purpose, so the clock is the only thing standing between this window and a move.)
         var reopened = T0.AddDays(3);
-        var adopted = m.Capture("desk", new[] { Q(0x9900, 700, 300, 900, 900, "这是个什么群") }, reopened);
+        var adopted = m.Capture("desk", new[] { Q(0x9900, 0, 0, 900, 700, "这是个什么群") }, reopened);
 
         Assert.Empty(adopted);                              // nothing is moved: the whole point
         Assert.Equal(3, m.CountFor("desk"));                // and no duplicate record piles up
         var chat = m.EntriesFor("desk").Single(e => e.Handle == new IntPtr(0x9900));
         Assert.False(chat.ConfidentBinding);                // so no restore path will move it either
-        Assert.Equal(700, chat.Record.Left);                // the record learned where QQ actually put it
+        Assert.Equal(0, chat.Record.Left);                  // the record learned where QQ actually put it
         Assert.Equal(900, chat.Record.Right - chat.Record.Left);
     }
 
@@ -430,8 +471,9 @@ public class LayoutAdoptionTests
             Q(0x300, 0, 0, 1921, 1152, "图片查看器"),
         }, T0);
         m.PruneDead(_ => false, T0);
+        FallbackEnded(m, T0);
 
-        var adopted = m.Capture("desk", new[] { Q(0x9900, 700, 300, 900, 900, "这是个什么群") }, T0.AddMinutes(1));
+        var adopted = m.Capture("desk", new[] { Q(0x9900, 0, 0, 900, 700, "这是个什么群") }, T0.AddMinutes(1)); // squeezed
 
         var one = Assert.Single(adopted);
         Assert.Equal(new IntPtr(0x9900), one.Handle);
@@ -447,14 +489,15 @@ public class LayoutAdoptionTests
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20, "Inbox - Gmail") }, T0);
         m.PruneDead(_ => false, T0);
+        FallbackEnded(m, T0);
 
-        var adopted = m.Capture("desk", new[] { W(0x900, Chrome, 640, 480, "Inbox - Gmail") }, T0.AddMinutes(16));
+        var adopted = m.Capture("desk", new[] { S(0x900, Chrome, 24, 24, "Inbox - Gmail") }, T0.AddMinutes(16)); // squeezed, even
 
         Assert.Empty(adopted);
         var e = m.EntriesFor("desk")[0];
         Assert.Equal(new IntPtr(0x900), e.Handle);   // bound...
         Assert.False(e.ConfidentBinding);            // ...but not on evidence anything may act on
-        Assert.Equal(640, e.Record.Left);            // ordinary capture: the record takes the window's shape
+        Assert.Equal(24, e.Record.Left);             // ordinary capture: the record takes the window's shape
     }
 
     [Theory]
@@ -470,8 +513,9 @@ public class LayoutAdoptionTests
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20, "Inbox") }, T0);
         m.PruneDead(_ => false, T0);
+        FallbackEnded(m, T0);
 
-        var result = m.Capture("desk", new[] { W(0x900, Chrome, 0, 0, "Inbox") }, T0.AddMinutes(minutesLater));
+        var result = m.Capture("desk", new[] { S(0x900, Chrome, 0, 0, "Inbox") }, T0.AddMinutes(minutesLater));
 
         Assert.Equal(adopted, result.Count == 1);
         Assert.Equal(adopted ? 10 : 0, m.EntriesFor("desk")[0].Record.Left);
@@ -489,11 +533,12 @@ public class LayoutAdoptionTests
         var boot = T0.AddDays(1);
         var after = new LayoutMemory();
         after.ImportFromDisk(before.ExportForDisk(), boot);
+        FallbackEnded(after, boot.AddMinutes(15));   // a fallback within the window, even
 
-        var adopted = after.Capture("desk", new[] { W(0x910, Chrome, 640, 480, "Inbox") }, boot.AddMinutes(16));
+        var adopted = after.Capture("desk", new[] { S(0x910, Chrome, 0, 0, "Inbox") }, boot.AddMinutes(16)); // squeezed, even
 
         Assert.Empty(adopted);
-        Assert.Equal(640, after.EntriesFor("desk")[0].Record.Left);   // left where the user opened it
+        Assert.Equal(0, after.EntriesFor("desk")[0].Record.Left);     // left where it opened: the clock ran out
         Assert.False(after.EntriesFor("desk")[0].ConfidentBinding);
     }
 
@@ -507,15 +552,17 @@ public class LayoutAdoptionTests
         var m = new LayoutMemory();
         m.Capture("desk", new[] { W(0x100, Chrome, 10, 20, "Inbox") }, T0);
         m.PruneDead(_ => false, T0);
+        FallbackEnded(m, T0);
 
         // Hours later the user opens it again: bound, tracked, not moved.
         var late = T0.AddHours(5);
         Assert.Empty(m.Capture("desk", new[] { W(0x900, Chrome, 640, 480, "Inbox") }, late));
         Assert.Equal(640, m.EntriesFor("desk")[0].Record.Left);
 
-        // Now *that* window crashes and is back within the window.
+        // Now *that* window crashes and is back within the window, squeezed by a fallback the engine saw.
         m.PruneDead(_ => false, late.AddMinutes(1));
-        var adopted = m.Capture("desk", new[] { W(0xA00, Chrome, 0, 0, "Inbox") }, late.AddMinutes(2));
+        FallbackEnded(m, late.AddMinutes(1));
+        var adopted = m.Capture("desk", new[] { S(0xA00, Chrome, 0, 0, "Inbox") }, late.AddMinutes(2)); // squeezed this time
 
         var one = Assert.Single(adopted);
         Assert.Equal(new IntPtr(0xA00), one.Handle);
@@ -543,5 +590,274 @@ public class LayoutAdoptionTests
         Assert.Null(e.UnboundAtUtc);
         Assert.Equal(50, e.Record.Left);
         Assert.Single(m.GetRestorable("desk"));
+    }
+
+    // ---- (8) The squeeze gate: adoption repairs a display fallback, it does not place windows ----
+    //
+    // Identity says which window a record describes; freshness says the record's window went away recently.
+    // Neither says the new window is in the wrong place, and usually it is not: the user closed one window and
+    // opened another, or an app started with the session, and the app put the window where it wanted it. The
+    // one thing worth undoing is the squeeze Windows applies while the only display is away — every window
+    // crammed into the 1024x768 box at the origin. So a claim is only acted on when the window looks like that
+    // and its remembered rectangle does not. (AdoptionGate; see AdoptionGateTests for the rectangle rules.)
+
+    [Fact]
+    public void A_restarted_window_that_comes_back_where_its_app_put_it_is_tracked_not_moved()
+    {
+        // The reported defect: close a browser window, open another one a minute later (same process and
+        // class, 1:1 — a confident, fresh claim) and the new window used to be yanked to the old rectangle.
+        var m = new LayoutMemory();
+        m.Capture("desk", new[] { W(0x100, Chrome, 2400, 300) }, T0);
+        m.PruneDead(_ => false, T0);
+        FallbackEnded(m, T0);
+
+        var adopted = m.Capture("desk", new[] { W(0x900, Chrome, 1200, 500) }, T0.AddMinutes(1));
+
+        Assert.Empty(adopted);                                   // nothing is moved
+        var e = m.EntriesFor("desk")[0];
+        Assert.Equal(new IntPtr(0x900), e.Handle);               // the record is claimed (no duplicate)
+        Assert.Equal(1, m.CountFor("desk"));
+        Assert.Equal(1200, e.Record.Left);                       // and now describes the window as it is
+        Assert.Equal(500, e.Record.Top);
+    }
+
+    [Fact]
+    public void A_tracked_restart_is_still_restored_to_its_own_place_on_the_next_display_change()
+    {
+        // Declining the move must not demote the record: the matcher was sure this is the window, the record
+        // now holds that window's own geometry, so a display change puts it back *there* — not at the T0 rect.
+        var m = new LayoutMemory();
+        m.Capture("desk", new[] { W(0x100, Chrome, 2400, 300) }, T0);
+        m.PruneDead(_ => false, T0);
+        FallbackEnded(m, T0);
+        Assert.Empty(m.Capture("desk", new[] { W(0x900, Chrome, 1200, 500) }, T0.AddMinutes(1)));
+
+        var e = m.EntriesFor("desk")[0];
+        Assert.True(e.ConfidentBinding);
+        var one = Assert.Single(m.GetRestorable("desk"));
+        Assert.Equal(new IntPtr(0x900), one.Handle);
+        Assert.Equal(1200, one.Record.Left);
+    }
+
+    [Fact]
+    public void Apps_that_start_with_the_session_on_a_healthy_display_are_left_where_they_open()
+    {
+        // The login case. Reframe starts with the session, the layout file loads unbound, and the user's apps
+        // come up over the next minutes — on a display that is perfectly fine, each where it remembers being.
+        // Every one of them is a fresh 1:1 claim, and not one of them is to be moved: the apps know their own
+        // positions, and only a squeeze (the disk-loaded test in section 5) justifies overriding that.
+        var before = new LayoutMemory();
+        before.Capture("desk", new[] { W(0x100, Chrome, 2400, 300, "Inbox"), W(0x200, Notepad, 100, 1200) }, T0);
+
+        var boot = T0.AddDays(1);
+        var after = new LayoutMemory();
+        after.ImportFromDisk(before.ExportForDisk(), boot);
+
+        var adopted = after.Capture("desk", new[]
+        {
+            W(0x910, Chrome, 2500, 320, "Inbox"),   // roughly where it was — Chrome remembered that itself
+            W(0x920, Notepad, 1800, 200),           // somewhere else entirely — also Notepad's own choice
+        }, boot.AddMinutes(2));
+
+        Assert.Empty(adopted);
+        Assert.Equal(2, after.CountFor("desk"));
+        Assert.Equal(2500, after.EntriesFor("desk").Single(e => e.Identity == Chrome).Record.Left);
+        Assert.Equal(1800, after.EntriesFor("desk").Single(e => e.Identity == Notepad).Record.Left);
+        Assert.All(after.EntriesFor("desk"), e => Assert.True(e.ConfidentBinding));
+    }
+
+    [Fact]
+    public void A_record_that_itself_fits_the_fallback_box_moves_nothing()
+    {
+        // A small utility window that genuinely lives in the top-left corner: both the remembered and the
+        // observed rectangle fit the fallback box, so there is no squeeze to undo — just a window that opened
+        // a little away from where it was. Leave it.
+        var m = new LayoutMemory();
+        m.Capture("desk", new[] { S(0x100, Notepad, 100, 80) }, T0);
+        m.PruneDead(_ => false, T0);
+        FallbackEnded(m, T0);
+
+        var adopted = m.Capture("desk", new[] { S(0x900, Notepad, 0, 0) }, T0.AddMinutes(1));
+
+        Assert.Empty(adopted);
+        Assert.Equal(0, m.EntriesFor("desk")[0].Record.Left);
+    }
+
+    [Fact]
+    public void A_squeezed_window_hanging_slightly_outside_the_box_still_counts_as_squeezed()
+    {
+        // GetWindowRect includes DWM's invisible resize border, so a window flush against the fallback desktop
+        // reports a frame a few pixels outside it. That is still the squeeze.
+        var m = new LayoutMemory();
+        m.Capture("desk", new[] { W(0x100, Chrome, 2400, 300) }, T0);
+        m.PruneDead(_ => false, T0);
+        FallbackEnded(m, T0);
+
+        var squeezed = new CapturedWindow(new IntPtr(0x900), Chrome, "",
+            new WindowRecord(-8, -8, 1032, 776, -8, -8, 1032, 776, NativeMethods.SW_SHOWNORMAL));
+        var adopted = m.Capture("desk", new[] { squeezed }, T0.AddMinutes(1));
+
+        var one = Assert.Single(adopted);
+        Assert.Equal(2400, one.Target.Left);
+    }
+
+    [Fact]
+    public void A_squeezed_maximized_window_is_adopted_by_its_restore_rectangle()
+    {
+        // A maximized window's on-screen rect is the whole monitor before and after a squeeze; what the fallback
+        // damages is its restore rectangle (rcNormalPosition), which is also what the restore path rewrites.
+        var remembered = new CapturedWindow(new IntPtr(0x100), Chrome, "",
+            new WindowRecord(0, 0, 5120, 2088, 1000, 200, 3400, 1700, NativeMethods.SW_SHOWMAXIMIZED));
+
+        var m = new LayoutMemory();
+        m.Capture("desk", new[] { remembered }, T0);
+        m.PruneDead(_ => false, T0);
+        FallbackEnded(m, T0);
+        var squeezed = new CapturedWindow(new IntPtr(0x900), Chrome, "",
+            new WindowRecord(0, 0, 5120, 2088, 0, 0, 1024, 740, NativeMethods.SW_SHOWMAXIMIZED));
+        var adopted = m.Capture("desk", new[] { squeezed }, T0.AddMinutes(1));
+
+        var one = Assert.Single(adopted);
+        Assert.Equal(1000, one.Target.NormLeft);
+        Assert.Equal(3400, one.Target.NormRight);
+
+        // ...and a maximized window whose restore rect is fine is left alone, however it came back.
+        var m2 = new LayoutMemory();
+        m2.Capture("desk", new[] { remembered }, T0);
+        m2.PruneDead(_ => false, T0);
+        FallbackEnded(m2, T0);
+        var fine = new CapturedWindow(new IntPtr(0x900), Chrome, "",
+            new WindowRecord(0, 0, 5120, 2088, 1200, 300, 3000, 1600, NativeMethods.SW_SHOWMAXIMIZED));
+        Assert.Empty(m2.Capture("desk", new[] { fine }, T0.AddMinutes(1)));
+        Assert.Equal(1200, m2.EntriesFor("desk")[0].Record.NormLeft);
+    }
+
+    // ---- (9) Evidence: adoption needs a fallback the engine actually saw, and judges against its real box ----
+    //
+    // Geometry alone cannot tell a squeezed window from a small one the user opened in the corner (Codex review
+    // on PR #7, finding 1): an 800x600 window at (100,100) fits the fallback box whether or not a fallback ever
+    // happened. So the engine tells the store when a fallback episode ended (NoteFallbackEpisodeEnded) and
+    // adoption is only considered within AdoptionWindow of that — against the box Windows actually fell back
+    // to, because 800x600 is not 1024x768 (finding 2).
+
+    [Fact]
+    public void A_small_window_opened_in_the_corner_with_no_fallback_episode_is_not_moved()
+    {
+        // Codex finding 1, verbatim: remembered (1600,200)-(2400,800); the same app opens a normal 800x600 window
+        // at (100,100) a minute later, same caption; no display change ever happened. Nothing may move.
+        var m = new LayoutMemory();
+        m.Capture("desk", new[] { S(0x100, Chrome, 1600, 200, "Inbox") }, T0);   // S: 800x600 at (1600,200)
+        m.PruneDead(_ => false, T0);
+
+        var adopted = m.Capture("desk", new[] { S(0x900, Chrome, 100, 100, "Inbox") }, T0.AddMinutes(1));
+
+        Assert.Empty(adopted);                                   // no restore
+        var e = m.EntriesFor("desk")[0];
+        Assert.Equal(new IntPtr(0x900), e.Handle);               // the record is claimed...
+        Assert.Equal(1, m.CountFor("desk"));
+        Assert.Equal(100, e.Record.Left);                        // ...and tracks the new window's position
+        Assert.Equal(100, e.Record.Top);
+    }
+
+    [Fact]
+    public void The_same_reopen_right_after_a_fallback_episode_is_adopted()
+    {
+        // Same geometry, but the engine watched the display fall back and return thirty seconds ago. Now the
+        // small corner window is exactly the squeeze adoption exists for, and it goes home.
+        var m = new LayoutMemory();
+        m.Capture("desk", new[] { S(0x100, Chrome, 1600, 200, "Inbox") }, T0);
+        m.PruneDead(_ => false, T0);
+        FallbackEnded(m, T0.AddSeconds(30));
+
+        var adopted = m.Capture("desk", new[] { S(0x900, Chrome, 100, 100, "Inbox") }, T0.AddMinutes(1));
+
+        var one = Assert.Single(adopted);
+        Assert.Equal(new IntPtr(0x900), one.Handle);
+        Assert.Equal(1600, one.Target.Left);
+        Assert.Equal(1600, m.EntriesFor("desk")[0].Record.Left);   // the memory is kept, not overwritten
+    }
+
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(15, true)]      // exactly the window: inclusive, like the record's own clock
+    [InlineData(16, false)]
+    [InlineData(120, false)]
+    public void Fallback_evidence_expires_with_the_adoption_window(int minutesSinceFallback, bool adopted)
+    {
+        // The record is fresh either way (its window died a minute ago); what varies is how long ago the display
+        // came back. Past AdoptionWindow a fallback no longer explains anything about a window opened now.
+        var now = T0.AddMinutes(1);
+        var m = new LayoutMemory();
+        FallbackEnded(m, now.AddMinutes(-minutesSinceFallback));
+        m.Capture("desk", new[] { W(0x100, Chrome, 2400, 300) }, T0);
+        m.PruneDead(_ => false, T0);
+
+        var result = m.Capture("desk", new[] { S(0x900, Chrome, 0, 0) }, now);
+
+        Assert.Equal(adopted, result.Count == 1);
+        Assert.Equal(adopted ? 2400 : 0, m.EntriesFor("desk")[0].Record.Left);
+    }
+
+    [Fact]
+    public void An_800x600_fallback_is_judged_against_its_own_box()
+    {
+        // Codex finding 2, verbatim: a 900x700 window at (100,50) fits inside 1024x768, so against that box it
+        // would read as undamaged. But the desktop fell back to 800x600, the app reopened squeezed to
+        // (0,0)-(800,560), and the layout must come back. The engine reports the box it actually saw.
+        var remembered = new CapturedWindow(new IntPtr(0x100), Chrome, "Inbox",
+            new WindowRecord(100, 50, 1000, 750, 100, 50, 1000, 750, NativeMethods.SW_SHOWNORMAL));
+        var before = new LayoutMemory();
+        before.Capture("desk", new[] { remembered }, T0);
+
+        var boot = T0.AddDays(1);
+        var after = new LayoutMemory();
+        after.ImportFromDisk(before.ExportForDisk(), boot);
+        FallbackEnded(after, boot.AddMinutes(1), 800, 600);   // the TV was on another input while the apps started
+
+        var squeezed = new CapturedWindow(new IntPtr(0x900), Chrome, "Inbox",
+            new WindowRecord(0, 0, 800, 560, 0, 0, 800, 560, NativeMethods.SW_SHOWNORMAL));
+        var adopted = after.Capture("desk", new[] { squeezed }, boot.AddMinutes(2));
+
+        var one = Assert.Single(adopted);
+        Assert.Equal(900, one.Target.Right - one.Target.Left);
+        Assert.Equal(700, one.Target.Bottom - one.Target.Top);
+        Assert.Equal(100, after.EntriesFor("desk")[0].Record.Left);   // the 900x700 layout survives
+    }
+
+    [Fact]
+    public void A_record_that_fits_the_observed_fallback_box_is_not_what_the_fallback_damaged()
+    {
+        // The mirror image: the same 900x700 record, but the fallback the engine saw was 1024x768. The window
+        // fit that desktop, so at most the taskbar nudged it; a same-app window now sitting at (0,0) at a
+        // different size is where the app put it. Track, don't move.
+        var m = new LayoutMemory();
+        m.Capture("desk", new[] { new CapturedWindow(new IntPtr(0x100), Chrome, "Inbox",
+            new WindowRecord(100, 50, 1000, 750, 100, 50, 1000, 750, NativeMethods.SW_SHOWNORMAL)) }, T0);
+        m.PruneDead(_ => false, T0);
+        FallbackEnded(m, T0.AddSeconds(30), 1024, 768);
+
+        var adopted = m.Capture("desk", new[] { new CapturedWindow(new IntPtr(0x900), Chrome, "Inbox",
+            new WindowRecord(0, 0, 800, 560, 0, 0, 800, 560, NativeMethods.SW_SHOWNORMAL)) }, T0.AddMinutes(1));
+
+        Assert.Empty(adopted);
+        Assert.Equal(0, m.EntriesFor("desk")[0].Record.Left);
+    }
+
+    [Fact]
+    public void A_later_fallback_replaces_the_earlier_one()
+    {
+        // Only the most recent episode counts, box and clock alike: an 800x600 blink an hour ago followed by a
+        // 1024x768 one just now means the 900x700 record is judged against 1024x768 (and is left alone).
+        var m = new LayoutMemory();
+        m.Capture("desk", new[] { new CapturedWindow(new IntPtr(0x100), Chrome, "Inbox",
+            new WindowRecord(100, 50, 1000, 750, 100, 50, 1000, 750, NativeMethods.SW_SHOWNORMAL)) }, T0);
+        m.PruneDead(_ => false, T0);
+        FallbackEnded(m, T0.AddHours(-1), 800, 600);
+        FallbackEnded(m, T0.AddSeconds(30), 1024, 768);
+
+        Assert.True(m.TryGetRecentFallback(T0.AddMinutes(1), out var box));
+        Assert.Equal(new FallbackBox(1024, 768), box);
+        Assert.Empty(m.Capture("desk", new[] { new CapturedWindow(new IntPtr(0x900), Chrome, "Inbox",
+            new WindowRecord(0, 0, 800, 560, 0, 0, 800, 560, NativeMethods.SW_SHOWNORMAL)) }, T0.AddMinutes(1)));
     }
 }

@@ -128,6 +128,13 @@ public sealed class PersistenceEngine : IDisposable
     /// </summary>
     private DateTime _transientStartedUtc;
 
+    /// <summary>
+    /// The size of the fallback desktop observed when the current episode began (1024×768, or 800×600 on
+    /// older builds). Handed to <see cref="LayoutMemory.NoteFallbackEpisodeEnded"/> on the way out, so the
+    /// adoption gate judges a squeezed window against the box Windows actually used rather than an assumed one.
+    /// </summary>
+    private FallbackBox _transientBox;
+
     /// <summary>How many settle rounds have already been spent waiting for a fallback episode to end (see <see cref="MaxTransientSettleRetries"/>).</summary>
     private int _transientWaits;
     /// <summary>Set once the startup load has run. Guards Stop() from writing an empty file over a good one if the worker never got that far.</summary>
@@ -224,7 +231,7 @@ public sealed class PersistenceEngine : IDisposable
             // 1024x768 the baseline: leave the key at None and remember the episode, so the real topology
             // arriving a moment later reads as a change and takes the normal restore path.
             var boot = Probe();
-            if (boot.Transient) NoteTransient();
+            if (boot.Transient) NoteTransient(boot);
             else _currentKey = boot.Key;
 
             // Load the remembered layouts before draining the mailbox. Done here rather than in Start() so the
@@ -251,8 +258,9 @@ public sealed class PersistenceEngine : IDisposable
                 // See PersistenceDecision.ForDisplayChanged for why freezing alone is not enough.
                 if (_isEnabled())
                 {
-                    if (PersistenceDecision.ForDisplayChanged(enabled: true, Probe().Transient)
-                        == DisplayChangedDecision.NoteTransientThenFreeze) NoteTransient();
+                    var live = Probe();
+                    if (PersistenceDecision.ForDisplayChanged(enabled: true, live.Transient)
+                        == DisplayChangedDecision.NoteTransientThenFreeze) NoteTransient(live);
                     EnterFreeze();
                 }
                 break;
@@ -289,8 +297,8 @@ public sealed class PersistenceEngine : IDisposable
         if (live.Transient)
         {
             // Nothing here is worth remembering: every window has been squeezed into the fallback desktop.
-            NoteTransient(); // also starts the episode clock, so a manual click can't be the observation that misses it
-            Log?.Invoke("Capture now ignored: the display is in a transient fallback mode (1024x768)");
+            NoteTransient(live); // also starts the episode clock, so a manual click can't be the observation that misses it
+            Log?.Invoke($"Capture now ignored: the display is in a transient fallback mode ({live.Width}x{live.Height})");
             return;
         }
         NoteTransientEnded();
@@ -316,8 +324,8 @@ public sealed class PersistenceEngine : IDisposable
         {
             // Applying the real layout onto a 1024x768 fallback desktop just gets it re-squeezed; wait for the
             // panel to come back (which restores on its own via the settle path).
-            NoteTransient();
-            Log?.Invoke("Restore now ignored: the display is in a transient fallback mode (1024x768)");
+            NoteTransient(live);
+            Log?.Invoke($"Restore now ignored: the display is in a transient fallback mode ({live.Width}x{live.Height})");
             return;
         }
         NoteTransientEnded();
@@ -348,7 +356,7 @@ public sealed class PersistenceEngine : IDisposable
             // Windows' no-display fallback. Not a configuration anyone works on: do not capture (the windows
             // sitting on it are mangled), and above all do not move _currentKey onto it — that key is the
             // anchor for recognising the panel's return.
-            NoteTransient();
+            NoteTransient(live);
             return;
         }
 
@@ -368,9 +376,10 @@ public sealed class PersistenceEngine : IDisposable
         var snap = CaptureEligibleWindows();
         if (snap.Count > 0)
         {
-            // adoptGeometry (default): a record claimed by a restarted app keeps its remembered geometry and
-            // comes back here as a pending adoption restore instead of being overwritten by the window's
-            // current (usually wrong) position.
+            // adoptGeometry (default): a record claimed by a restarted app *that came back squeezed into the
+            // display fallback box* (AdoptionGate) keeps its remembered geometry and comes back here as a
+            // pending adoption restore instead of being overwritten by the window's squashed position. A
+            // restarted window that sits where its app put it is just bound and tracked from there.
             var adopted = _memory.Capture(_currentKey, snap);
             _dirty = true;
             if (adopted.Count > 0) RestoreAdopted(adopted);
@@ -400,7 +409,7 @@ public sealed class PersistenceEngine : IDisposable
         var plan = FilterWritable(adopted, _getEngineOwned());
         if (plan.Count == 0) return;
         int moved = ApplyPlacements(plan);
-        if (moved > 0) Log?.Invoke($"Adopted and restored {moved} window(s) (app restart)");
+        if (moved > 0) Log?.Invoke($"Adopted and restored {moved} window(s) squeezed into the display fallback box");
     }
 
     private void OnSettle()
@@ -410,7 +419,7 @@ public sealed class PersistenceEngine : IDisposable
         // the whole time the borderless engine is mid-tick, which is exactly when a display blackout is likely
         // to be in progress. Observing costs one monitor enumeration; missing the episode costs the layout.
         var live = frozen && enabled ? Probe() : Topology.Unknown;
-        if (live.Transient) NoteTransient();
+        if (live.Transient) NoteTransient(live);
         bool busy = frozen && enabled && _isEngineBusy();
         bool keyChanged = live.Key != _currentKey;
 
@@ -552,7 +561,7 @@ public sealed class PersistenceEngine : IDisposable
     }
 
     /// <summary>One look at the live display topology: its DisplayKey plus whether it is a transient fallback.</summary>
-    private readonly record struct Topology(string Key, bool Transient)
+    private readonly record struct Topology(string Key, bool Transient, int Width = 0, int Height = 0)
     {
         /// <summary>Placeholder for the paths that short-circuit before probing (a cheaper guard fired first): behaves as "no monitors".</summary>
         public static readonly Topology Unknown = new(LayoutKey.None, false);
@@ -566,7 +575,12 @@ public sealed class PersistenceEngine : IDisposable
     private Topology Probe()
     {
         var monitors = _getMonitors();
-        return new Topology(LayoutKey.Compute(monitors), LayoutKey.IsTransient(monitors));
+        string key = LayoutKey.Compute(monitors);
+        // A fallback topology is exactly one primary monitor; its size travels with the observation so the
+        // adoption gate can judge a squeezed window against the box Windows actually fell back to.
+        return LayoutKey.IsTransient(monitors)
+            ? new Topology(key, true, monitors[0].Width, monitors[0].Height)
+            : new Topology(key, false);
     }
 
     /// <summary>
@@ -575,13 +589,14 @@ public sealed class PersistenceEngine : IDisposable
     /// settle path re-checks twice a second, and every display-change message probes too, so an unconditional
     /// log would bury the dashboard in identical lines for the whole episode.
     /// </summary>
-    private void NoteTransient()
+    private void NoteTransient(Topology live)
     {
         _sawTransient = true;
         if (_inTransientEpisode) return;
         _inTransientEpisode = true;
         _transientStartedUtc = DateTime.UtcNow;
-        Log?.Invoke("Display is in a transient fallback mode (1024x768); capture/restore paused");
+        _transientBox = new FallbackBox(live.Width, live.Height);
+        Log?.Invoke($"Display is in a transient fallback mode ({live.Width}x{live.Height}); capture/restore paused");
     }
 
     /// <summary>
@@ -603,7 +618,11 @@ public sealed class PersistenceEngine : IDisposable
         if (!_inTransientEpisode) return;
         _inTransientEpisode = false;
 
-        int refreshed = _memory.ShiftUnboundAnchors(_transientStartedUtc, DateTime.UtcNow);
+        var endedUtc = DateTime.UtcNow;
+        // The episode is the evidence the adoption restore needs (see AdoptionGate): for the next AdoptionWindow
+        // a window that comes back squeezed into this box may be moved home; without it nothing is.
+        _memory.NoteFallbackEpisodeEnded(endedUtc, _transientBox.Width, _transientBox.Height);
+        int refreshed = _memory.ShiftUnboundAnchors(_transientStartedUtc, endedUtc);
         Log?.Invoke(refreshed > 0
             ? $"Display left the transient fallback mode; capture/restore resumed ({refreshed} record(s) kept adoptable)"
             : "Display left the transient fallback mode; capture/restore resumed");
