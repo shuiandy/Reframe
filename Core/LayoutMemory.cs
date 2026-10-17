@@ -116,7 +116,8 @@ public sealed class RememberedWindow
     /// the moment of the load (<see cref="LayoutMemory.ImportFromDisk"/>), which is exactly the semantics we
     /// want after a reboot: apps that come up squeezed in the first quarter of an hour (the TV was on another
     /// input) go home, anything opened later in the day is left where the user opened it. Freshness is one of
-    /// the conditions, not the whole test — see <see cref="AdoptionGate"/> for the other. Contrast
+    /// the conditions, not the whole test — see <see cref="LayoutMemory.NoteFallbackEpisodeEnded"/> and
+    /// <see cref="AdoptionGate"/> for the others. Contrast
     /// <see cref="LastSeenUtc"/>, which <i>is</i> persisted and drives aging of the geometry itself.</para>
     /// </summary>
     public DateTime? UnboundAtUtc { get; private set; }
@@ -254,6 +255,46 @@ public sealed class LayoutMemory
     /// </summary>
     public static readonly TimeSpan AdoptionWindow = TimeSpan.FromMinutes(15);
 
+    // ---- Fallback evidence ----
+
+    private DateTime? _fallbackEndedUtc;
+    private FallbackBox _fallbackBox;
+
+    /// <summary>
+    /// The engine watched the desktop fall back to Windows' no-display mode and come back at
+    /// <paramref name="endedUtc"/>; <paramref name="boxWidth"/>×<paramref name="boxHeight"/> is the size it fell
+    /// back to (1024×768, or 800×600 on older builds — whatever <c>MonitorService</c> actually reported).
+    ///
+    /// <para><b>This is what licenses an adoption restore.</b> A window squeezed into the corner and a small
+    /// window the user opened in the corner are geometrically indistinguishable; what tells them apart is
+    /// whether a fallback happened at all. So <see cref="Capture"/> only considers moving a freshly claimed
+    /// window while an episode ended within <see cref="AdoptionWindow"/> of now, and judges the squeeze against
+    /// the box observed here rather than an assumed one. The same window is used for both clocks on purpose:
+    /// a record that is still fresh lost its window at (or after) the first capture following the episode, or
+    /// was anchored to the episode's end by <see cref="ShiftUnboundAnchors"/>, so a squeezed reopen that is
+    /// fresh is also within that long of the display coming back.</para>
+    ///
+    /// <para>Session-scoped and never persisted: it describes something this process saw. A Reframe that
+    /// starts after the display is already back has no episode to point to and moves nothing on its own
+    /// (see <see cref="AdoptionGate"/>).</para>
+    /// </summary>
+    public void NoteFallbackEpisodeEnded(DateTime endedUtc, int boxWidth, int boxHeight)
+    {
+        _fallbackEndedUtc = endedUtc;
+        _fallbackBox = new FallbackBox(boxWidth, boxHeight);
+    }
+
+    /// <summary>
+    /// Whether a fallback episode ended within <see cref="AdoptionWindow"/> of <paramref name="nowUtc"/>, and
+    /// the box it fell back to. Inclusive at the boundary and lenient to a clock that ran backwards, like
+    /// <see cref="RememberedWindow.IsAdoptionEligible"/>.
+    /// </summary>
+    public bool TryGetRecentFallback(DateTime nowUtc, out FallbackBox box)
+    {
+        box = _fallbackBox;
+        return _fallbackEndedUtc is { } ended && box.IsValid && nowUtc - ended <= AdoptionWindow;
+    }
+
     // ---- Capture ----
 
     /// <summary>
@@ -293,14 +334,17 @@ public sealed class LayoutMemory
     /// Records that were already bound keep the old behaviour: their geometry tracks the window, which is
     /// what makes this the live layout for this display.</para>
     ///
-    /// <para><b>Adoption only repairs a squeeze</b> (<see cref="AdoptionGate"/>). Knowing <i>which</i> window a
-    /// record describes, and that its window went away recently, still says nothing about whether the new
-    /// window is in the wrong place. In the common case it is not: the user closed one window and opened
-    /// another, or started an app at login, and the app placed the window itself. Moving it then is a fight
-    /// nobody asked for. So a confident, fresh claim is only acted on when the window sits inside the display
-    /// fallback box (where Windows squeezes everything while the only panel is away) and its remembered
-    /// rectangle does not; otherwise the record is bound — confidently, so the next display change restores
-    /// the window to <i>its own</i> place — and simply starts tracking where the window is.</para>
+    /// <para><b>Adoption only repairs a squeeze the engine saw happen</b> (<see cref="NoteFallbackEpisodeEnded"/>,
+    /// <see cref="AdoptionGate"/>). Knowing <i>which</i> window a record describes, and that its window went
+    /// away recently, still says nothing about whether the new window is in the wrong place. In the common
+    /// case it is not: the user closed one window and opened another, or started an app at login, and the app
+    /// placed the window itself. Moving it then is a fight nobody asked for. So a confident, fresh claim is
+    /// only acted on when two further things hold: the engine observed the display fall back and come back
+    /// within <see cref="AdoptionWindow"/> of now, and the window sits inside the box it fell back to while
+    /// its remembered rectangle does not. Geometry alone is not enough — an 800×600 window the user opened at
+    /// (100,100) fits the fallback box whether or not a fallback ever happened — and the episode alone is not
+    /// either. Otherwise the record is bound — confidently, so the next display change restores the window to
+    /// <i>its own</i> place — and simply starts tracking where the window is.</para>
     ///
     /// <para><b>Binding and adoption are two different things.</b> Every window the matcher pairs is bound —
     /// that is what stops a duplicate record piling up next to the old one on each restart. Only a pairing the
@@ -328,8 +372,9 @@ public sealed class LayoutMemory
     /// </param>
     /// <returns>
     /// Windows that just claimed a remembered record, are confidently the same window that record came from,
-    /// <b>and</b> look squeezed into the display fallback box, so they should be moved to it. Empty in most
-    /// rounds — and deliberately empty whenever the pairing was a guess or the window is where its app put it.
+    /// <b>and</b> look squeezed by a display fallback the engine recently observed, so they should be moved to
+    /// it. Empty in most rounds — and deliberately empty whenever the pairing was a guess, no fallback was
+    /// seen, or the window is where its app put it.
     /// </returns>
     public IReadOnlyList<(IntPtr Handle, WindowRecord Target)> Capture(
         string displayKey, IReadOnlyList<CapturedWindow> windows, bool adoptGeometry = true)
@@ -369,6 +414,10 @@ public sealed class LayoutMemory
 
         List<(IntPtr, WindowRecord)>? adoptions = null;
 
+        // Adoption needs a fallback episode the engine actually observed, recently: without one, a window
+        // sitting in the corner is just a window sitting in the corner (see AdoptionGate).
+        bool fallbackSeen = TryGetRecentFallback(nowUtc, out var fallbackBox);
+
         foreach (var w in ordered)
         {
             if (assigned.TryGetValue(w.Handle, out var hit))
@@ -383,14 +432,15 @@ public sealed class LayoutMemory
                     e.Ordinal = NextOrdinal(bucket, w.Identity, e);
                 }
 
-                // Adoption needs all four: the periodic path, a record that was unbound coming into this
-                // call, a pairing the matcher is *sure* about, and a window that actually looks squeezed
-                // into the display fallback box while its record does not (AdoptionGate). Drop any one of
-                // them and this is an ordinary capture — the window stays put and the record learns its
-                // current shape. The gate is what keeps "I closed one window and opened another" from
-                // turning into a move: the app placed the new window itself, and that placement wins.
+                // Adoption needs all five: the periodic path, a record that was unbound coming into this
+                // call, a pairing the matcher is *sure* about, a display fallback the engine saw end within
+                // AdoptionWindow, and a window that actually looks squeezed into the box it fell back to while
+                // its record does not (AdoptionGate). Drop any one of them and this is an ordinary capture —
+                // the window stays put and the record learns its current shape. The last two are what keep
+                // "I closed one window and opened another" from turning into a move: the app placed the new
+                // window itself, and that placement wins.
                 if (adoptGeometry && idx < wasUnbound.Length && wasUnbound[idx] && hit.Confident
-                    && AdoptionGate.ShouldRestore(w.Record, e.Record))
+                    && fallbackSeen && AdoptionGate.ShouldRestore(w.Record, e.Record, fallbackBox))
                     (adoptions ??= new List<(IntPtr, WindowRecord)>()).Add((w.Handle, e.Record)); // keep e.Record: the window moves, not the memory
                 else
                     e.Record = w.Record;
@@ -738,9 +788,10 @@ public sealed class LayoutMemory
     /// the honest reading of the file: it cannot say when each window went away (the machine may have been off
     /// for a week), only that none of them exist yet. The behaviour that falls out is the one we want after a
     /// reboot — apps that come up squeezed into the display fallback box in the first quarter of an hour are
-    /// put back on the remembered layout (subject to <see cref="AdoptionGate"/>: a window that comes up where
-    /// its app put it is left there), while something the user opens hours later is left exactly where it
-    /// opened, even if a record with its caption is still sitting in the file.</para>
+    /// put back on the remembered layout (given a fallback this process observed, see
+    /// <see cref="NoteFallbackEpisodeEnded"/>, and subject to <see cref="AdoptionGate"/>: a window that comes
+    /// up where its app put it is left there), while something the user opens hours later is left exactly
+    /// where it opened, even if a record with its caption is still sitting in the file.</para>
     /// </summary>
     public void ImportFromDisk(LayoutFile? file) => ImportFromDisk(file, DateTime.UtcNow);
 
