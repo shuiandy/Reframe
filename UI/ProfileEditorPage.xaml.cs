@@ -587,6 +587,12 @@ public sealed partial class ProfileEditorPage : Page
             LoadZones(first, rule.ZoneId);
         }
 
+        // LoadZones auto-selects a zone before the SelectionChanged handler below is attached, so a
+        // rule with no ZoneId (or a stale one) would show a zone in the picker but save none, and
+        // ResolveRect then finds no zone and leaves the window alone. Sync it to what is shown.
+        if (zoneBox.SelectedItem is ZoneChoice zcInit && zcInit.Zone.Id != rule.ZoneId)
+            rule.ZoneId = zcInit.Zone.Id;
+
         layoutBox.SelectionChanged += (s, a) =>
         {
             if (layoutBox.SelectedItem is LayoutChoice lc)
